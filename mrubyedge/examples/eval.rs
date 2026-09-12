@@ -68,7 +68,7 @@ fn main() -> Result<(), std::io::Error> {
     let mrb = compile(code, output_path, is_verbose)?;
     let mut rite = mrubyedge::rite::load(&mrb).unwrap();
     let res = vm.eval_rite(&mut rite).unwrap();
-    result_p(&mut vm, res);
+    result_p(&mut vm, res.to_rc());
     remove_file(output_path)?;
 
     let code = r#"
@@ -83,7 +83,7 @@ fn main() -> Result<(), std::io::Error> {
     let mrb = compile(code, output_path, is_verbose)?;
     let mut rite = mrubyedge::rite::load(&mrb).unwrap();
     let res = vm.eval_rite(&mut rite).unwrap();
-    result_p(&mut vm, res);
+    result_p(&mut vm, res.to_rc());
     remove_file(output_path)?;
 
     // dbg!(&vm);

@@ -15,7 +15,7 @@ r.class.inspect
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(result_str, "Random");
 }
 
@@ -29,7 +29,7 @@ r.seed
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i64 = result.as_ref().try_into().unwrap();
+    let result_int: i64 = result.try_into().unwrap();
     assert_eq!(result_int, 12345);
 }
 
@@ -45,7 +45,7 @@ val >= 0.0 && val < 1.0
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    assert!(result.as_ref().is_truthy());
+    assert!(result.is_truthy());
 }
 
 #[test]
@@ -60,7 +60,7 @@ val >= 0 && val < 10
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    assert!(result.as_ref().is_truthy());
+    assert!(result.is_truthy());
 }
 
 #[test]
@@ -75,7 +75,7 @@ val >= 0.0 && val < 5.0
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    assert!(result.as_ref().is_truthy());
+    assert!(result.is_truthy());
 }
 
 #[test]
@@ -89,7 +89,7 @@ val >= 0.0 && val < 1.0
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    assert!(result.as_ref().is_truthy());
+    assert!(result.is_truthy());
 }
 
 #[test]
@@ -103,7 +103,7 @@ val >= 0 && val < 100
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    assert!(result.as_ref().is_truthy());
+    assert!(result.is_truthy());
 }
 
 #[test]
@@ -117,7 +117,7 @@ val >= 0.0 && val < 1.0
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    assert!(result.as_ref().is_truthy());
+    assert!(result.is_truthy());
 }
 
 #[test]
@@ -131,7 +131,7 @@ val >= 0 && val < 50
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    assert!(result.as_ref().is_truthy());
+    assert!(result.is_truthy());
 }
 
 #[test]
@@ -145,7 +145,7 @@ old
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i64 = result.as_ref().try_into().unwrap();
+    let result_int: i64 = result.try_into().unwrap();
     assert_eq!(result_int, 777);
 }
 
@@ -163,7 +163,7 @@ a == b
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    assert!(result.as_ref().is_truthy());
+    assert!(result.is_truthy());
 }
 
 #[test]
@@ -180,5 +180,5 @@ a != b
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    assert!(result.as_ref().is_truthy());
+    assert!(result.is_truthy());
 }

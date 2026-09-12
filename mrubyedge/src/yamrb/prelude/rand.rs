@@ -146,13 +146,13 @@ fn mrb_random_class_srand(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, 
 
     let old_seed = {
         let default_rng = get_default_rng(vm);
-        mrb_funcall(vm, Some(default_rng), "seed", &[])?
+        mrb_funcall(vm, Some(Value::from_rc(default_rng)), "seed", &[])?
     };
     let new_rng = mrb_random_new(vm, &[Some(Value::Integer(seed as i64))])?;
     let random_singleton = get_rng_singleton(vm);
     random_singleton.set_ivar(DEFAULT_RNG_KEY, new_rng);
 
-    Ok(Value::from_rc(old_seed))
+    Ok(old_seed)
 }
 
 // Random#seed
@@ -239,13 +239,13 @@ fn mrb_random_rand(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> 
 // Random.rand (class method)
 fn mrb_random_class_rand(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let default_rng = get_default_rng(vm);
-    let rc_args: Vec<Rc<RObject>> = args.iter().map(|a| a.as_ref().unwrap().to_rc()).collect();
-    mrb_funcall(vm, Some(default_rng), "rand", &rc_args).map(Value::from_rc)
+    let vals: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
+    mrb_funcall(vm, Some(Value::from_rc(default_rng)), "rand", &vals)
 }
 
 // Kernel#rand
 fn mrb_kernel_rand(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let default_rng = get_default_rng(vm);
-    let rc_args: Vec<Rc<RObject>> = args.iter().map(|a| a.as_ref().unwrap().to_rc()).collect();
-    mrb_funcall(vm, Some(default_rng), "rand", &rc_args).map(Value::from_rc)
+    let vals: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
+    mrb_funcall(vm, Some(Value::from_rc(default_rng)), "rand", &vals)
 }

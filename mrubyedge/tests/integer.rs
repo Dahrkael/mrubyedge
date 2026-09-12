@@ -14,7 +14,7 @@ n[0] + n[1] + n[2] + n[3]
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 2); // 0 + 1 + 0 + 1 = 2
 }
 
@@ -28,7 +28,7 @@ a = 42
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, -42);
 }
 
@@ -41,7 +41,7 @@ fn integer_power_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 1024);
 }
 
@@ -54,7 +54,7 @@ fn integer_power_float_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_float: f64 = result.as_ref().try_into().unwrap();
+    let result_float: f64 = result.try_into().unwrap();
     assert_eq!(result_float, 2.0);
 }
 
@@ -67,7 +67,7 @@ fn integer_mod_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 2);
 }
 
@@ -80,7 +80,7 @@ fn integer_and_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 0b1000);
 }
 
@@ -93,7 +93,7 @@ fn integer_or_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 0b1110);
 }
 
@@ -106,7 +106,7 @@ fn integer_xor_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 0b0110);
 }
 
@@ -119,7 +119,7 @@ fn integer_not_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, -6);
 }
 
@@ -132,7 +132,7 @@ fn integer_lshift_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 20);
 }
 
@@ -145,7 +145,7 @@ fn integer_rshift_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 5);
 }
 
@@ -160,7 +160,7 @@ result1 + result2
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 84);
 }
 
@@ -173,7 +173,7 @@ fn integer_to_i_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 42);
 }
 
@@ -186,7 +186,7 @@ fn integer_to_f_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_float: f64 = result.as_ref().try_into().unwrap();
+    let result_float: f64 = result.try_into().unwrap();
     assert_eq!(result_float, 42.0);
 }
 
@@ -199,7 +199,7 @@ fn integer_chr_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(&result_str, "A");
 }
 
@@ -212,7 +212,7 @@ fn integer_to_s_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(&result_str, "123");
 }
 
@@ -225,7 +225,7 @@ fn integer_inspect_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(&result_str, "456");
 }
 
@@ -238,7 +238,7 @@ fn integer_clamp_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 300); // 100 + 50 + 150
 }
 
@@ -258,7 +258,7 @@ fn integer_add_method_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_add", &args).unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 8);
 }
 
@@ -278,7 +278,7 @@ fn integer_sub_method_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_sub", &args).unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 7);
 }
 
@@ -298,6 +298,6 @@ fn integer_add_float_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_add_float", &args).unwrap();
-    let result_float: f64 = result.as_ref().try_into().unwrap();
+    let result_float: f64 = result.try_into().unwrap();
     assert_eq!(result_float, 7.5);
 }

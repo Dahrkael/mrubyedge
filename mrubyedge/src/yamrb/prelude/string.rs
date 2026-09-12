@@ -323,7 +323,7 @@ fn mrb_string_unpack(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
                 return Err(Error::RuntimeError("Unsupported format".to_string()));
             }
         };
-        mrb_array_push(result.clone(), &[RObject::integer_rc(value)])?;
+        mrb_array_push(result.clone(), &[Value::Integer(value)])?;
     }
 
     Ok(Value::from_rc(result))
@@ -339,10 +339,11 @@ fn test_mrb_string_unpack() {
     let data = Rc::new(RObject::string_from_vec(vec![
         0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x04, 0x04, 0x03, 0x03, 0x02, 0x02, 0x00, 0x00,
     ]));
-    let format = Rc::new(RObject::string("c s l q".to_string()));
+    let format = Value::from_rc(Rc::new(RObject::string("c s l q".to_string())));
     let arg = vec![format];
 
-    let ret = helpers::mrb_funcall(&mut vm, Some(data), "unpack", &arg).expect("unpack failed");
+    let ret = helpers::mrb_funcall(&mut vm, Some(Value::from_rc(data)), "unpack", &arg)
+        .expect("unpack failed");
 
     let answers = [
         0x01,
@@ -352,10 +353,10 @@ fn test_mrb_string_unpack() {
     ];
 
     for (i, expected) in answers.iter().enumerate() {
-        let args = vec![Rc::new(RObject::integer(i as i64))];
+        let args = vec![Value::Integer(i as i64)];
         let value =
-            prelude::array::mrb_array_get_index(ret.clone(), &args).expect("getting index failed");
-        let value: i64 = value.as_ref().try_into().expect("value is not integer");
+            prelude::array::mrb_array_get_index(ret.to_rc(), &args).expect("getting index failed");
+        let value: i64 = (&value).try_into().expect("value is not integer");
         assert_eq!(value, *expected);
     }
 }
@@ -585,12 +586,12 @@ fn mrb_string_split(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error>
     let result = if args.is_empty() {
         // Split by whitespace
         this.split_whitespace()
-            .map(|s| Rc::new(RObject::string(s.to_string())))
+            .map(|s| Value::from_rc(Rc::new(RObject::string(s.to_string()))))
             .collect()
     } else {
         let separator: String = args[0].as_ref().unwrap().try_into()?;
         this.split(&separator)
-            .map(|s| Rc::new(RObject::string(s.to_string())))
+            .map(|s| Value::from_rc(Rc::new(RObject::string(s.to_string()))))
             .collect()
     };
 
@@ -682,10 +683,7 @@ fn mrb_string_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 
 fn mrb_string_bytes(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this: Vec<u8> = vm.getself()?.as_ref().try_into()?;
-    let result: Vec<Rc<RObject>> = this
-        .into_iter()
-        .map(|b| RObject::integer_rc(b as i64))
-        .collect();
+    let result: Vec<Value> = this.into_iter().map(|b| Value::Integer(b as i64)).collect();
     Ok(Value::from_rc(Rc::new(RObject::array(result))))
 }
 
@@ -699,17 +697,17 @@ fn mrb_string_chars(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error
 
     let bytes: Vec<u8> = this.as_ref().try_into()?;
 
-    let result: Vec<Rc<RObject>> = if is_utf8 {
+    let result: Vec<Value> = if is_utf8 {
         // Split by UTF-8 characters (runes)
         let s = String::from_utf8_lossy(&bytes);
         s.chars()
-            .map(|c| Rc::new(RObject::string(c.to_string())))
+            .map(|c| Value::from_rc(Rc::new(RObject::string(c.to_string()))))
             .collect()
     } else {
         // Split by bytes
         bytes
             .into_iter()
-            .map(|b| Rc::new(RObject::string_from_vec(vec![b])))
+            .map(|b| Value::from_rc(Rc::new(RObject::string_from_vec(vec![b]))))
             .collect()
     };
 
@@ -777,12 +775,22 @@ fn test_mrb_string_size() {
     let mut vm = VM::empty();
 
     let data = Rc::new(RObject::string("".into()));
-    let ret = helpers::mrb_funcall(&mut vm, Some(data), "size", &[]).expect("size failed");
-    let ret: i64 = ret.as_ref().try_into().expect("size is not integer");
+    let ret = helpers::mrb_funcall(&mut vm, Some(Value::from_rc(data)), "size", &[])
+        .expect("size failed");
+    let ret: i64 = ret
+        .to_rc()
+        .as_ref()
+        .try_into()
+        .expect("size is not integer");
     assert_eq!(ret, 0);
 
     let data = Rc::new(RObject::string("Hello, World".into()));
-    let ret = helpers::mrb_funcall(&mut vm, Some(data), "length", &[]).expect("size failed");
-    let ret: i64 = ret.as_ref().try_into().expect("size is not integer");
+    let ret = helpers::mrb_funcall(&mut vm, Some(Value::from_rc(data)), "length", &[])
+        .expect("size failed");
+    let ret: i64 = ret
+        .to_rc()
+        .as_ref()
+        .try_into()
+        .expect("size is not integer");
     assert_eq!(ret, 12);
 }

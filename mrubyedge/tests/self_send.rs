@@ -27,7 +27,7 @@ end
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_self_send", &args).unwrap();
-    let n: i64 = result.as_ref().try_into().unwrap();
+    let n: i64 = result.try_into().unwrap();
     assert_eq!(n, 11);
 }
 
@@ -55,6 +55,6 @@ end
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_collection_map", &args).unwrap();
-    let result: (i32, i32) = result.as_ref().try_into().unwrap();
+    let result: (i32, i32) = result.try_into().unwrap();
     assert_eq!(result, (2, 4));
 }

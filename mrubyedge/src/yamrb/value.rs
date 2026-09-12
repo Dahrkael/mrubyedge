@@ -35,13 +35,13 @@ pub type RHashMap<K, V> = fnv::FnvHashMap<K, V>;
 #[cfg(feature = "mruby-hash-fnv")]
 pub type RHashSet<K> = fnv::FnvHashSet<K>;
 #[cfg(feature = "mruby-hash-fnv")]
-pub type RHash = fnv::FnvHashMap<ValueHasher, (Rc<RObject>, Rc<RObject>)>;
+pub type RHash = fnv::FnvHashMap<ValueHasher, (Value, Value)>;
 #[cfg(not(feature = "mruby-hash-fnv"))]
 pub type RHashMap<K, V> = std::collections::HashMap<K, V>;
 #[cfg(not(feature = "mruby-hash-fnv"))]
 pub type RHashSet<K> = std::collections::HashSet<K>;
 #[cfg(not(feature = "mruby-hash-fnv"))]
-pub type RHash = std::collections::HashMap<ValueHasher, (Rc<RObject>, Rc<RObject>)>;
+pub type RHash = std::collections::HashMap<ValueHasher, (Value, Value)>;
 
 /// Actual storage for Ruby values, including boxed objects and immediates.
 #[derive(Debug, Clone)]
@@ -54,12 +54,12 @@ pub enum RValue {
     Module(Rc<RModule>),
     Instance(RInstance),
     Proc(RProc),
-    Array(RefCell<Vec<Rc<RObject>>>),
+    Array(RefCell<Vec<Value>>),
     Hash(RefCell<RHash>),
     /// (bytes, is_utf8)
     /// FIXME: currently, we compare strings by bytes only, so is_utf8 is unused.
     String(RefCell<Vec<u8>>, Cell<bool>),
-    Range(Rc<RObject>, Rc<RObject>, bool),
+    Range(Value, Value, bool),
     SharedMemory(Rc<RefCell<SharedMemory>>),
     Data(Rc<RData>),
     Exception(Rc<RException>),
@@ -160,6 +160,30 @@ impl Value {
         match self {
             Value::Object(o) => o.singleton_or_this_class(vm),
             _ => self.get_class(vm),
+        }
+    }
+
+    /// Hash key for a value; immediates never box.
+    pub fn as_hash_key(&self) -> Result<ValueHasher, Error> {
+        match self {
+            Value::Bool(b) => Ok(ValueHasher::Bool(*b)),
+            Value::Integer(i) => Ok(ValueHasher::Integer(*i)),
+            Value::Float(f) => Ok(ValueHasher::Float(f.to_be_bytes().to_vec())),
+            Value::Symbol(id) => Ok(ValueHasher::Symbol(*id)),
+            Value::Object(o) => o.as_hash_key(),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+
+    /// Normalized equality form for a value; immediates never box.
+    pub fn as_eq_value(&self) -> ValueEquality {
+        match self {
+            Value::Bool(b) => ValueEquality::Bool(*b),
+            Value::Integer(i) => ValueEquality::Integer(*i),
+            Value::Float(f) => ValueEquality::Float(*f),
+            Value::Symbol(id) => ValueEquality::Symbol(*id),
+            Value::Nil => ValueEquality::Nil,
+            Value::Object(o) => o.as_eq_value(),
         }
     }
 }
@@ -524,7 +548,7 @@ impl RObject {
         }
     }
 
-    pub fn array(v: Vec<Rc<RObject>>) -> Self {
+    pub fn array(v: Vec<Value>) -> Self {
         RObject {
             tt: RType::Array,
             value: RValue::Array(RefCell::new(v)),
@@ -544,7 +568,7 @@ impl RObject {
         }
     }
 
-    pub fn range(start: Rc<RObject>, end: Rc<RObject>, exclusive: bool) -> Self {
+    pub fn range(start: Value, end: Value, exclusive: bool) -> Self {
         RObject {
             tt: RType::Range,
             value: RValue::Range(start, end, exclusive),
@@ -772,11 +796,13 @@ impl RObject {
             RValue::Symbol(s) => ValueEquality::Symbol(s.id),
             RValue::String(s, _) => ValueEquality::String(s.borrow().clone()),
             RValue::Class(c) => ValueEquality::Class(c.sym_id.name.clone()),
-            RValue::Range(s, e, ex) => {
-                ValueEquality::Range(Box::new(s.as_eq_value()), Box::new(e.as_eq_value()), *ex)
-            }
+            RValue::Range(s, e, ex) => ValueEquality::Range(
+                Box::new(s.to_rc().as_eq_value()),
+                Box::new(e.to_rc().as_eq_value()),
+                *ex,
+            ),
             RValue::Array(a) => {
-                let arr = a.borrow().iter().map(|v| v.as_eq_value()).collect();
+                let arr = a.borrow().iter().map(|v| v.to_rc().as_eq_value()).collect();
                 ValueEquality::Array(arr)
             }
             RValue::Hash(ha) => {
@@ -785,7 +811,7 @@ impl RObject {
                     keys,
                     ha.borrow()
                         .iter()
-                        .map(|(k, (_, v))| (k.clone(), v.as_ref().as_eq_value()))
+                        .map(|(k, (_, v))| (k.clone(), v.to_rc().as_eq_value()))
                         .collect(),
                 ))
             }
@@ -866,8 +892,7 @@ impl RObject {
         let class_name = {
             let inspect = mrb_call_inspect(vm, self.clone());
             match inspect {
-                Ok(inspect) => inspect
-                    .as_ref()
+                Ok(inspect) => (&inspect)
                     .try_into()
                     .unwrap_or_else(|_| "<Singleton Class - unknown inspect type>".to_string()),
                 Err(e) => format!("<Singleton Class - inspect error: {:?}>", e),
@@ -958,9 +983,7 @@ impl RObject {
         }
     }
 
-    pub(crate) fn array_borrow_mut(
-        &self,
-    ) -> Result<std::cell::RefMut<'_, Vec<Rc<RObject>>>, Error> {
+    pub(crate) fn array_borrow_mut(&self) -> Result<std::cell::RefMut<'_, Vec<Value>>, Error> {
         match &self.value {
             RValue::Array(arr) => Ok(arr.borrow_mut()),
             _ => Err(Error::TypeMismatch),
@@ -981,7 +1004,7 @@ impl RObject {
         }
     }
 
-    pub fn as_vec_owned(&self) -> Result<Vec<Rc<RObject>>, Error> {
+    pub fn as_vec_owned(&self) -> Result<Vec<Value>, Error> {
         match &self.value {
             RValue::Array(arr) => Ok(arr.borrow().to_owned()),
             _ => Err(Error::TypeMismatch),
@@ -1020,8 +1043,8 @@ impl TryFrom<&RObject> for (i32, i32) {
                         "expected array of length 2".to_string(),
                     ));
                 }
-                let first: i32 = vec[0].as_ref().try_into()?;
-                let second: i32 = vec[1].as_ref().try_into()?;
+                let first: i32 = (&vec[0]).try_into()?;
+                let second: i32 = (&vec[1]).try_into()?;
                 Ok((first, second))
             }
             _ => Err(Error::TypeMismatch),
@@ -1041,9 +1064,9 @@ impl TryFrom<&RObject> for (i32, i32, i32) {
                         "expected array of length 3".to_string(),
                     ));
                 }
-                let first: i32 = vec[0].as_ref().try_into()?;
-                let second: i32 = vec[1].as_ref().try_into()?;
-                let third: i32 = vec[2].as_ref().try_into()?;
+                let first: i32 = (&vec[0]).try_into()?;
+                let second: i32 = (&vec[1]).try_into()?;
+                let third: i32 = (&vec[2]).try_into()?;
                 Ok((first, second, third))
             }
             _ => Err(Error::TypeMismatch),
@@ -1063,10 +1086,10 @@ impl TryFrom<&RObject> for (i32, i32, i32, i32) {
                         "expected array of length 4".to_string(),
                     ));
                 }
-                let first: i32 = vec[0].as_ref().try_into()?;
-                let second: i32 = vec[1].as_ref().try_into()?;
-                let third: i32 = vec[2].as_ref().try_into()?;
-                let fourth: i32 = vec[3].as_ref().try_into()?;
+                let first: i32 = (&vec[0]).try_into()?;
+                let second: i32 = (&vec[1]).try_into()?;
+                let third: i32 = (&vec[2]).try_into()?;
+                let fourth: i32 = (&vec[3]).try_into()?;
                 Ok((first, second, third, fourth))
             }
             _ => Err(Error::TypeMismatch),
@@ -1086,8 +1109,8 @@ impl TryFrom<&RObject> for (i64, u32) {
                         "expected array of at least length 2".to_string(),
                     ));
                 }
-                let first: i64 = vec[0].as_ref().try_into()?;
-                let second: u32 = vec[1].as_ref().try_into()?;
+                let first: i64 = (&vec[0]).try_into()?;
+                let second: u32 = (&vec[1]).try_into()?;
                 Ok((first, second))
             }
             _ => Err(Error::TypeMismatch),
@@ -1107,9 +1130,9 @@ impl TryFrom<&RObject> for (i64, u32, i32) {
                         "expected array of at least length 3".to_string(),
                     ));
                 }
-                let first: i64 = vec[0].as_ref().try_into()?;
-                let second: u32 = vec[1].as_ref().try_into()?;
-                let third: i64 = vec[2].as_ref().try_into()?;
+                let first: i64 = (&vec[0]).try_into()?;
+                let second: u32 = (&vec[1]).try_into()?;
+                let third: i64 = (&vec[2]).try_into()?;
                 Ok((first, second, third as i32))
             }
             _ => Err(Error::TypeMismatch),
@@ -1266,6 +1289,14 @@ macro_rules! value_numeric_try_from {
                 }
             }
         }
+
+        impl TryFrom<Value> for $t {
+            type Error = Error;
+
+            fn try_from(value: Value) -> Result<Self, Self::Error> {
+                <$t>::try_from(&value)
+            }
+        }
     };
 }
 
@@ -1291,6 +1322,14 @@ impl TryFrom<&Value> for bool {
     }
 }
 
+impl TryFrom<Value> for bool {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        bool::try_from(&value)
+    }
+}
+
 // Object coercions over `Value` delegate to the boxed impl, boxing only when
 // the value is an immediate. Semantics match `TryFrom<&RObject>` exactly.
 macro_rules! value_obj_try_from {
@@ -1302,13 +1341,21 @@ macro_rules! value_obj_try_from {
                 <$t>::try_from(value.to_rc().as_ref())
             }
         }
+
+        impl TryFrom<Value> for $t {
+            type Error = Error;
+
+            fn try_from(value: Value) -> Result<Self, Self::Error> {
+                <$t>::try_from(&value)
+            }
+        }
     };
 }
 
 value_obj_try_from!(String);
 value_obj_try_from!(Vec<u8>);
-value_obj_try_from!(Vec<Rc<RObject>>);
-value_obj_try_from!(Vec<(Rc<RObject>, Rc<RObject>)>);
+value_obj_try_from!(Vec<Value>);
+value_obj_try_from!(Vec<(Value, Value)>);
 value_obj_try_from!((i32, i32));
 value_obj_try_from!((i32, i32, i32));
 value_obj_try_from!((i32, i32, i32, i32));
@@ -1364,7 +1411,7 @@ impl TryFrom<&RObject> for Vec<u8> {
     }
 }
 
-impl TryFrom<&RObject> for Vec<Rc<RObject>> {
+impl TryFrom<&RObject> for Vec<Value> {
     type Error = Error;
 
     fn try_from(value: &RObject) -> Result<Self, Self::Error> {
@@ -1375,7 +1422,7 @@ impl TryFrom<&RObject> for Vec<Rc<RObject>> {
     }
 }
 
-impl TryFrom<&RObject> for Vec<(Rc<RObject>, Rc<RObject>)> {
+impl TryFrom<&RObject> for Vec<(Value, Value)> {
     type Error = Error;
 
     fn try_from(value: &RObject) -> Result<Self, Self::Error> {
@@ -1394,6 +1441,14 @@ impl TryFrom<&RObject> for () {
     type Error = Error;
 
     fn try_from(_: &RObject) -> Result<Self, Self::Error> {
+        Ok(())
+    }
+}
+
+impl TryFrom<Value> for () {
+    type Error = Error;
+
+    fn try_from(_: Value) -> Result<Self, Self::Error> {
         Ok(())
     }
 }

@@ -2,12 +2,11 @@ extern crate mec_mrbc_sys;
 extern crate mrubyedge;
 
 mod helpers;
-use std::rc::Rc;
 
 use helpers::*;
 use mrubyedge::Error;
 use mrubyedge::yamrb::helpers::mrb_define_cmethod;
-use mrubyedge::yamrb::value::{RObject, Value};
+use mrubyedge::yamrb::value::Value;
 use mrubyedge::yamrb::vm::VM;
 
 #[test]
@@ -23,7 +22,7 @@ fn basic_keyword_args_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(&result_str, "Hi, Bob");
 }
 
@@ -40,7 +39,7 @@ fn multiple_keyword_args_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 10 + 20 + 30);
 }
 
@@ -61,10 +60,10 @@ fn keyword_args_string_symbol_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
     let mut expected_array = vec!["Hello", ">> Hello", "Hello <<", "[Hello]"];
     for obj in result_array {
-        let s: String = obj.as_ref().try_into().unwrap();
+        let s: String = obj.try_into().unwrap();
         let expected = expected_array.remove(0);
         assert_eq!(&s, expected);
     }
@@ -92,7 +91,7 @@ fn keyword_args_nested_call_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let (got1, got2): (i32, i32) = result.as_ref().try_into().unwrap();
+    let (got1, got2): (i32, i32) = result.try_into().unwrap();
     assert_eq!(got1, 28); // 5 * 2 + 6 * 3
     assert_eq!(got2, 34); // 5 * 2 + 6 * 4
 }
@@ -132,7 +131,7 @@ fn keyword_args_c_definition_test() {
     mrb_define_cmethod(&mut vm, kernel, "multiply", Box::new(test_mrb_multiply));
 
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 7 * 3 * 11);
 }
 
@@ -149,7 +148,7 @@ process_options(foo: 1, bar: 2, baz: 3)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 3);
 }
 
@@ -166,7 +165,7 @@ process_options()
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 0);
 }
 
@@ -183,7 +182,7 @@ get_value(name: 'Alice', age: 30)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(&result_str, "Alice");
 }
 
@@ -204,7 +203,7 @@ configure(mode: 'production', host: 'localhost', port: 8080)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert!(result_str.starts_with("production:"));
     assert!(result_str.contains("host=localhost"));
     assert!(result_str.contains("port=8080"));
@@ -226,6 +225,6 @@ complex_method(10, 20, 30, required: 5, foo: 15, bar: 25)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 10 + 5 + 20 * 10 + 30 * 10 + 15 * 15 + 25 * 15); // 1050
 }

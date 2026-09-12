@@ -3,7 +3,7 @@ use crate::{
     yamrb::{
         helpers::{mrb_call_block, mrb_define_cmethod},
         prelude::module::mrb_include_module,
-        value::{RObject, RValue, Value},
+        value::{RValue, Value},
         vm::VM,
     },
 };
@@ -27,21 +27,23 @@ pub fn mrb_range_is_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value
     let this = vm.getself()?;
     match &this.value {
         RValue::Range(start, end, exclusive) => {
-            let obj = args[0].as_ref().unwrap().to_rc();
-            match (&start.value, &end.value, &obj.value) {
-                (RValue::Integer(start), RValue::Integer(end), RValue::Integer(obj)) => {
+            let obj = args[0].as_ref().unwrap().clone();
+            match (start, end, &obj) {
+                (Value::Integer(s), Value::Integer(e), Value::Integer(o)) => {
+                    let (s, e, o) = (*s, *e, *o);
                     if *exclusive {
-                        Ok(Value::Bool(*start <= *obj && *obj < *end))
+                        Ok(Value::Bool(s <= o && o < e))
                     } else {
-                        Ok(Value::Bool(*start <= *obj && *obj <= *end))
+                        Ok(Value::Bool(s <= o && o <= e))
                     }
                 }
-                (RValue::Integer(start), RValue::Integer(end), RValue::Float(obj)) => {
-                    let obj = *obj as i64;
+                (Value::Integer(s), Value::Integer(e), Value::Float(o)) => {
+                    let o = *o as i64;
+                    let (s, e) = (*s, *e);
                     if *exclusive {
-                        Ok(Value::Bool(*start <= obj && obj < *end))
+                        Ok(Value::Bool(s <= o && o < e))
                     } else {
-                        Ok(Value::Bool(*start <= obj && obj <= *end))
+                        Ok(Value::Bool(s <= o && o <= e))
                     }
                 }
                 _ => Ok(Value::Bool(false)),
@@ -55,18 +57,18 @@ pub fn mrb_range_is_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value
 
 pub fn mrb_range_each(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let block = args[0].as_ref().unwrap().to_rc();
+    let block = args[0].as_ref().unwrap().clone();
     match &this.value {
-        RValue::Range(start, end, exclusive) => match (&start.value, &end.value) {
-            (RValue::Integer(start), RValue::Integer(end)) => {
+        RValue::Range(start, end, exclusive) => match (start, end) {
+            (Value::Integer(start), Value::Integer(end)) => {
                 let start = *start;
                 let mut end = *end;
                 if *exclusive {
                     end -= 1;
                 }
                 for i in start..=end {
-                    let args = vec![RObject::integer_rc(i)];
-                    match mrb_call_block(vm, block.clone(), None, &args, 0) {
+                    let args = vec![Value::Integer(i)];
+                    match mrb_call_block(vm, block.to_rc(), None, &args, 0) {
                         Ok(_) => {}
                         // break inside the block stops each
                         // and its value becomes the result (Ruby semantics).

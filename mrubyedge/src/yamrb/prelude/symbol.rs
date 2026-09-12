@@ -46,11 +46,11 @@ fn mrb_symbol_to_proc(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Err
             .and_then(|a| a.as_ref())
             .cloned()
             .ok_or_else(|| Error::ArgumentError("no receiver given".to_string()))?;
-        let method_args: Vec<Rc<RObject>> = args[1..]
+        let method_args: Vec<Value> = args[1..]
             .iter()
-            .map(|a| a.as_ref().unwrap().to_rc())
+            .map(|a| a.as_ref().unwrap().clone())
             .collect();
-        mrb_funcall(vm, Some(recv.to_rc()), &method_name, &method_args).map(Value::from_rc)
+        mrb_funcall(vm, Some(recv), &method_name, &method_args)
     });
     vm.push_fnblock(Rc::new(rfn))?;
     let block = RProc {

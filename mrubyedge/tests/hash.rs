@@ -4,8 +4,6 @@ extern crate mrubyedge;
 mod helpers;
 
 use helpers::*;
-use mrubyedge::yamrb::value::RObject;
-use std::rc::Rc;
 
 #[test]
 fn hash_new_test() {
@@ -23,7 +21,7 @@ fn hash_new_test() {
     // Assert
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_new", &args).unwrap();
-    let result: i32 = result.as_ref().try_into().unwrap();
+    let result: i32 = result.try_into().unwrap();
     assert_eq!(result, 0);
 }
 
@@ -45,7 +43,6 @@ fn hash_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_hash", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 42);
@@ -70,21 +67,16 @@ fn hash_2_test() {
     vm.run().unwrap();
 
     // Assert
-    let args = vec![
-        Rc::new(RObject::symbol("bar".into())),
-        Rc::new(RObject::integer(54)),
-    ];
+    let args = vec![symbol("bar"), int(54)];
     let result: i32 = mrb_funcall(&mut vm, None, "test_hash_set", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 54);
 
-    let args = vec![Rc::new(RObject::symbol("bar".into()))];
+    let args = vec![symbol("bar")];
     let result: i32 = mrb_funcall(&mut vm, None, "test_hash_get", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 54);
@@ -115,7 +107,7 @@ fn hash_each_test() {
     // Assert
     let args = vec![];
     let value = mrb_funcall(&mut vm, None, "test_hash_1", &args).unwrap();
-    let value: i64 = value.as_ref().try_into().unwrap();
+    let value: i64 = value.try_into().unwrap();
     assert_eq!(value, 6);
 }
 
@@ -143,7 +135,7 @@ fn hash_each_test_2() {
     // Assert
     let args = vec![];
     let value = mrb_funcall(&mut vm, None, "test_hash_1", &args).unwrap();
-    let value: String = value.as_ref().try_into().unwrap();
+    let value: String = value.try_into().unwrap();
     assert!(value.contains("foo"));
     assert!(value.contains("bar"));
     assert!(value.contains("baz"));
@@ -165,7 +157,7 @@ fn hash_clear_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_clear", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 0);
 }
 
@@ -185,7 +177,7 @@ fn hash_dup_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_dup", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 1);
 }
 
@@ -203,7 +195,7 @@ fn hash_empty_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_empty", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -222,7 +214,7 @@ fn hash_has_key_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_has_key", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -241,7 +233,7 @@ fn hash_has_value_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_has_value", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -260,7 +252,7 @@ fn hash_key_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_key", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "b");
 }
 
@@ -279,7 +271,7 @@ fn hash_keys_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_keys", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 2);
 }
 
@@ -298,7 +290,7 @@ fn hash_values_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_values", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 2);
 }
 
@@ -319,7 +311,7 @@ fn hash_merge_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_merge", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 3);
 }
 
@@ -340,7 +332,7 @@ fn hash_merge_self_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_merge_self", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 3);
 }
 
@@ -360,7 +352,7 @@ fn hash_to_h_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_to_h", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -379,7 +371,7 @@ fn hash_flatten_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_flatten", &args).unwrap();
-    let arr: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
 
     // Hash#flatten returns an array of [key1, value1, key2, value2, ...]
     assert_eq!(arr.len(), 4);
@@ -388,14 +380,14 @@ fn hash_flatten_test() {
     let strings: Vec<String> = arr
         .iter()
         .filter_map(|obj| {
-            let s: Result<String, _> = obj.as_ref().try_into();
+            let s: Result<String, _> = obj.try_into();
             s.ok()
         })
         .collect();
     let ints: Vec<i64> = arr
         .iter()
         .filter_map(|obj| {
-            let i: Result<i64, _> = obj.as_ref().try_into();
+            let i: Result<i64, _> = obj.try_into();
             i.ok()
         })
         .collect();
@@ -421,7 +413,7 @@ fn hash_splat_literal_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_splat_literal", &args).unwrap();
-    let result: i32 = result.as_ref().try_into().unwrap();
+    let result: i32 = result.try_into().unwrap();
     assert_eq!(result, 1);
 }
 
@@ -440,7 +432,7 @@ fn hash_splat_literal_with_extra_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_splat_with_extra", &args).unwrap();
-    let result: i32 = result.as_ref().try_into().unwrap();
+    let result: i32 = result.try_into().unwrap();
     assert_eq!(result, 2);
 }
 
@@ -458,7 +450,7 @@ fn hash_literal_over_stack_flush_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_big_hash_literal", &args).unwrap();
-    let result: i32 = result.as_ref().try_into().unwrap();
+    let result: i32 = result.try_into().unwrap();
     assert_eq!(result, 60);
 }
 
@@ -477,9 +469,8 @@ fn hash_splat_literal_overrides_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_hash_splat_overrides", &args).unwrap();
-    let outer: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
-    let a: i32 = outer[0].as_ref().try_into().unwrap();
-    let b: i32 = outer[1].as_ref().try_into().unwrap();
+    let outer: Vec<Value> = result.try_into().unwrap();
+    let a: i32 = (&outer[0]).try_into().unwrap();
+    let b: i32 = (&outer[1]).try_into().unwrap();
     assert_eq!((a, b), (9, 2));
 }

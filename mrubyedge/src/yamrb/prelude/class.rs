@@ -64,8 +64,13 @@ fn mrb_class_new(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
 
     let obj = RObject::instance(class).to_refcount_assigned();
 
-    let rc_args: Vec<Rc<RObject>> = args.iter().map(|a| a.as_ref().unwrap().to_rc()).collect();
-    mrb_funcall(vm, Some(obj.clone()), "initialize", &rc_args)?;
+    let rc_args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
+    mrb_funcall(
+        vm,
+        Some(Value::from_rc(obj.clone())),
+        "initialize",
+        &rc_args,
+    )?;
 
     Ok(Value::from_rc(obj))
 }
@@ -178,9 +183,9 @@ fn mrb_class_ancestors(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Er
             ));
         }
     };
-    let ancestors: Vec<Rc<RObject>> = build_lookup_chain(&target_class)
+    let ancestors: Vec<Value> = build_lookup_chain(&target_class)
         .iter()
-        .map(|m| RObject::class_or_module(m.clone(), vm))
+        .map(|m| Value::from_rc(RObject::class_or_module(m.clone(), vm)))
         .collect();
     Ok(Value::from_rc(
         RObject::array(ancestors).to_refcount_assigned(),
@@ -216,11 +221,21 @@ fn test_class_attr_accessor() {
 
     let instance = RObject::instance(class).to_refcount_assigned();
 
-    let args = vec![RObject::integer(557188).to_refcount_assigned()];
-    mrb_funcall(&mut vm, Some(instance.clone()), "foo=", &args).expect("call obj.foo = failed");
+    let args = vec![Value::Integer(557188)];
+    mrb_funcall(
+        &mut vm,
+        Some(Value::from_rc(instance.clone())),
+        "foo=",
+        &args,
+    )
+    .expect("call obj.foo = failed");
 
-    let ret =
-        mrb_funcall(&mut vm, Some(instance.clone()), "foo", &[]).expect("call obj.foo failed");
-    let ret: i64 = ret.as_ref().try_into().expect("obj.foo must be integer");
+    let ret = mrb_funcall(&mut vm, Some(Value::from_rc(instance.clone())), "foo", &[])
+        .expect("call obj.foo failed");
+    let ret: i64 = ret
+        .to_rc()
+        .as_ref()
+        .try_into()
+        .expect("obj.foo must be integer");
     assert_eq!(ret, 557188);
 }

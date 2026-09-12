@@ -2,12 +2,11 @@ extern crate mec_mrbc_sys;
 extern crate mrubyedge;
 
 mod helpers;
-use std::rc::Rc;
 
 use helpers::*;
 use mrubyedge::Error;
 use mrubyedge::yamrb::helpers::mrb_define_cmethod;
-use mrubyedge::yamrb::value::{RObject, Value};
+use mrubyedge::yamrb::value::Value;
 use mrubyedge::yamrb::vm::VM;
 
 #[test]
@@ -36,10 +35,10 @@ end
         };
 
         // Call Ruby's double method via mrb_funcall
-        let args_for_call = vec![Rc::new(RObject::integer(n))];
+        let args_for_call = vec![Value::Integer(n)];
         let result = mrb_funcall(vm, None, "double", &args_for_call)?;
 
-        Ok(Value::from_rc(result))
+        Ok(result)
     }
 
     let kernel = vm.object_class.clone();
@@ -51,9 +50,9 @@ end
     );
 
     // Call the Rust method which internally calls mrb_funcall
-    let args = vec![Rc::new(RObject::integer(5))];
+    let args = vec![Value::Integer(5)];
     let result = mrb_funcall(&mut vm, None, "call_double", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 10);
 }
 
@@ -88,18 +87,15 @@ complex_calc(2, 3)
         let b: i64 = args[1].as_ref().unwrap().try_into()?;
 
         // Call add(a, b)
-        let add_args = vec![Rc::new(RObject::integer(a)), Rc::new(RObject::integer(b))];
+        let add_args = vec![Value::Integer(a), Value::Integer(b)];
         let sum = mrb_funcall(vm, None, "add", &add_args)?;
 
         // Call multiply(sum, 3)
-        let sum_val: i64 = sum.as_ref().try_into()?;
-        let mul_args = vec![
-            Rc::new(RObject::integer(sum_val)),
-            Rc::new(RObject::integer(3)),
-        ];
+        let sum_val: i64 = sum.try_into()?;
+        let mul_args = vec![Value::Integer(sum_val), Value::Integer(3)];
         let result = mrb_funcall(vm, None, "multiply", &mul_args)?;
 
-        Ok(Value::from_rc(result))
+        Ok(result)
     }
 
     let kernel = vm.object_class.clone();
@@ -117,12 +113,12 @@ complex_calc(2, 3)
     );
 
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 15);
 
     // Test: (2 + 3) * 3 = 15
-    let args = vec![Rc::new(RObject::integer(2)), Rc::new(RObject::integer(3))];
+    let args = vec![Value::Integer(2), Value::Integer(3)];
     let result = mrb_funcall(&mut vm, None, "complex_calc", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 15);
 }

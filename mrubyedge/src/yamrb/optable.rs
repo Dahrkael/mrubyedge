@@ -630,13 +630,13 @@ pub(crate) fn op_getgv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         .get(name)
         .ok_or_else(|| Error::internal(format!("global variable not found {name}")))?
         .clone();
-    vm.set_reg(a as usize, val);
+    vm.set_reg_value(a as usize, val);
     Ok(())
 }
 
 pub(crate) fn op_setgv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let val = vm.get_current_regs_cloned(a as usize)?;
+    let val = vm.get_reg_value(a as usize);
     // Clone only the key; the intermediate RSym clone was redundant.
     vm.globals
         .insert(vm.current_irep.syms[b as usize].name.clone(), val);
@@ -962,15 +962,14 @@ pub(crate) fn op_getidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             if i >= 0 && i < len {
                 borrow[i as usize].clone()
             } else {
-                RObject::nil_rc()
+                Value::Nil
             }
         };
-        vm.current_regs()[a].replace(Value::from_rc(val));
+        vm.current_regs()[a].replace(val);
         return Ok(());
     }
-    let args = vec![idx.to_rc()];
-    let val = mrb_funcall(vm, Some(recv.to_rc()), "[]", &args)?;
-    vm.current_regs()[a].replace(Value::from_rc(val));
+    let val = mrb_funcall(vm, Some(recv), "[]", &[idx])?;
+    vm.current_regs()[a].replace(val);
     Ok(())
 }
 
@@ -1000,13 +999,12 @@ pub(crate) fn op_setidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             i += len;
         }
         if i >= 0 && i < len {
-            borrow[i as usize] = val.to_rc();
+            borrow[i as usize] = val;
             return Ok(());
         }
         drop(borrow);
     }
-    let args = vec![idx.to_rc(), val.to_rc()];
-    mrb_funcall(vm, Some(recv.to_rc()), "[]=", &args)?;
+    mrb_funcall(vm, Some(recv), "[]=", &[idx, val])?;
     Ok(())
 }
 
@@ -1485,8 +1483,8 @@ pub(crate) fn do_op_send(
             .clone()
             .ok_or_else(|| Error::internal(format!("register {} is not assigned", blk_index)))?;
         if matches!(blk_val, Value::Symbol(_)) {
-            let proc_val = mrb_funcall(vm, Some(blk_val.to_rc()), "to_proc", &[])?;
-            block_val = Some(Value::from_rc(proc_val));
+            let proc_val = mrb_funcall(vm, Some(blk_val), "to_proc", &[])?;
+            block_val = Some(proc_val);
         } else {
             block_val = Some(blk_val);
         }
@@ -1833,14 +1831,11 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
                 arg_count = inner.len();
                 if arg_count <= buf.len() {
                     for (i, v) in inner.iter().enumerate() {
-                        buf[i] = Some(Value::from_rc(v.clone()));
+                        buf[i] = Some(v.clone());
                     }
                     args = &buf[..arg_count];
                 } else {
-                    tmp = inner
-                        .iter()
-                        .map(|v| Some(Value::from_rc(v.clone())))
-                        .collect();
+                    tmp = inner.iter().map(|v| Some(v.clone())).collect();
                     args = tmp.as_slice();
                 }
             }
@@ -1950,10 +1945,10 @@ pub(crate) fn op_argary(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         ));
     }
 
-    let mut values: Vec<Rc<RObject>> = Vec::new();
+    let mut values: Vec<Value> = Vec::new();
     let mut i = 0;
     for _ in 0..m1 {
-        values.push(vm.get_current_regs_cloned(i + 1)?);
+        values.push(Value::from_rc(vm.get_current_regs_cloned(i + 1)?));
         i += 1;
     }
     if r == 1 {
@@ -1963,12 +1958,12 @@ pub(crate) fn op_argary(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
                 values.push(item.clone());
             }
         } else {
-            values.push(rest);
+            values.push(Value::from_rc(rest));
         }
         i += 1;
     }
     for _ in 0..m2 {
-        values.push(vm.get_current_regs_cloned(i + 1)?);
+        values.push(Value::from_rc(vm.get_current_regs_cloned(i + 1)?));
         i += 1;
     }
     let array = RObject::array(values);
@@ -2051,7 +2046,7 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         let mut array = Vec::new();
         for i in 0..passed_args {
             if let Some(val) = vm.current_regs()[m1_argc + i + 1].take() {
-                array.push(val.to_rc());
+                array.push(val);
             }
         }
         let splat = RObject::array(array);
@@ -2083,8 +2078,8 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             .ok_or_else(|| Error::RuntimeError("kwargs not defined".to_string()))?
             .iter()
         {
-            let k = RObject::symbol_rc(&RSym::new(k.clone()));
-            map.insert(k.as_hash_key()?, (k, v.clone()));
+            let k = Value::Symbol(RSym::new(k.clone()).id);
+            map.insert(k.as_hash_key()?, (k, Value::from_rc(v.clone())));
         }
 
         let kwrest = RObject::hash(map);
@@ -2124,7 +2119,7 @@ pub(crate) fn op_key_p(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
     if kwrest_pos != 0 {
         let kwrest = vm.get_current_regs_cloned(kwrest_pos)?;
-        mrb_hash_delete(kwrest, key_robj)?;
+        mrb_hash_delete(kwrest, Value::from_rc(key_robj))?;
     }
 
     vm.set_reg(a as usize, val);
@@ -2332,11 +2327,10 @@ pub(crate) fn op_add(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vm.current_regs()[a].replace(result);
         return Ok(());
     }
-    let val1 = vm.current_regs()[a].clone().expect("op_add lhs").to_rc();
-    let val2 = vm.current_regs()[b].clone().expect("op_add rhs").to_rc();
-    let args = vec![val2.clone()];
-    let result = mrb_funcall(vm, Some(val1), "+", &args)?;
-    vm.set_reg(a, result);
+    let val1 = vm.current_regs()[a].clone().expect("op_add lhs");
+    let val2 = vm.current_regs()[b].clone().expect("op_add rhs");
+    let result = mrb_funcall(vm, Some(val1), "+", &[val2])?;
+    vm.set_reg_value(a, result);
     Ok(())
 }
 
@@ -2371,11 +2365,10 @@ pub(crate) fn op_sub(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vm.current_regs()[a].replace(result);
         return Ok(());
     }
-    let val1 = vm.current_regs()[a].clone().expect("op_sub lhs").to_rc();
-    let val2 = vm.current_regs()[b].clone().expect("op_sub rhs").to_rc();
-    let args = vec![val2.clone()];
-    let result = mrb_funcall(vm, Some(val1), "-", &args)?;
-    vm.set_reg(a, result);
+    let val1 = vm.current_regs()[a].clone().expect("op_sub lhs");
+    let val2 = vm.current_regs()[b].clone().expect("op_sub rhs");
+    let result = mrb_funcall(vm, Some(val1), "-", &[val2])?;
+    vm.set_reg_value(a, result);
     Ok(())
 }
 
@@ -2409,10 +2402,10 @@ pub(crate) fn op_mul(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vm.current_regs()[a].replace(result);
         return Ok(());
     }
-    let val1 = vm.current_regs()[a].clone().expect("op_mul lhs").to_rc();
-    let val2 = vm.current_regs()[b].clone().expect("op_mul rhs").to_rc();
+    let val1 = vm.current_regs()[a].clone().expect("op_mul lhs");
+    let val2 = vm.current_regs()[b].clone().expect("op_mul rhs");
     let result = mrb_funcall(vm, Some(val1), "*", &[val2])?;
-    vm.set_reg(a, result);
+    vm.set_reg_value(a, result);
     Ok(())
 }
 
@@ -2432,33 +2425,28 @@ pub(crate) fn op_div(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vm.current_regs()[a].replace(result);
         return Ok(());
     }
-    let val1 = vm.current_regs()[a].clone().expect("op_div lhs").to_rc();
-    let val2 = vm.current_regs()[b].clone().expect("op_div rhs").to_rc();
+    let val1 = vm.current_regs()[a].clone().expect("op_div lhs");
+    let val2 = vm.current_regs()[b].clone().expect("op_div rhs");
     let result = mrb_funcall(vm, Some(val1), "/", &[val2])?;
-    vm.set_reg(a, result);
+    vm.set_reg_value(a, result);
     Ok(())
 }
 
 /// Falls back to <=> dispatch for non-numeric operands, mirroring op_div.
-fn compare_via_spaceship(
-    vm: &mut VM,
-    val1: Rc<RObject>,
-    val2: Rc<RObject>,
-    op: &str,
-) -> Result<Rc<RObject>, Error> {
-    let r = mrb_funcall(vm, Some(val1.clone()), "<=>", std::slice::from_ref(&val2))?;
-    match r.value {
-        RValue::Nil => Err(Error::ArgumentError("comparison failed".into())),
+fn compare_via_spaceship(vm: &mut VM, val1: Value, val2: Value, op: &str) -> Result<Value, Error> {
+    let r = mrb_funcall(vm, Some(val1), "<=>", &[val2])?;
+    match &r {
+        Value::Nil => Err(Error::ArgumentError("comparison failed".into())),
         _ => {
-            let ord = i64::try_from(r.as_ref())
-                .map_err(|_| Error::ArgumentError("bad <=> result".into()))?;
+            let ord =
+                i64::try_from(&r).map_err(|_| Error::ArgumentError("bad <=> result".into()))?;
             let hit = match op {
                 "<" => ord < 0,
                 "<=" => ord <= 0,
                 ">" => ord > 0,
                 _ => ord >= 0,
             };
-            Ok(RObject::boolean_rc(hit))
+            Ok(Value::Bool(hit))
         }
     }
 }
@@ -2479,10 +2467,10 @@ pub(crate) fn op_lt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vm.current_regs()[a].replace(Value::Bool(result));
         return Ok(());
     }
-    let val1 = vm.current_regs()[a].clone().expect("op_lt lhs").to_rc();
-    let val2 = vm.current_regs()[b].clone().expect("op_lt rhs").to_rc();
+    let val1 = vm.current_regs()[a].clone().expect("op_lt lhs");
+    let val2 = vm.current_regs()[b].clone().expect("op_lt rhs");
     let result = compare_via_spaceship(vm, val1, val2, "<")?;
-    vm.set_reg(a, result);
+    vm.set_reg_value(a, result);
     Ok(())
 }
 
@@ -2502,10 +2490,10 @@ pub(crate) fn op_le(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vm.current_regs()[a].replace(Value::Bool(result));
         return Ok(());
     }
-    let val1 = vm.current_regs()[a].clone().expect("op_le lhs").to_rc();
-    let val2 = vm.current_regs()[b].clone().expect("op_le rhs").to_rc();
+    let val1 = vm.current_regs()[a].clone().expect("op_le lhs");
+    let val2 = vm.current_regs()[b].clone().expect("op_le rhs");
     let result = compare_via_spaceship(vm, val1, val2, "<=")?;
-    vm.set_reg(a, result);
+    vm.set_reg_value(a, result);
     Ok(())
 }
 
@@ -2528,10 +2516,10 @@ pub(crate) fn op_eq(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vm.current_regs()[a].replace(Value::Bool(equal));
         return Ok(());
     }
-    let lhs = vm.current_regs()[a].clone().expect("op_eq lhs").to_rc();
-    let rhs = vm.current_regs()[b].clone().expect("op_eq rhs").to_rc();
+    let lhs = vm.current_regs()[a].clone().expect("op_eq lhs");
+    let rhs = vm.current_regs()[b].clone().expect("op_eq rhs");
     let result = mrb_object_is_equal(vm, lhs, rhs);
-    vm.set_reg(a, result);
+    vm.set_reg_value(a, result);
     Ok(())
 }
 
@@ -2551,10 +2539,10 @@ pub(crate) fn op_gt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vm.current_regs()[a].replace(Value::Bool(result));
         return Ok(());
     }
-    let val1 = vm.current_regs()[a].clone().expect("op_gt lhs").to_rc();
-    let val2 = vm.current_regs()[b].clone().expect("op_gt rhs").to_rc();
+    let val1 = vm.current_regs()[a].clone().expect("op_gt lhs");
+    let val2 = vm.current_regs()[b].clone().expect("op_gt rhs");
     let result = compare_via_spaceship(vm, val1, val2, ">")?;
-    vm.set_reg(a, result);
+    vm.set_reg_value(a, result);
     Ok(())
 }
 
@@ -2574,10 +2562,10 @@ pub(crate) fn op_ge(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vm.current_regs()[a].replace(Value::Bool(result));
         return Ok(());
     }
-    let val1 = vm.current_regs()[a].clone().expect("op_ge lhs").to_rc();
-    let val2 = vm.current_regs()[b].clone().expect("op_ge rhs").to_rc();
+    let val1 = vm.current_regs()[a].clone().expect("op_ge lhs");
+    let val2 = vm.current_regs()[b].clone().expect("op_ge rhs");
     let result = compare_via_spaceship(vm, val1, val2, ">=")?;
-    vm.set_reg(a, result);
+    vm.set_reg_value(a, result);
     Ok(())
 }
 
@@ -2595,9 +2583,9 @@ fn do_op_array(vm: &mut VM, this: usize, start: usize, n: usize) -> Result<(), E
     let mut ary = Vec::with_capacity(n);
     for i in 0..n {
         if this == start && i == 0 {
-            ary.push(vm.take_current_regs(start)?);
+            ary.push(vm.take_reg_value(start));
         } else {
-            ary.push(vm.get_current_regs_cloned(start + i)?);
+            ary.push(vm.get_reg_value(start + i));
         }
     }
     let val = RObject::array(ary);
@@ -2639,9 +2627,7 @@ pub(crate) fn op_arypush(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = a as usize;
     let b = b as usize;
 
-    let items: Vec<Rc<RObject>> = (0..b)
-        .map(|i| vm.take_current_regs(a + 1 + i))
-        .collect::<Result<_, _>>()?;
+    let items: Vec<Value> = (0..b).map(|i| vm.take_reg_value(a + 1 + i)).collect();
 
     let ary = vm.get_current_regs_cloned(a)?;
     match &ary.value {
@@ -2670,7 +2656,7 @@ pub(crate) fn op_arysplat(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             vm.set_reg(a, ary.to_refcount_assigned());
         }
         _ => {
-            let ary = RObject::array(vec![val]);
+            let ary = RObject::array(vec![Value::from_rc(val)]);
             vm.set_reg(a, ary.to_refcount_assigned());
         }
     }
@@ -2684,8 +2670,8 @@ pub(crate) fn op_aref(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     match &array.value {
         RValue::Array(ary) => {
             let ary = ary.borrow();
-            let val = ary.get(index).cloned().unwrap_or_else(RObject::nil_rc);
-            vm.set_reg(a as usize, val);
+            let val = ary.get(index).cloned().unwrap_or(Value::Nil);
+            vm.set_reg_value(a as usize, val);
         }
         _ => {
             unreachable!("aref supports only array")
@@ -2738,9 +2724,14 @@ pub(crate) fn op_string(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_strcat(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let b = a + 1;
-    let val1 = vm.get_current_regs_cloned(a)?;
-    let val2 = vm.get_current_regs_cloned(b)?;
-    match (&val1.value, &val2.value) {
+    let val1 = vm.get_reg_value(a);
+    let val2 = vm.get_reg_value(b);
+    let ra = match &val1 {
+        Value::Object(a) => a,
+        _ => unreachable!("strcat supports only string"),
+    };
+    let rb = val2.to_rc();
+    match (&ra.value, &rb.value) {
         (RValue::String(s1, _), RValue::String(s2, _)) => {
             let mut s1 = s1.borrow_mut();
             let s2 = s2.borrow();
@@ -2758,8 +2749,11 @@ pub(crate) fn op_strcat(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         (RValue::String(s1, _), _) => {
             let mut s1 = s1.borrow_mut();
             let s2 = mrb_funcall(vm, Some(val2.clone()), "to_s", &[])?;
-            let s2 = match &s2.value {
-                RValue::String(s, _) => s.borrow(),
+            let s2 = match &s2 {
+                Value::Object(o) => match &o.value {
+                    RValue::String(s, _) => s.borrow(),
+                    _ => unreachable!("to_s must return string"),
+                },
                 _ => unreachable!("to_s must return string"),
             };
             for c in s2.to_vec().iter() {
@@ -2779,8 +2773,8 @@ pub(crate) fn op_hash(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let b = b as usize;
     let mut hash = RHashMap::default();
     for i in 0..b {
-        let key = vm.get_current_regs_cloned(a + i * 2)?;
-        let val = vm.get_current_regs_cloned(a + i * 2 + 1)?;
+        let key = vm.get_reg_value(a + i * 2);
+        let val = vm.get_reg_value(a + i * 2 + 1);
         hash.insert(key.as_hash_key()?, (key, val));
     }
     let val = RObject::hash(hash);
@@ -2793,13 +2787,13 @@ pub(crate) fn op_hashadd(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = a as usize;
     let b = b as usize;
 
-    let pairs: Vec<(Rc<RObject>, Rc<RObject>)> = (0..b)
+    let pairs: Vec<(Value, Value)> = (0..b)
         .map(|i| {
-            let key = vm.take_current_regs(a + i * 2 + 1)?;
-            let val = vm.take_current_regs(a + i * 2 + 2)?;
-            Ok((key, val))
+            let key = vm.take_reg_value(a + i * 2 + 1);
+            let val = vm.take_reg_value(a + i * 2 + 2);
+            (key, val)
         })
-        .collect::<Result<_, Error>>()?;
+        .collect();
 
     let hash = vm.get_current_regs_cloned(a)?;
     let mut inner = hash.hash_borrow_mut()?;
@@ -2945,8 +2939,8 @@ pub(crate) fn op_range_exc(vm: &mut VM, operand: &Fetched) -> Result<(), Error> 
 }
 
 fn do_op_range(vm: &mut VM, a: usize, b: usize, exclusive: bool) -> Result<(), Error> {
-    let val1 = vm.get_current_regs_cloned(a)?;
-    let val2 = vm.get_current_regs_cloned(b)?;
+    let val1 = vm.get_reg_value(a);
+    let val2 = vm.get_reg_value(b);
     let val = RObject::range(val1, val2, exclusive);
     vm.set_reg(a, val.to_refcount_assigned());
     Ok(())

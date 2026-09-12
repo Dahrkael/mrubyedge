@@ -2,10 +2,8 @@ extern crate mec_mrbc_sys;
 extern crate mrubyedge;
 
 mod helpers;
-use std::rc::Rc;
 
 use helpers::*;
-use mrubyedge::RObject;
 
 #[test]
 fn float_clamp_test() {
@@ -19,7 +17,7 @@ result1 + result2 + result3
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_float: f64 = result.as_ref().try_into().unwrap();
+    let result_float: f64 = result.try_into().unwrap();
     assert_eq!(result_float, 300.5); // 100.5 + 50.0 + 150.0
 }
 
@@ -35,7 +33,7 @@ result1 + result2 + result3
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_float: f64 = result.as_ref().try_into().unwrap();
+    let result_float: f64 = result.try_into().unwrap();
     assert_eq!(result_float, 300.5); // 100.5 + 50.0 + 150.0
 }
 
@@ -55,7 +53,7 @@ fn float_add_method_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_add", &args).unwrap();
-    let result_float: f64 = result.as_ref().try_into().unwrap();
+    let result_float: f64 = result.try_into().unwrap();
     assert_eq!(result_float, 8.7);
 }
 
@@ -75,7 +73,7 @@ fn float_sub_method_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_sub", &args).unwrap();
-    let result_float: f64 = result.as_ref().try_into().unwrap();
+    let result_float: f64 = result.try_into().unwrap();
     assert!((result_float - 7.3).abs() < 0.0001); // Floating point comparison
 }
 
@@ -95,7 +93,7 @@ fn float_add_integer_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_add_int", &args).unwrap();
-    let result_float: f64 = result.as_ref().try_into().unwrap();
+    let result_float: f64 = result.try_into().unwrap();
     assert_eq!(result_float, 8.5);
 }
 
@@ -114,7 +112,7 @@ fn float_infinite_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_infinite", &args).unwrap();
-    let infinite: bool = result.as_ref().try_into().unwrap();
+    let infinite: bool = result.try_into().unwrap();
     assert!(infinite);
 }
 
@@ -133,7 +131,7 @@ fn float_finite_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_finite", &args).unwrap();
-    let finite: bool = result.as_ref().try_into().unwrap();
+    let finite: bool = result.try_into().unwrap();
     assert!(finite);
 }
 
@@ -152,7 +150,7 @@ fn float_nan_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_nan", &args).unwrap();
-    let nan: bool = result.as_ref().try_into().unwrap();
+    let nan: bool = result.try_into().unwrap();
     assert!(nan);
 }
 
@@ -174,10 +172,10 @@ fn float_constants_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_constants", &args).unwrap();
-    let constants: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let constants: Vec<Value> = result.try_into().unwrap();
     let floats: Vec<f64> = constants
         .iter()
-        .map(|c| c.as_ref().try_into().unwrap())
+        .map(|c| c.try_into().unwrap())
         .collect::<Vec<_>>();
     assert_eq!(floats[0], f64::INFINITY);
     assert!(floats[1].is_nan());

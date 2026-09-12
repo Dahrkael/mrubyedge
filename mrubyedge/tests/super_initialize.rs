@@ -33,7 +33,7 @@ B1.new(42).value
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 42);
 }
 
@@ -61,7 +61,7 @@ Child.new(7).value
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 7);
 }
 
@@ -86,7 +86,7 @@ Derived.new.double(21)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 43);
 }
 
@@ -122,7 +122,7 @@ C.new(10).v
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 12);
 }
 
@@ -147,7 +147,7 @@ Derived.new.greet("mundo")
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(result_str, "hello mundo!");
 }
 
@@ -182,7 +182,7 @@ Child.new(10).value
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 11);
 }
 
@@ -211,7 +211,7 @@ Child.new(20, 22).sum
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 42);
 }
 
@@ -236,7 +236,7 @@ Derived.new.scale(6, 7)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 42);
 }
 
@@ -272,7 +272,7 @@ C.new(40).value
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 42);
 }
 
@@ -297,6 +297,6 @@ Derived.new.combine(10, 20, 12)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 42);
 }

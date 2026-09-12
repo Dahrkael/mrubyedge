@@ -4,8 +4,6 @@ extern crate mrubyedge;
 mod helpers;
 
 use helpers::*;
-use mrubyedge::yamrb::value::RObject;
-use std::rc::Rc;
 
 #[test]
 fn class_body_write_and_read_test() {
@@ -27,7 +25,7 @@ fn class_body_write_and_read_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_cvar_class_body", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 0);
 }
 
@@ -59,7 +57,7 @@ fn cvar_inheritance_shares_definition_site_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_cvar_inheritance", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 2);
 }
 
@@ -85,7 +83,7 @@ fn cvar_read_from_parent_through_subclass_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_cvar_read_parent", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "parent");
 }
 
@@ -131,9 +129,9 @@ fn cvar_separate_tables_per_class_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_cvar_separate", &args).unwrap();
-    let outer: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let outer: Vec<Value> = result.try_into().unwrap();
     assert_eq!(outer.len(), 2);
-    let a: i64 = outer[0].as_ref().try_into().unwrap();
-    let b: i64 = outer[1].as_ref().try_into().unwrap();
+    let a: i64 = (&outer[0]).try_into().unwrap();
+    let b: i64 = (&outer[1]).try_into().unwrap();
     assert_eq!((a, b), (1, 2));
 }

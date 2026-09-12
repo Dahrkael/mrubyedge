@@ -6,20 +6,20 @@ use crate::Error;
 use super::{
     optable::push_callinfo,
     value::{
-        FastOp, RClass, RFn, RHashMap, RModule, RObject, RProc, RSym, RValue, intern_symbol,
+        FastOp, RClass, RFn, RHashMap, RModule, RObject, RProc, RSym, RValue, Value, intern_symbol,
         resolve_method,
     },
-    vm::{CallerLabel, CallerReceiver, VM, arg_buf, rc_args},
+    vm::{CallerLabel, CallerReceiver, VM, arg_buf, value_args},
 };
 
 fn call_block(
     vm: &mut VM,
     block: RProc,
-    recv: Rc<RObject>,
-    args: &[Rc<RObject>],
+    recv: Value,
+    args: &[Value],
     method_info: Option<(RSym, Rc<RModule>)>,
     return_register: usize,
-) -> Result<Rc<RObject>, Error> {
+) -> Result<Value, Error> {
     let (method_id, method_owner) = match method_info {
         Some((id, owner)) => (id, Some(owner)),
         None => (RSym::new("<block>".to_string()), None),
@@ -51,11 +51,11 @@ fn call_block(
     let funcall_ci = vm.current_callinfo.clone().expect("callinfo just pushed");
 
     // Keep the state before the call inside the new window.
-    let prev_self = vm.set_reg(0, recv);
+    let prev_self = vm.swap_reg_value(0, recv);
 
-    let mut prev_args = vec![];
+    let mut prev_args = Vec::with_capacity(args.len());
     for (i, arg) in args.iter().enumerate() {
-        let old = vm.set_reg(i + 1, arg.clone());
+        let old = vm.swap_reg_value(i + 1, arg.clone());
         prev_args.push(old);
     }
 
@@ -63,7 +63,7 @@ fn call_block(
     // (do_op_send does the same on the send path). Without it, methods that
     // read their block local — e.g. super forwarding the block — hit an
     // unassigned register.
-    vm.set_reg(args.len() + 1, RObject::nil_rc());
+    vm.set_reg_value(args.len() + 1, Value::Nil);
 
     vm.pc.set(0);
     vm.current_irep = block
@@ -81,17 +81,9 @@ fn call_block(
 
     let res = vm.run_internal();
 
-    if let Some(prev) = prev_self {
-        vm.set_reg(0, prev);
-    } else {
-        vm.current_regs()[0].take();
-    }
+    vm.current_regs()[0] = prev_self;
     for (i, prev_arg) in prev_args.into_iter().enumerate() {
-        if let Some(prev) = prev_arg {
-            vm.set_reg(i + 1, prev);
-        } else {
-            vm.current_regs()[i + 1].take();
-        }
+        vm.current_regs()[i + 1] = prev_arg;
     }
 
     vm.current_callinfo = caller_ci;
@@ -101,8 +93,8 @@ fn call_block(
     vm.target_class = funcall_ci.target_class.clone();
     vm.upper = prev_upper;
 
-    match &res {
-        Ok(res) => Ok(res.clone()),
+    match res {
+        Ok(v) => Ok(v),
         Err(e) => {
             let err = if let Some(e) = e.downcast_ref::<Error>() {
                 e.clone()
@@ -132,20 +124,22 @@ fn call_block(
 pub fn mrb_call_block(
     vm: &mut VM,
     block: Rc<RObject>,
-    recv: Option<Rc<RObject>>,
-    args: &[Rc<RObject>],
+    recv: Option<Value>,
+    args: &[Value],
     return_register: usize,
-) -> Result<Rc<RObject>, Error> {
+) -> Result<Value, Error> {
     let block = match &block.value {
         RValue::Proc(p) => p.clone(),
         _ => panic!("Not a block"),
     };
     let recv = match recv {
         Some(r) => r,
-        None => block
-            .block_self
-            .clone()
-            .ok_or_else(|| Error::RuntimeError("No block self assigned".to_string()))?,
+        None => Value::from_rc(
+            block
+                .block_self
+                .clone()
+                .ok_or_else(|| Error::RuntimeError("No block self assigned".to_string()))?,
+        ),
     };
     vm.push_breadcrumb(
         "block_call",
@@ -160,7 +154,7 @@ pub fn mrb_call_block(
         let func = vm.pop_fnblock()?;
         let mut buf = arg_buf();
         let mut tmp = Vec::new();
-        let res = func(vm, rc_args(args, &mut buf, &mut tmp)).map(|v| v.to_rc());
+        let res = func(vm, value_args(args, &mut buf, &mut tmp));
         vm.push_fnblock(func)?;
         res
     } else {
@@ -188,12 +182,12 @@ pub fn mrb_call_block(
 /// Returns the result of the method call or an error if the method is not found or execution fails.
 pub fn mrb_funcall(
     vm: &mut VM,
-    top_self: Option<Rc<RObject>>,
+    top_self: Option<Value>,
     name: &str,
-    args: &[Rc<RObject>],
-) -> Result<Rc<RObject>, Error> {
+    args: &[Value],
+) -> Result<Value, Error> {
     let recv: Rc<RObject> = match &top_self {
-        Some(obj) => obj.clone(),
+        Some(v) => v.to_rc(),
         None => vm.getself()?,
     };
     let binding = recv.singleton_or_this_class(vm);
@@ -206,7 +200,7 @@ pub fn mrb_funcall(
                 ));
             }
 
-            let mut mm_args = vec![RObject::symbol_rc(&RSym::new(name.to_string()))];
+            let mut mm_args: Vec<Value> = vec![Value::Symbol(intern_symbol(name))];
             mm_args.extend_from_slice(args);
             return mrb_funcall(vm, top_self, "method_missing", &mm_args);
         }
@@ -236,7 +230,7 @@ pub fn mrb_funcall(
         call_block(
             vm,
             method,
-            recv.clone(),
+            Value::from_rc(recv.clone()),
             args,
             Some((method_id, owner_module)),
             0, // unused
@@ -246,7 +240,7 @@ pub fn mrb_funcall(
         let func = vm.fn_table.get(method.func.unwrap()).unwrap();
         let mut buf = arg_buf();
         let mut tmp = Vec::new();
-        let res = func(vm, rc_args(args, &mut buf, &mut tmp)).map(|v| v.to_rc());
+        let res = func(vm, value_args(args, &mut buf, &mut tmp));
         if let Some(prev) = prev {
             vm.set_reg(0, prev);
         } else {
@@ -260,7 +254,7 @@ pub fn mrb_funcall(
     res
 }
 
-pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Rc<RObject>, Error> {
+pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Value, Error> {
     let binding = recv.get_class(vm);
     let (owner_module, method) = resolve_method(&binding, "inspect")
         .ok_or_else(|| Error::NoMethodError("inspect".to_string()))?;
@@ -272,7 +266,7 @@ pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Rc<RObject>, E
         call_block(
             vm,
             method,
-            recv.clone(),
+            Value::from_rc(recv.clone()),
             &[],
             Some((method_id, owner_module)),
             0, // unused
@@ -280,7 +274,7 @@ pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Rc<RObject>, E
     } else {
         let old = vm.set_reg(0, recv.clone());
         let func = vm.fn_table.get(method.func.unwrap()).unwrap();
-        let res = func(vm, &[]).map(|v| v.to_rc());
+        let res = func(vm, &[]);
         if let Some(old) = old {
             vm.set_reg(0, old);
         } else {
@@ -292,10 +286,7 @@ pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Rc<RObject>, E
 
 pub fn mrb_call_p(vm: &mut VM, recv: Rc<RObject>) {
     let inspect = mrb_call_inspect(vm, recv).expect("failed to call inspect");
-    let inspect: String = inspect
-        .as_ref()
-        .try_into()
-        .expect("failed to convert to string");
+    let inspect: String = (&inspect).try_into().expect("failed to convert to string");
     eprintln!("{}", inspect);
 }
 
@@ -457,12 +448,12 @@ fn test_mrb_inspect() -> Result<(), Box<dyn std::error::Error>> {
 
     let class_a = vm.define_class("A", None, None);
     let class_a = RObject::class(class_a, &mut vm);
-    let obj_a = mrb_funcall(&mut vm, Some(class_a), "new", &[])?;
-    let res = mrb_call_inspect(&mut vm, obj_a.clone()).unwrap();
-    let res_str: String = res.as_ref().try_into().unwrap();
+    let obj_a = mrb_funcall(&mut vm, Some(Value::from_rc(class_a)), "new", &[])?;
+    let res = mrb_call_inspect(&mut vm, obj_a.to_rc()).unwrap();
+    let res_str: String = (&res).try_into().unwrap();
     assert_eq!(
         res_str,
-        "#<A:0x".to_string() + &format!("{:016x}", obj_a.object_id.get()) + ">"
+        "#<A:0x".to_string() + &format!("{:016x}", obj_a.to_rc().object_id.get()) + ">"
     );
 
     // assert not to brake registers

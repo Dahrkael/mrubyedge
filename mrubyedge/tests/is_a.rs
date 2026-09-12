@@ -44,27 +44,26 @@ fn is_a_with_inheritance_and_modules_test() {
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let values: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let values: Vec<Value> = result.try_into().unwrap();
 
     // o.is_a?(X) => true
-    let val1: bool = values[0].as_ref().try_into().unwrap();
+    let val1: bool = (&values[0]).try_into().unwrap();
     assert_eq!(val1, true);
 
     // o.is_a?(Y) => true
-    let val2: bool = values[1].as_ref().try_into().unwrap();
+    let val2: bool = (&values[1]).try_into().unwrap();
     assert_eq!(val2, true);
 
     // o.is_a?(Z) => true
-    let val3: bool = values[2].as_ref().try_into().unwrap();
+    let val3: bool = (&values[2]).try_into().unwrap();
     assert_eq!(val3, true);
 
     // o.is_a?(W) => true
-    let val4: bool = values[3].as_ref().try_into().unwrap();
+    let val4: bool = (&values[3]).try_into().unwrap();
     assert_eq!(val4, true);
 
     // o.is_a?(V) => false
-    let val5: bool = values[4].as_ref().try_into().unwrap();
+    let val5: bool = (&values[4]).try_into().unwrap();
     assert_eq!(val5, false);
 }
 
@@ -95,8 +94,7 @@ fn is_a_with_ancestors_test() {
     let result = vm.run().unwrap();
 
     // Just verify it runs successfully and returns an array
-    let values: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let values: Vec<Value> = result.try_into().unwrap();
 
     // Should have at least Y, W, Z, Object, etc.
     assert!(values.len() >= 3);
@@ -124,12 +122,11 @@ fn is_a_basic_types_test() {
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let values: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let values: Vec<Value> = result.try_into().unwrap();
 
     // All should be true
     for (i, val) in values.iter().enumerate() {
-        let bool_val: bool = val.as_ref().try_into().unwrap();
+        let bool_val: bool = val.try_into().unwrap();
         assert_eq!(bool_val, true, "Test case {} failed", i);
     }
 }
@@ -156,13 +153,12 @@ fn is_a_object_superclass_test() {
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let values: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let values: Vec<Value> = result.try_into().unwrap();
 
     // Both should be true
-    let val1: bool = values[0].as_ref().try_into().unwrap();
+    let val1: bool = (&values[0]).try_into().unwrap();
     assert_eq!(val1, true);
 
-    let val2: bool = values[1].as_ref().try_into().unwrap();
+    let val2: bool = (&values[1]).try_into().unwrap();
     assert_eq!(val2, true);
 }

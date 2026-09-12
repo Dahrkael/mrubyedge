@@ -2,10 +2,7 @@ extern crate mec_mrbc_sys;
 extern crate mrubyedge;
 
 mod helpers;
-use std::rc::Rc;
-
 use helpers::*;
-use mrubyedge::yamrb::value::RObject;
 
 #[test]
 fn return_test() {
@@ -21,15 +18,15 @@ end
     vm.run().unwrap();
 
     // Assert
-    let args = vec![Rc::new(RObject::integer(10))];
+    let args = vec![Value::Integer(10)];
     let result = mrb_funcall(&mut vm, None, "fib", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 89);
 
     // Assert 2
-    let args = vec![Rc::new(RObject::integer(1))];
+    let args = vec![Value::Integer(1)];
     let result = mrb_funcall(&mut vm, None, "fib", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 1);
 }
 
@@ -48,7 +45,7 @@ fib(10)
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 89);
 }
 
@@ -67,6 +64,6 @@ fib(1)
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 1);
 }

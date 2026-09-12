@@ -128,7 +128,6 @@ fn rescue_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescue: Intentional Error 3");
@@ -160,7 +159,6 @@ fn rescue_nest_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise_parent", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescue: Intentional Error 4");
@@ -197,7 +195,6 @@ fn rescue_nest_nest_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise_parent", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescue: Intentional Error 4b");

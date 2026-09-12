@@ -24,7 +24,7 @@ fn regexp_match_operator_test() {
     // Assert
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_regexp_match", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 1); // "ruby" starts at index 1 in "mrubyedge"
 }
 
@@ -99,22 +99,22 @@ fn regexp_match_captures_test() {
         assert_eq!(arr.borrow().len(), 4);
 
         // Check first capture (full match)
-        let capture0: String = arr.borrow()[0].as_ref().try_into().unwrap();
+        let capture0: String = arr.borrow()[0].try_into().unwrap();
         assert_eq!(
             capture0,
             "mruby/edge is a mruby for embedded systems, built for rubyists"
         );
 
         // Check first group
-        let capture1: String = arr.borrow()[1].as_ref().try_into().unwrap();
+        let capture1: String = arr.borrow()[1].try_into().unwrap();
         assert_eq!(capture1, "mruby");
 
         // Check second group
-        let capture2: String = arr.borrow()[2].as_ref().try_into().unwrap();
+        let capture2: String = arr.borrow()[2].try_into().unwrap();
         assert_eq!(capture2, "mruby");
 
         // Check third group
-        let capture3: String = arr.borrow()[3].as_ref().try_into().unwrap();
+        let capture3: String = arr.borrow()[3].try_into().unwrap();
         assert_eq!(capture3, "rubyists");
     } else {
         panic!("Expected array result");

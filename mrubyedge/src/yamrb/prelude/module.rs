@@ -28,9 +28,16 @@ fn mrb_module_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
         ));
     }
 
-    let arg0 = args[0].as_ref().unwrap().to_rc();
-    let mixin = match &arg0.value {
-        RValue::Module(module) => module.clone(),
+    let arg0 = args[0].as_ref().unwrap().clone();
+    let mixin = match &arg0 {
+        Value::Object(o) => match &o.value {
+            RValue::Module(module) => module.clone(),
+            _ => {
+                return Err(Error::RuntimeError(
+                    "Module#include expects module arguments".to_string(),
+                ));
+            }
+        },
         _ => {
             return Err(Error::RuntimeError(
                 "Module#include expects module arguments".to_string(),
@@ -84,9 +91,9 @@ fn mrb_module_ancestors(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, E
             ));
         }
     };
-    let ancestors: Vec<Rc<RObject>> = build_module_lookup_chain(&target_module)
+    let ancestors: Vec<Value> = build_module_lookup_chain(&target_module)
         .iter()
-        .map(|m| RObject::module(m.clone()).to_refcount_assigned())
+        .map(|m| Value::from_rc(RObject::module(m.clone()).to_refcount_assigned()))
         .collect();
     Ok(Value::from_rc(
         RObject::array(ancestors).to_refcount_assigned(),

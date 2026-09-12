@@ -101,9 +101,9 @@ fn mrb_integer_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Er
 fn mrb_integer_times(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this: i64 = vm.getself()?.as_ref().try_into()?;
     for i in 0..this {
-        let block = args[0].as_ref().unwrap().to_rc();
-        let args = vec![RObject::integer_rc(i)];
-        match mrb_call_block(vm, block, None, &args, 0) {
+        let block = args[0].as_ref().unwrap().clone();
+        let args = vec![Value::Integer(i)];
+        match mrb_call_block(vm, block.to_rc(), None, &args, 0) {
             Ok(_) => {}
             // break inside the block stops the iterator and
             // its value becomes the method result (Ruby semantics). The

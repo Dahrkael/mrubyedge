@@ -18,7 +18,7 @@ fn enum_map_break_returns_value() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: i64 = result.as_ref().try_into().expect("map break integer");
+    let v: i64 = result.try_into().expect("map break integer");
     assert_eq!(v, 20);
 }
 
@@ -32,7 +32,7 @@ r
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: String = result.as_ref().try_into().expect("select break symbol");
+    let v: String = result.try_into().expect("select break symbol");
     assert_eq!(v, "stop");
 }
 
@@ -45,7 +45,7 @@ fn enum_find_break_returns_value() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: i64 = result.as_ref().try_into().expect("find break integer");
+    let v: i64 = result.try_into().expect("find break integer");
     assert_eq!(v, 99);
 }
 
@@ -60,7 +60,7 @@ fn enum_all_p_break_returns_value() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: String = result.as_ref().try_into().expect("all? break string");
+    let v: String = result.try_into().expect("all? break string");
     assert_eq!(v, "no");
 }
 
@@ -73,7 +73,7 @@ fn enum_any_p_break_returns_value() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: i64 = result.as_ref().try_into().expect("any? break integer");
+    let v: i64 = result.try_into().expect("any? break integer");
     assert_eq!(v, 7);
 }
 
@@ -86,7 +86,7 @@ fn enum_delete_if_break_returns_value() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: String = result.as_ref().try_into().expect("delete_if break symbol");
+    let v: String = result.try_into().expect("delete_if break symbol");
     assert_eq!(v, "halt");
 }
 
@@ -99,10 +99,7 @@ fn enum_each_with_index_break_returns_index() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: i64 = result
-        .as_ref()
-        .try_into()
-        .expect("each_with_index break index");
+    let v: i64 = result.try_into().expect("each_with_index break index");
     assert_eq!(v, 1);
 }
 
@@ -115,7 +112,7 @@ fn enum_sort_by_break_returns_value() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: String = result.as_ref().try_into().expect("sort_by break symbol");
+    let v: String = result.try_into().expect("sort_by break symbol");
     assert_eq!(v, "sorted_off");
 }
 
@@ -128,7 +125,7 @@ fn enum_reduce_break_returns_value() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: i64 = result.as_ref().try_into().expect("reduce break integer");
+    let v: i64 = result.try_into().expect("reduce break integer");
     assert_eq!(v, -1);
 }
 
@@ -141,7 +138,7 @@ fn enum_count_break_returns_value() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: i64 = result.as_ref().try_into().expect("count break integer");
+    let v: i64 = result.try_into().expect("count break integer");
     assert_eq!(v, 5);
 }
 
@@ -157,10 +154,9 @@ n = 0
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().expect("array result");
-    let n: i64 = arr[0].as_ref().try_into().unwrap();
-    let t: i64 = arr[1].as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().expect("array result");
+    let n: i64 = (&arr[0]).try_into().unwrap();
+    let t: i64 = (&arr[1]).try_into().unwrap();
     assert_eq!(n, 4);
     assert_eq!(t, 3);
 }

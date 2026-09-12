@@ -6,7 +6,7 @@ use helpers::*;
 
 use std::rc::Rc;
 
-use mrubyedge::yamrb::helpers::{mrb_define_singleton_cmethod, mrb_funcall};
+use mrubyedge::yamrb::helpers::mrb_define_singleton_cmethod;
 use mrubyedge::yamrb::value::{RObject, RValue, Value};
 use mrubyedge::yamrb::vm::VM;
 
@@ -27,7 +27,7 @@ M1.answer
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: i64 = result.as_ref().try_into().expect("answer must be integer");
+    let value: i64 = result.try_into().expect("answer must be integer");
     assert_eq!(value, 42);
 }
 
@@ -48,7 +48,7 @@ M2.answer
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: i64 = result.as_ref().try_into().expect("answer must be integer");
+    let value: i64 = result.try_into().expect("answer must be integer");
     assert_eq!(value, 7);
 }
 
@@ -70,7 +70,7 @@ M3.answer
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: i64 = result.as_ref().try_into().expect("answer must be integer");
+    let value: i64 = result.try_into().expect("answer must be integer");
     assert_eq!(value, 9);
 }
 
@@ -109,12 +109,24 @@ end
 
     // Both reachable through the canonical wrapper.
     let q2 = vm.get_const_by_name("Q").expect("Q still defined");
-    let n = mrb_funcall(&mut vm, Some(q2.clone()), "native_answer", &[]).unwrap();
-    let n: i64 = n.as_ref().try_into().expect("native answer integer");
+    let n = mrb_funcall(
+        &mut vm,
+        Some(mrubyedge::yamrb::value::Value::from_rc(q2.clone())),
+        "native_answer",
+        &[],
+    )
+    .unwrap();
+    let n: i64 = n.try_into().expect("native answer integer");
     assert_eq!(n, 5);
 
-    let r = mrb_funcall(&mut vm, Some(q2), "ruby_answer", &[]).unwrap();
-    let r: i64 = r.as_ref().try_into().expect("ruby answer integer");
+    let r = mrb_funcall(
+        &mut vm,
+        Some(mrubyedge::yamrb::value::Value::from_rc(q2)),
+        "ruby_answer",
+        &[],
+    )
+    .unwrap();
+    let r: i64 = r.try_into().expect("ruby answer integer");
     assert_eq!(r, 10);
 }
 
@@ -149,12 +161,24 @@ end
     vm.eval_rite(&mut rite2).unwrap();
 
     let r = vm.get_const_by_name("R").expect("R defined");
-    let a = mrb_funcall(&mut vm, Some(r.clone()), "alpha", &[]).unwrap();
-    let a: i64 = a.as_ref().try_into().expect("alpha integer");
+    let a = mrb_funcall(
+        &mut vm,
+        Some(mrubyedge::yamrb::value::Value::from_rc(r.clone())),
+        "alpha",
+        &[],
+    )
+    .unwrap();
+    let a: i64 = a.try_into().expect("alpha integer");
     assert_eq!(a, 1);
 
-    let b = mrb_funcall(&mut vm, Some(r), "beta", &[]).unwrap();
-    let b: i64 = b.as_ref().try_into().expect("beta integer");
+    let b = mrb_funcall(
+        &mut vm,
+        Some(mrubyedge::yamrb::value::Value::from_rc(r)),
+        "beta",
+        &[],
+    )
+    .unwrap();
+    let b: i64 = b.try_into().expect("beta integer");
     assert_eq!(b, 2);
 }
 
@@ -186,8 +210,14 @@ fn second_wrapper_shares_singleton_state() {
     let w2: Rc<RObject> = Rc::new(RObject::module(inner));
 
     // The singleton must resolve through the second wrapper too.
-    let res = mrb_funcall(&mut vm, Some(w2), "tag", &[]).unwrap();
-    let v: i64 = res.as_ref().try_into().expect("tag integer");
+    let res = mrb_funcall(
+        &mut vm,
+        Some(mrubyedge::yamrb::value::Value::from_rc(w2)),
+        "tag",
+        &[],
+    )
+    .unwrap();
+    let v: i64 = res.try_into().expect("tag integer");
     assert_eq!(v, 3);
 }
 
@@ -207,7 +237,7 @@ C1.answer
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: i64 = result.as_ref().try_into().expect("answer must be integer");
+    let value: i64 = result.try_into().expect("answer must be integer");
     assert_eq!(value, 11);
 }
 
@@ -229,6 +259,6 @@ obj.hello
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: String = result.as_ref().try_into().expect("hello returns string");
+    let value: String = result.try_into().expect("hello returns string");
     assert_eq!(value, "hi");
 }

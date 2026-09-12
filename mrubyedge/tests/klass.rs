@@ -30,7 +30,6 @@ fn attr_reader_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_main", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 123);
@@ -56,7 +55,7 @@ fn attr_reader_2_test() {
     // Assert
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_main", &args).unwrap();
-    assert!(result.as_ref().is_nil());
+    assert!(result.is_nil());
 }
 
 #[test]
@@ -81,7 +80,6 @@ fn attr_accessor_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_main", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "Hola, attr");
@@ -119,12 +117,10 @@ fn class_definition_isolation_test() {
     let args = vec![];
     let val1: i32 = mrb_funcall(&mut vm, None, "test_main1", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     let val2: i32 = mrb_funcall(&mut vm, None, "test_main2", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(val1, 123);
@@ -159,7 +155,6 @@ fn class_inheritance_super_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_main", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 124);
@@ -187,7 +182,6 @@ fn class_define_class_method_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_main", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 123);
@@ -221,7 +215,6 @@ fn class_inheritance_class_method_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_main", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 124);
@@ -255,13 +248,10 @@ fn class_can_have_singleton_instance_variables() {
     vm.run().unwrap();
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_main_0", &args).unwrap();
-    assert!(result.as_ref().is_nil());
+    assert!(result.is_nil());
 
     let result = mrb_funcall(&mut vm, None, "test_main_1", &args).unwrap();
-    let value: String = result
-        .as_ref()
-        .try_into()
-        .expect("get_world should return string");
+    let value: String = result.try_into().expect("get_world should return string");
     assert_eq!(value, "hello");
 }
 
@@ -286,7 +276,6 @@ fn attr_accessor_independent_instances() {
     vm.run().unwrap();
     let result: String = mrb_funcall(&mut vm, None, "test_main", &[])
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, "one:two");
@@ -311,7 +300,6 @@ fn attr_writer_returns_value() {
     vm.run().unwrap();
     let result: i32 = mrb_funcall(&mut vm, None, "test_main", &[])
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 7);
@@ -337,7 +325,6 @@ fn attr_accessor_multiple_symbols() {
     vm.run().unwrap();
     let result: i32 = mrb_funcall(&mut vm, None, "test_main", &[])
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 3);

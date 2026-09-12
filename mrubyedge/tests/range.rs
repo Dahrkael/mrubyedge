@@ -23,7 +23,6 @@ fn range_inclusive_each_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_range_each", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 55);
@@ -48,7 +47,6 @@ fn range_exclusive_each_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_range_each", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 45);
@@ -70,7 +68,7 @@ fn range_map_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_range_map", &args).unwrap();
-    let result: (i32, i32, i32) = result.as_ref().try_into().unwrap();
+    let result: (i32, i32, i32) = result.try_into().unwrap();
     assert_eq!(result, (2, 4, 6));
 }
 
@@ -89,7 +87,6 @@ fn range_sum_inclusive_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_range_sum", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     // 0 + 1 + 2 + ... + 10 = 55
@@ -111,7 +108,6 @@ fn range_sum_exclusive_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_range_sum", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     // 0 + 1 + 2 + ... + 9 = 45
@@ -133,7 +129,6 @@ fn range_sum_with_init_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_range_sum_init", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     // 10 + 1 + 2 + 3 + 4 + 5 = 25

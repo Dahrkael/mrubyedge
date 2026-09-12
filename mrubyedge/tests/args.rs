@@ -21,7 +21,7 @@ sum(1, 2, 3, 4, 5)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 15);
 }
 
@@ -42,7 +42,7 @@ splat_it(10, 20, 30, 40, 50)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 150);
 }
 
@@ -59,6 +59,6 @@ splat_it(10, 20)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 0);
 }

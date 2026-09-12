@@ -31,7 +31,6 @@ fn break_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 3);
@@ -56,7 +55,6 @@ fn break_test_with_c_func() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5);
@@ -82,7 +80,6 @@ fn break_test_with_c_func_2() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5);
@@ -130,7 +127,6 @@ fn break_test_nested() {
     let args = vec![];
     let result: (i32, i32) = mrb_funcall(&mut vm, None, "test_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, (5, 6));
@@ -162,7 +158,6 @@ fn break_test_nested_with_closure() {
     let args = vec![];
     let result: (i32, i32) = mrb_funcall(&mut vm, None, "test_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, (3, 36));
@@ -183,7 +178,7 @@ fn break_test_toplevel() {
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
 
     // Assert
-    let result: i32 = vm.run().unwrap().as_ref().try_into().unwrap();
+    let result: i32 = vm.run().unwrap().try_into().unwrap();
     assert_eq!(result, 10);
 }
 

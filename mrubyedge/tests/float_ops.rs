@@ -14,7 +14,7 @@ fn test_float_mul() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: f64 = result.as_ref().try_into().unwrap();
+    let value: f64 = result.try_into().unwrap();
     assert_eq!(value, 7.0);
 }
 
@@ -28,7 +28,7 @@ fn test_float_div() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: f64 = result.as_ref().try_into().unwrap();
+    let value: f64 = result.try_into().unwrap();
     assert_eq!(value, 5.0);
 }
 
@@ -42,7 +42,7 @@ fn test_float_positive() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: f64 = result.as_ref().try_into().unwrap();
+    let value: f64 = result.try_into().unwrap();
     assert_eq!(value, 3.5);
 }
 
@@ -56,7 +56,7 @@ fn test_float_negative() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: f64 = result.as_ref().try_into().unwrap();
+    let value: f64 = result.try_into().unwrap();
     assert_eq!(value, -3.5);
 }
 
@@ -70,7 +70,7 @@ fn test_float_power() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: f64 = result.as_ref().try_into().unwrap();
+    let value: f64 = result.try_into().unwrap();
     assert_eq!(value, 8.0);
 }
 
@@ -84,7 +84,7 @@ fn test_float_abs() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: f64 = result.as_ref().try_into().unwrap();
+    let value: f64 = result.try_into().unwrap();
     assert_eq!(value, 3.5);
 }
 
@@ -98,7 +98,7 @@ fn test_float_mul_with_integer() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: f64 = result.as_ref().try_into().unwrap();
+    let value: f64 = result.try_into().unwrap();
     assert_eq!(value, 7.0);
 }
 
@@ -112,7 +112,7 @@ fn test_float_div_with_integer() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: f64 = result.as_ref().try_into().unwrap();
+    let value: f64 = result.try_into().unwrap();
     assert_eq!(value, 5.0);
 }
 
@@ -126,7 +126,7 @@ fn test_float_add() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: f64 = result.as_ref().try_into().unwrap();
+    let value: f64 = result.try_into().unwrap();
     assert_eq!(value, 6.0);
 }
 
@@ -140,6 +140,6 @@ fn test_float_sub() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let value: f64 = result.as_ref().try_into().unwrap();
+    let value: f64 = result.try_into().unwrap();
     assert_eq!(value, 6.5);
 }

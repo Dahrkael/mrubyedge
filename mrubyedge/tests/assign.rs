@@ -22,7 +22,6 @@ fn assign_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_main", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 60);
@@ -51,7 +50,6 @@ fn assign_post_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_main", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, -40);

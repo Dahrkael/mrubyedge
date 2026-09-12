@@ -87,13 +87,10 @@ pub fn mrb_hash_new(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Erro
 
 fn mrb_hash_get_index_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    Ok(Value::from_rc(mrb_hash_get_index(
-        this,
-        args[0].as_ref().unwrap().to_rc(),
-    )?))
+    mrb_hash_get_index(this, args[0].as_ref().unwrap().clone())
 }
 
-pub fn mrb_hash_get_index(this: Rc<RObject>, key: Rc<RObject>) -> Result<Rc<RObject>, Error> {
+pub fn mrb_hash_get_index(this: Rc<RObject>, key: Value) -> Result<Value, Error> {
     let hash = match &this.value {
         RValue::Hash(a) => a.clone(),
         _ => {
@@ -103,25 +100,21 @@ pub fn mrb_hash_get_index(this: Rc<RObject>, key: Rc<RObject>) -> Result<Rc<RObj
         }
     };
     let hash = hash.borrow();
-    let key = key.as_ref().as_hash_key()?;
+    let key = key.as_hash_key()?;
     match hash.get(&key) {
         Some((_, value)) => Ok(value.clone()),
-        None => Ok(RObject::nil_rc()),
+        None => Ok(Value::Nil),
     }
 }
 
 fn mrb_hash_set_index_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let key = args[0].as_ref().unwrap().to_rc();
-    let value = args[1].as_ref().unwrap().to_rc();
-    Ok(Value::from_rc(mrb_hash_set_index(this, key, value)?))
+    let key = args[0].as_ref().unwrap().clone();
+    let value = args[1].as_ref().unwrap().clone();
+    mrb_hash_set_index(this, key, value)
 }
 
-pub fn mrb_hash_set_index(
-    this: Rc<RObject>,
-    key: Rc<RObject>,
-    value: Rc<RObject>,
-) -> Result<Rc<RObject>, Error> {
+pub fn mrb_hash_set_index(this: Rc<RObject>, key: Value, value: Value) -> Result<Value, Error> {
     let hash = match &this.value {
         RValue::Hash(a) => a,
         _ => {
@@ -133,10 +126,10 @@ pub fn mrb_hash_set_index(
     let mut hash = hash.borrow_mut();
     let hashed = key.as_hash_key()?;
     hash.insert(hashed, (key.clone(), value.clone()));
-    Ok(value.clone())
+    Ok(value)
 }
 
-pub fn mrb_hash_delete(this: Rc<RObject>, key: Rc<RObject>) -> Result<Rc<RObject>, Error> {
+pub fn mrb_hash_delete(this: Rc<RObject>, key: Value) -> Result<Value, Error> {
     let hash = match &this.value {
         RValue::Hash(a) => a,
         _ => {
@@ -148,26 +141,26 @@ pub fn mrb_hash_delete(this: Rc<RObject>, key: Rc<RObject>) -> Result<Rc<RObject
     let mut hash = hash.borrow_mut();
     let hashed = key.as_hash_key()?;
     match hash.remove(&hashed) {
-        Some((_, value)) => Ok(value.clone()),
-        None => Ok(RObject::nil_rc()),
+        Some((_, value)) => Ok(value),
+        None => Ok(Value::Nil),
     }
 }
 
 fn mrb_hash_delete_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let key = args[0].as_ref().unwrap().to_rc();
-    Ok(Value::from_rc(mrb_hash_delete(this, key)?))
+    let key = args[0].as_ref().unwrap().clone();
+    mrb_hash_delete(this, key)
 }
 
 fn mrb_hash_each(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let block = args[0].as_ref().unwrap().to_rc();
+    let block = args[0].as_ref().unwrap().clone();
     match &this.value {
         RValue::Hash(hash) => {
             let hash = hash.borrow();
             for (key, value) in hash.values() {
                 let args = vec![key.clone(), value.clone()];
-                match mrb_call_block(vm, block.clone(), None, &args, 0) {
+                match mrb_call_block(vm, block.to_rc(), None, &args, 0) {
                     Ok(_) => {}
                     // break inside the block stops each and
                     // its value becomes the method result (Ruby semantics).
@@ -202,8 +195,10 @@ fn mrb_hash_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error
     let hash = hash.borrow();
     let mut parts: Vec<String> = Vec::new();
     for (key, value) in hash.values() {
-        let key_inspect: String = mrb_call_inspect(vm, key.clone())?.as_ref().try_into()?;
-        let value_inspect: String = mrb_call_inspect(vm, value.clone())?.as_ref().try_into()?;
+        let ki = mrb_call_inspect(vm, key.to_rc())?;
+        let key_inspect: String = (&ki).try_into()?;
+        let vi = mrb_call_inspect(vm, value.to_rc())?;
+        let value_inspect: String = (&vi).try_into()?;
         parts.push(format!("{}=>{}", key_inspect, value_inspect));
     }
     let inspect = format!("{{{}}}", parts.join(", "));
@@ -225,15 +220,11 @@ fn test_mrb_hash_set_and_index() {
 
     let hash = Rc::new(RObject::hash(RHashMap::default()));
     let keys = [
-        Rc::new(RObject::string("key".to_string())),
-        Rc::new(RObject::integer(1234)),
-        Rc::new(RObject::symbol("key2".into())),
+        Value::from_rc(Rc::new(RObject::string("key".to_string()))),
+        Value::Integer(1234),
+        Value::from_rc(Rc::new(RObject::symbol("key2".into()))),
     ];
-    let values = [
-        Rc::new(RObject::integer(1)),
-        Rc::new(RObject::integer(2)),
-        Rc::new(RObject::integer(42)),
-    ];
+    let values = [Value::Integer(1), Value::Integer(2), Value::Integer(42)];
 
     for (i, key) in keys.iter().enumerate() {
         let value = &values[i];
@@ -242,11 +233,8 @@ fn test_mrb_hash_set_and_index() {
 
     for (i, key) in keys.iter().enumerate() {
         let value = mrb_hash_get_index(hash.clone(), key.clone()).expect("getting index failed");
-        let value: i64 = value.as_ref().try_into().expect("value is not integer");
-        let expected: i64 = values[i]
-            .as_ref()
-            .try_into()
-            .expect("expected is not integer");
+        let value: i64 = (&value).try_into().expect("value is not integer");
+        let expected: i64 = (&values[i]).try_into().expect("expected is not integer");
         assert_eq!(value, expected);
     }
 }
@@ -258,14 +246,13 @@ fn test_mrb_hash_set_and_index_not_found() {
     prelude::prelude(&mut vm);
 
     let hash = Rc::new(RObject::hash(RHashMap::default()));
-    let key = Rc::new(RObject::string("key".to_string()));
-    let value = Rc::new(RObject::integer(42));
+    let key = Value::from_rc(Rc::new(RObject::string("key".to_string())));
+    let value = Value::Integer(42);
 
     mrb_hash_set_index(hash.clone(), key.clone(), value.clone()).expect("set index failed");
 
-    let key = Rc::new(RObject::string("key2".to_string()));
+    let key = Value::from_rc(Rc::new(RObject::string("key2".to_string())));
     let value = mrb_hash_get_index(hash.clone(), key.clone()).expect("getting index failed");
-    let value = value.as_ref();
     assert!(value.is_nil());
 }
 
@@ -321,7 +308,7 @@ fn mrb_hash_empty(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> 
 // Hash#has_key?: Returns true if the given key is present in the hash
 fn mrb_hash_has_key(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let key = args[0].as_ref().unwrap().to_rc().as_hash_key()?;
+    let key = args[0].as_ref().unwrap().clone().as_hash_key()?;
     let hash = match &this.value {
         RValue::Hash(h) => h,
         _ => {
@@ -336,7 +323,7 @@ fn mrb_hash_has_key(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error>
 // Hash#has_value?: Returns true if the given value is present for some key in the hash
 fn mrb_hash_has_value(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let search_value = args[0].as_ref().unwrap().to_rc();
+    let search_value = args[0].as_ref().unwrap().clone();
     let hash = match &this.value {
         RValue::Hash(h) => h,
         _ => {
@@ -358,7 +345,7 @@ fn mrb_hash_has_value(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 // Hash#key: Returns the key of an occurrence of a given value
 fn mrb_hash_key(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let search_value = args[0].as_ref().unwrap().to_rc();
+    let search_value = args[0].as_ref().unwrap().clone();
     let hash = match &this.value {
         RValue::Hash(h) => h,
         _ => {
@@ -371,7 +358,7 @@ fn mrb_hash_key(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let search_eq = search_value.as_eq_value();
     for (key, value) in hash.borrow().values() {
         if value.as_eq_value() == search_eq {
-            return Ok(Value::from_rc(key.clone()));
+            return Ok(key.clone());
         }
     }
     Ok(Value::Nil)
@@ -389,7 +376,7 @@ fn mrb_hash_keys(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
         }
     };
 
-    let keys: Vec<Rc<RObject>> = hash.borrow().values().map(|(k, _)| k.clone()).collect();
+    let keys: Vec<Value> = hash.borrow().values().map(|(k, _)| k.clone()).collect();
     Ok(Value::from_rc(RObject::array(keys).to_refcount_assigned()))
 }
 
@@ -405,7 +392,7 @@ fn mrb_hash_values(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error>
         }
     };
 
-    let values: Vec<Rc<RObject>> = hash.borrow().values().map(|(_, v)| v.clone()).collect();
+    let values: Vec<Value> = hash.borrow().values().map(|(_, v)| v.clone()).collect();
     Ok(Value::from_rc(
         RObject::array(values).to_refcount_assigned(),
     ))
@@ -414,7 +401,7 @@ fn mrb_hash_values(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error>
 // Hash#merge: Returns a new hash containing the contents of other_hash and the contents of self
 fn mrb_hash_merge(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let other = args[0].as_ref().unwrap().to_rc();
+    let other = args[0].as_ref().unwrap().clone();
 
     let this_hash = match &this.value {
         RValue::Hash(h) => h.borrow().clone(),
@@ -425,8 +412,13 @@ fn mrb_hash_merge(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
         }
     };
 
-    let other_hash = match &other.value {
-        RValue::Hash(h) => h,
+    let other_hash = match &other {
+        Value::Object(o) => match &o.value {
+            RValue::Hash(h) => h,
+            _ => {
+                return Err(Error::ArgumentError("argument must be a hash".to_string()));
+            }
+        },
         _ => {
             return Err(Error::ArgumentError("argument must be a hash".to_string()));
         }
@@ -443,10 +435,15 @@ fn mrb_hash_merge(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
 // Hash#merge!: Adds the contents of other_hash to self (destructive)
 fn mrb_hash_merge_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let other = args[0].as_ref().unwrap().to_rc();
+    let other = args[0].as_ref().unwrap().clone();
 
-    let other_hash = match &other.value {
-        RValue::Hash(h) => h,
+    let other_hash = match &other {
+        Value::Object(o) => match &o.value {
+            RValue::Hash(h) => h,
+            _ => {
+                return Err(Error::ArgumentError("argument must be a hash".to_string()));
+            }
+        },
         _ => {
             return Err(Error::ArgumentError("argument must be a hash".to_string()));
         }
@@ -495,8 +492,8 @@ fn test_mrb_hash_size() {
     let mut vm = VM::empty();
 
     let hash = Rc::new(RObject::hash(RHashMap::default()));
-    let key = Rc::new(RObject::string("key".to_string()));
-    let value = Rc::new(RObject::integer(42));
+    let key = Value::from_rc(Rc::new(RObject::string("key".to_string())));
+    let value = Value::Integer(42);
     vm.set_reg(0, hash.clone());
 
     let size = mrb_hash_size(&mut vm, &[]).expect("getting size failed");

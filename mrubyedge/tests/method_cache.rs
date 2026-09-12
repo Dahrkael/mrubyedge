@@ -17,7 +17,6 @@ fn run_i32(code: &'static str, fname: &'static str) -> i32 {
     let args = vec![];
     mrb_funcall(&mut vm, None, "test_main", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap()
 }
@@ -191,7 +190,6 @@ fn method_missing_after_calls() {
     vm.run().unwrap();
     let result: String = mrb_funcall(&mut vm, None, "test_main", &[])
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, "1,mm:unknown");

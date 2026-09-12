@@ -27,7 +27,6 @@ fn alias_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_main", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 42);
@@ -65,14 +64,12 @@ fn undef_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_main_1", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, "Hola");
 
     let result: String = mrb_funcall(&mut vm, None, "test_main_2", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert!(result.contains("Method not found"));

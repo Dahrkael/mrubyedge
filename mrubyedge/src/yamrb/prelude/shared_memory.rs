@@ -101,17 +101,24 @@ fn mrb_shared_memory_offset_in_memory(
 
 fn mrb_shared_memory_set_index_range(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let arg0 = args[0].as_ref().unwrap().to_rc();
-    let (start, end) = match &arg0.as_ref().value {
-        RValue::Range(start, end, exclusive) => {
-            let start: u64 = start.as_ref().try_into()?;
-            let end: u64 = end.as_ref().try_into()?;
-            if *exclusive {
-                (start, end - 1)
-            } else {
-                (start, end)
+    let arg0 = args[0].as_ref().unwrap().clone();
+    let (start, end) = match &arg0 {
+        Value::Object(o) => match &o.value {
+            RValue::Range(start, end, exclusive) => {
+                let start: u64 = start.try_into()?;
+                let end: u64 = end.try_into()?;
+                if *exclusive {
+                    (start, end - 1)
+                } else {
+                    (start, end)
+                }
             }
-        }
+            _ => {
+                return Err(Error::RuntimeError(
+                    "Range should be passed on SharedMemory#[]=".to_string(),
+                ));
+            }
+        },
         _ => {
             return Err(Error::RuntimeError(
                 "Range should be passed on SharedMemory#[]=".to_string(),
@@ -155,17 +162,24 @@ fn mrb_shared_memory_to_string(vm: &mut VM, _args: &[Option<Value>]) -> Result<V
 
 fn mrb_shared_memory_index_range(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let arg0 = args[0].as_ref().unwrap().to_rc();
-    let (start, end) = match &arg0.as_ref().value {
-        RValue::Range(start, end, exclusive) => {
-            let start: u64 = start.as_ref().try_into()?;
-            let end: u64 = end.as_ref().try_into()?;
-            if *exclusive {
-                (start, end - 1)
-            } else {
-                (start, end)
+    let arg0 = args[0].as_ref().unwrap().clone();
+    let (start, end) = match &arg0 {
+        Value::Object(o) => match &o.value {
+            RValue::Range(start, end, exclusive) => {
+                let start: u64 = start.try_into()?;
+                let end: u64 = end.try_into()?;
+                if *exclusive {
+                    (start, end - 1)
+                } else {
+                    (start, end)
+                }
             }
-        }
+            _ => {
+                return Err(Error::RuntimeError(
+                    "Range should be passed on SharedMemory#[]".to_string(),
+                ));
+            }
+        },
         _ => {
             return Err(Error::RuntimeError(
                 "Range should be passed on SharedMemory#[]".to_string(),

@@ -43,23 +43,21 @@ pub(crate) fn arg_buf() -> [Option<Value>; NATIVE_ARG_BUF] {
     std::array::from_fn(|_| None)
 }
 
-/// Converts public `&[Rc<RObject>]` arguments into unboxed `Option<Value>`,
-/// using the stack buffer when it fits. `out` is reused so the fallback path
-/// does not allocate per call. `from_rc` never allocates for immediates and
-/// moves objects without cloning.
-pub(crate) fn rc_args<'a>(
-    args: &[Rc<RObject>],
+/// Wraps an unboxed `&[Value]` argument slice as `Option<Value>` (always
+/// `Some`), using the stack buffer when it fits and reusing `out` otherwise.
+pub(crate) fn value_args<'a>(
+    args: &[Value],
     buf: &'a mut [Option<Value>; NATIVE_ARG_BUF],
     out: &'a mut Vec<Option<Value>>,
 ) -> &'a [Option<Value>] {
     if args.len() <= buf.len() {
         for (i, a) in args.iter().enumerate() {
-            buf[i] = Some(Value::from_rc(a.clone()));
+            buf[i] = Some(a.clone());
         }
         &buf[..args.len()]
     } else {
         out.clear();
-        out.extend(args.iter().map(|a| Some(Value::from_rc(a.clone()))));
+        out.extend(args.iter().cloned().map(Some));
         out.as_slice()
     }
 }
@@ -311,7 +309,7 @@ pub struct VM {
     pub shared_memory_class: Rc<RClass>,
     pub class_object_table: RHashMap<String, Rc<RObject>>,
 
-    pub globals: RHashMap<String, Rc<RObject>>,
+    pub globals: RHashMap<String, Value>,
     pub consts: RHashMap<String, Rc<RObject>>,
 
     pub upper: Option<Rc<ENV>>,
@@ -668,7 +666,7 @@ impl VM {
     /// Executes the current IREP until completion, returning the value in
     /// register 0 or propagating any raised exception as an error. The
     /// top-level `self` is initialized automatically before evaluation.
-    pub fn run(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
+    pub fn run(&mut self) -> Result<Value, Box<dyn std::error::Error>> {
         self.current_irep = self.irep.clone();
         self.pc.set(0);
 
@@ -714,7 +712,7 @@ impl VM {
     }
 
     /// Internal run method that manages breadcrumb stack for internal calls.
-    pub fn run_internal(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
+    pub fn run_internal(&mut self) -> Result<Value, Box<dyn std::error::Error>> {
         self.push_breadcrumb(
             "run_internal",
             None,
@@ -725,10 +723,7 @@ impl VM {
         self.__run()
     }
 
-    pub fn eval_rite(
-        &mut self,
-        rite: &mut Rite,
-    ) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
+    pub fn eval_rite(&mut self, rite: &mut Rite) -> Result<Value, Box<dyn std::error::Error>> {
         let irep = rite_to_irep(rite);
         self.pc.set(0);
         self.current_irep = Rc::new(irep);
@@ -834,7 +829,7 @@ impl VM {
         Ok(())
     }
 
-    fn __run(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
+    fn __run(&mut self) -> Result<Value, Box<dyn std::error::Error>> {
         let class = self.object_class.clone();
         // Insert top_self
         let top_self = RObject {
@@ -971,8 +966,8 @@ impl VM {
         }
 
         let retval = match self.current_regs()[0].take() {
-            Some(v) => Ok(v.to_rc()),
-            None => Ok(RObject::nil_rc()),
+            Some(v) => Ok(v),
+            None => Ok(Value::Nil),
         };
         self.set_reg(0, top_self.clone());
 
@@ -1017,6 +1012,27 @@ impl VM {
         self.current_regs()[i]
             .replace(Value::from_rc(rc))
             .map(|v| v.to_rc())
+    }
+
+    /// Register read as an unboxed `Value` (`Nil` when unassigned). Used by
+    /// container opcodes so immediates never cross into `Rc<RObject>`.
+    pub(crate) fn get_reg_value(&mut self, i: usize) -> Value {
+        self.current_regs()[i].clone().unwrap_or(Value::Nil)
+    }
+
+    /// Register take as an unboxed `Value`, clearing the slot.
+    pub(crate) fn take_reg_value(&mut self, i: usize) -> Value {
+        self.current_regs()[i].take().unwrap_or(Value::Nil)
+    }
+
+    /// Store an unboxed `Value` into a register.
+    pub(crate) fn set_reg_value(&mut self, i: usize, v: Value) {
+        self.current_regs()[i] = Some(v);
+    }
+
+    /// Store an unboxed `Value` into a register, returning the previous slot.
+    pub(crate) fn swap_reg_value(&mut self, i: usize, v: Value) -> Option<Value> {
+        self.current_regs()[i].replace(v)
     }
 
     /// Returns the current `self` object from register 0, or an error if it has
@@ -1223,9 +1239,8 @@ impl VM {
                 let reg = self.regs.get(i).unwrap().clone();
                 if let Some(obj) = reg {
                     let rc = obj.to_rc();
-                    let inspect: String = mrb_call_inspect(self, rc.clone())
-                        .unwrap()
-                        .as_ref()
+                    let insp = mrb_call_inspect(self, rc.clone()).unwrap();
+                    let inspect: String = (&insp)
                         .try_into()
                         .unwrap_or_else(|_| "(uninspectable)".into());
                     if i < current_regs_offset {

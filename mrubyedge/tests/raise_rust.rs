@@ -5,7 +5,6 @@ mod helpers;
 use helpers::*;
 use mrubyedge::Error;
 use mrubyedge::yamrb::helpers::mrb_define_cmethod;
-use mrubyedge::yamrb::value::*;
 use mrubyedge::yamrb::vm::*;
 
 fn prelude_dummy_error_func(vm: &mut VM) {
@@ -94,7 +93,6 @@ fn rust_raise_rescue_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescued: Intentional Rust Error");
@@ -118,7 +116,6 @@ fn rust_nomethod_rescue_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert!(result.contains("rescued: Method not found"));
@@ -142,7 +139,6 @@ fn rust_noname_rescue_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescued: Cannot found name: NoName");
@@ -189,7 +185,6 @@ fn custom_error_rescue_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescued: [CustomError] Intentional Custom Error");

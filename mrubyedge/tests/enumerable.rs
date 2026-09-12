@@ -3,10 +3,7 @@ extern crate mrubyedge;
 
 mod helpers;
 
-use std::rc::Rc;
-
 use helpers::*;
-use mrubyedge::yamrb::value::RObject;
 
 #[test]
 fn enumerable_map_basic_test() {
@@ -22,7 +19,7 @@ fn enumerable_map_basic_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_map", &args).unwrap();
-    let result: (i32, i32, i32) = result.as_ref().try_into().unwrap();
+    let result: (i32, i32, i32) = result.try_into().unwrap();
     assert_eq!(result, (2, 4, 6));
 }
 
@@ -40,10 +37,10 @@ fn enumerable_map_nested_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "array_map_nested", &args).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
-    let r0: (i32, i32, i32) = result_array[0].as_ref().try_into().unwrap();
-    let r1: (i32, i32, i32) = result_array[1].as_ref().try_into().unwrap();
-    let r2: (i32, i32, i32) = result_array[2].as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
+    let r0: (i32, i32, i32) = (&result_array[0]).try_into().unwrap();
+    let r1: (i32, i32, i32) = (&result_array[1]).try_into().unwrap();
+    let r2: (i32, i32, i32) = (&result_array[2]).try_into().unwrap();
     assert_eq!(r0, (2, 2, 2));
     assert_eq!(r1, (4, 4, 4));
     assert_eq!(r2, (6, 6, 6));
@@ -63,7 +60,7 @@ fn enumerable_find_found_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_find_found", &args).unwrap();
-    let result_value: i32 = result.as_ref().try_into().unwrap();
+    let result_value: i32 = result.try_into().unwrap();
     assert_eq!(result_value, 4);
 }
 
@@ -98,7 +95,7 @@ fn enumerable_min_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_min", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 1);
 }
 
@@ -116,7 +113,7 @@ fn enumerable_max_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_max", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 3);
 }
 
@@ -134,10 +131,10 @@ fn enumerable_minmax_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_minmax", &args).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
     assert_eq!(result_array.len(), 2);
-    let min: i64 = result_array[0].as_ref().try_into().unwrap();
-    let max: i64 = result_array[1].as_ref().try_into().unwrap();
+    let min: i64 = (&result_array[0]).try_into().unwrap();
+    let max: i64 = (&result_array[1]).try_into().unwrap();
     assert_eq!(min, 1);
     assert_eq!(max, 3);
 }
@@ -156,7 +153,7 @@ fn enumerable_uniq_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_uniq", &args).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
     assert_eq!(result_array.len(), 3);
 }
 
@@ -174,7 +171,7 @@ fn enumerable_select_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_select", &args).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
     assert_eq!(result_array.len(), 2);
 }
 
@@ -192,7 +189,7 @@ fn enumerable_all_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_all", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -210,7 +207,7 @@ fn enumerable_any_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_any", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -228,7 +225,7 @@ fn enumerable_delete_if_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_delete_if", &args).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
     assert_eq!(result_array.len(), 3);
 }
 
@@ -248,11 +245,11 @@ fn enumerable_each_with_index_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_each_with_index", &args).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
     assert_eq!(result_array.len(), 3);
-    let r0: i64 = result_array[0].as_ref().try_into().unwrap();
-    let r1: i64 = result_array[1].as_ref().try_into().unwrap();
-    let r2: i64 = result_array[2].as_ref().try_into().unwrap();
+    let r0: i64 = (&result_array[0]).try_into().unwrap();
+    let r1: i64 = (&result_array[1]).try_into().unwrap();
+    let r2: i64 = (&result_array[2]).try_into().unwrap();
     assert_eq!(r0, 10);
     assert_eq!(r1, 21);
     assert_eq!(r2, 32);
@@ -283,12 +280,12 @@ fn enumerable_hash_each_with_index_destructure_test() {
         &args,
     )
     .unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
     assert_eq!(result_array.len(), 2);
     let entries: Vec<String> = result_array
         .iter()
         .map(|r| {
-            let s: String = r.as_ref().try_into().unwrap();
+            let s: String = r.try_into().unwrap();
             s
         })
         .collect();
@@ -317,8 +314,8 @@ fn enumerable_sort_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_sort", &args).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
-    let r0: i64 = result_array[0].as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
+    let r0: i64 = (&result_array[0]).try_into().unwrap();
     assert_eq!(r0, 1);
 }
 
@@ -336,8 +333,8 @@ fn enumerable_sort_by_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_sort_by", &args).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
-    let r0: i64 = result_array[0].as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
+    let r0: i64 = (&result_array[0]).try_into().unwrap();
     assert_eq!(r0, 5);
 }
 
@@ -355,7 +352,7 @@ fn enumerable_compact_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_compact", &args).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
     assert_eq!(result_array.len(), 3);
 }
 
@@ -373,7 +370,7 @@ fn enumerable_count_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_count", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 2);
 }
 
@@ -391,7 +388,7 @@ fn enumerable_to_a_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_to_a", &args).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
     assert_eq!(result_array.len(), 3);
 }
 
@@ -409,7 +406,7 @@ fn enumerable_reduce_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_reduce", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 10);
 }
 
@@ -438,7 +435,7 @@ fn enumerable_map_custom_class_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_my_collection_map", &args).unwrap();
-    let result: (i32, i32, i32) = result.as_ref().try_into().unwrap();
+    let result: (i32, i32, i32) = result.try_into().unwrap();
     assert_eq!(result, (2, 4, 6));
 }
 
@@ -456,7 +453,7 @@ fn enumerable_sum_default_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_sum", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 10);
 }
 
@@ -474,6 +471,6 @@ fn enumerable_sum_empty_with_init_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_sum_with_init", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "abcd");
 }

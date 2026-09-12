@@ -22,7 +22,10 @@ TestModule
     let result = vm.run().unwrap();
 
     // Result should be the module itself
-    assert!(matches!(result.tt, mrubyedge::yamrb::value::RType::Module));
+    assert!(matches!(
+        result.to_rc().tt,
+        mrubyedge::yamrb::value::RType::Module
+    ));
 }
 
 #[test]
@@ -46,10 +49,7 @@ User.new.greet
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let value: String = result
-        .as_ref()
-        .try_into()
-        .expect("greet should return string");
+    let value: String = result.try_into().expect("greet should return string");
     assert_eq!(value, "hello");
 }
 
@@ -76,10 +76,7 @@ Outer::User.new.greet
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let value: String = result
-        .as_ref()
-        .try_into()
-        .expect("greet should return string");
+    let value: String = result.try_into().expect("greet should return string");
     assert_eq!(value, "hello");
 }
 
@@ -108,10 +105,7 @@ Wrapper.new.core_value
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let value: i64 = result
-        .as_ref()
-        .try_into()
-        .expect("core_value should return integer");
+    let value: i64 = result.try_into().expect("core_value should return integer");
     assert_eq!(value, 123);
 }
 
@@ -144,10 +138,7 @@ Wrapper.new.core_value
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let value: i64 = result
-        .as_ref()
-        .try_into()
-        .expect("core_value should return integer");
+    let value: i64 = result.try_into().expect("core_value should return integer");
     assert_eq!(value, 124);
 }
 
@@ -167,7 +158,6 @@ CptnTiles::Earth
     let result = vm.run().unwrap();
 
     let value: i64 = result
-        .as_ref()
         .try_into()
         .expect("CptnTiles::Earth should return an integer");
     assert_eq!(value, 1);
@@ -190,7 +180,6 @@ Outer::Inner::V
     let result = vm.run().unwrap();
 
     let value: i64 = result
-        .as_ref()
         .try_into()
         .expect("Outer::Inner::V should return an integer");
     assert_eq!(value, 7);
@@ -210,10 +199,7 @@ C::W
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let value: i64 = result
-        .as_ref()
-        .try_into()
-        .expect("C::W should return an integer");
+    let value: i64 = result.try_into().expect("C::W should return an integer");
     assert_eq!(value, 10);
 }
 
@@ -237,10 +223,7 @@ C.new.read
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
 
-    let value: i64 = result
-        .as_ref()
-        .try_into()
-        .expect("read should return an integer");
+    let value: i64 = result.try_into().expect("read should return an integer");
     assert_eq!(value, 10);
 }
 
@@ -368,7 +351,7 @@ fn setmcnst_module_const_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "setmcnst_module_const", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 42);
 }
 
@@ -387,7 +370,7 @@ fn setmcnst_top_level_const_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "setmcnst_top_level", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 7);
 }
 
@@ -409,7 +392,7 @@ fn setmcnst_overwrite_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "setmcnst_overwrite", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 2);
 }
 
@@ -432,7 +415,7 @@ fn setmcnst_nested_path_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "setmcnst_nested_path", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 9);
 }
 
@@ -453,6 +436,6 @@ fn setmcnst_class_const_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "setmcnst_class_const", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 5);
 }

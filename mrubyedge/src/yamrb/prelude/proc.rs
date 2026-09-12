@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use crate::{
     Error,
     yamrb::{
@@ -39,12 +37,6 @@ pub fn mrb_proc_call(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
     );
 
     let this = vm.getself()?;
-    let args: Vec<Rc<RObject>> = args.iter().map(|a| a.as_ref().unwrap().to_rc()).collect();
-    Ok(Value::from_rc(mrb_call_block(
-        vm,
-        this.clone(),
-        None,
-        &args,
-        0,
-    )?))
+    let args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
+    mrb_call_block(vm, this.clone(), None, &args, 0)
 }

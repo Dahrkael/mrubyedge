@@ -23,7 +23,6 @@ fn while_basic_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_while", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5);
@@ -49,7 +48,6 @@ fn while_with_break_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_while_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 11);
@@ -80,19 +78,12 @@ fn while_with_ensure_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_while_ensure", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 11);
 
     // Verify that ensure is executed every iteration
-    let ensure_count: i32 = vm
-        .globals
-        .get("$ensure_count")
-        .unwrap()
-        .as_ref()
-        .try_into()
-        .unwrap();
+    let ensure_count: i32 = vm.globals.get("$ensure_count").unwrap().try_into().unwrap();
     assert_eq!(ensure_count, 11);
 }
 
@@ -121,7 +112,6 @@ fn while_nested_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_while_nested", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 9); // 3 * 3 = 9
@@ -148,7 +138,6 @@ fn while_accumulate_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_while_accumulate", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     // 1 + 2 + 3 + ... + 10 = 55
@@ -184,7 +173,6 @@ fn while_with_ensure_and_exception_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_while_ensure_exception", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 3);
@@ -194,7 +182,6 @@ fn while_with_ensure_and_exception_test() {
         .globals
         .get("$ensure_executed")
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert!(ensure_executed);

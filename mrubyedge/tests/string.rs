@@ -23,7 +23,7 @@ fn string_new_test() {
     // Assert
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_new", &args).unwrap();
-    let result: i32 = result.as_ref().try_into().unwrap();
+    let result: i32 = result.try_into().unwrap();
     assert_eq!(result, 0);
 }
 
@@ -41,7 +41,7 @@ fn string_add_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_add", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello world");
 }
 
@@ -59,7 +59,7 @@ fn string_mul_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_mul", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "ababab");
 }
 
@@ -79,7 +79,7 @@ fn string_append_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_append", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello world");
 }
 
@@ -98,7 +98,7 @@ fn string_b_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_b", &args).unwrap();
-    let result: Vec<u8> = result.as_ref().try_into().unwrap();
+    let result: Vec<u8> = result.try_into().unwrap();
     assert_eq!(result, b"hello");
 }
 
@@ -118,7 +118,7 @@ fn string_clear_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_clear", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "");
 }
 
@@ -136,7 +136,7 @@ fn string_chomp_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_chomp", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello");
 }
 
@@ -156,7 +156,7 @@ fn string_chomp_self_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_chomp_self", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello");
 }
 
@@ -175,7 +175,7 @@ fn string_dup_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_dup", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -193,7 +193,7 @@ fn string_empty_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_empty", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -211,7 +211,7 @@ fn string_getbyte_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_getbyte", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 101); // 'e'
 }
 
@@ -231,7 +231,7 @@ fn string_setbyte_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_setbyte", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "Hello");
 }
 
@@ -249,7 +249,7 @@ fn string_index_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_index", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 2);
 }
 
@@ -267,7 +267,7 @@ fn string_ord_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_ord", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 65);
 }
 
@@ -286,7 +286,7 @@ fn string_slice_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_slice", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "el");
 }
 
@@ -306,7 +306,7 @@ fn string_slice_self_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_slice_self", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hlo");
 }
 
@@ -324,7 +324,7 @@ fn string_split_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_split", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 3);
 }
 
@@ -342,7 +342,7 @@ fn string_lstrip_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_lstrip", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello  ");
 }
 
@@ -362,7 +362,7 @@ fn string_lstrip_self_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_lstrip_self", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello  ");
 }
 
@@ -380,7 +380,7 @@ fn string_rstrip_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_rstrip", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "  hello");
 }
 
@@ -400,7 +400,7 @@ fn string_rstrip_self_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_rstrip_self", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "  hello");
 }
 
@@ -418,7 +418,7 @@ fn string_strip_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_strip", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello");
 }
 
@@ -438,7 +438,7 @@ fn string_strip_self_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_strip_self", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello");
 }
 
@@ -456,7 +456,7 @@ fn string_to_sym_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_to_sym", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello");
 }
 
@@ -474,7 +474,7 @@ fn string_start_with_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_start_with", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -492,7 +492,7 @@ fn string_end_with_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_end_with", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -510,7 +510,7 @@ fn string_include_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_include", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -528,10 +528,10 @@ fn string_bytes_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_bytes", &args).unwrap();
-    let result = result.as_vec_owned().unwrap();
+    let result = Vec::<Value>::try_from(&result).unwrap();
     assert_eq!(result.len(), 2);
-    let first: i64 = result[0].as_ref().try_into().unwrap();
-    let second: i64 = result[1].as_ref().try_into().unwrap();
+    let first: i64 = (&result[0]).try_into().unwrap();
+    let second: i64 = (&result[1]).try_into().unwrap();
     assert_eq!(first, 65);
     assert_eq!(second, 66);
 }
@@ -550,11 +550,11 @@ fn string_chars_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_chars", &args).unwrap();
-    let result = result.as_vec_owned().unwrap();
+    let result = Vec::<Value>::try_from(&result).unwrap();
     assert_eq!(result.len(), 5);
-    let first: String = result[0].as_ref().try_into().unwrap();
+    let first: String = (&result[0]).try_into().unwrap();
     assert_eq!(first, "h");
-    let last: String = result[4].as_ref().try_into().unwrap();
+    let last: String = (&result[4]).try_into().unwrap();
     assert_eq!(last, "o");
 }
 
@@ -572,7 +572,7 @@ fn string_upcase_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_upcase", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "HELLO");
 }
 
@@ -592,7 +592,7 @@ fn string_upcase_self_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_upcase_self", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "HELLO");
 }
 
@@ -610,7 +610,7 @@ fn string_downcase_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_downcase", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello");
 }
 
@@ -630,7 +630,7 @@ fn string_downcase_self_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_downcase_self", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "hello");
 }
 
@@ -648,7 +648,7 @@ fn string_to_i_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_to_i", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 123);
 }
 
@@ -666,7 +666,7 @@ fn string_to_f_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_to_f", &args).unwrap();
-    let result: f64 = result.as_ref().try_into().unwrap();
+    let result: f64 = result.try_into().unwrap();
     assert!((result - 54.71).abs() < f64::EPSILON);
 }
 
@@ -684,6 +684,6 @@ fn string_size_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_string_size", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 5);
 }

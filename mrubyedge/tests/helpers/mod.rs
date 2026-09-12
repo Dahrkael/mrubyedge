@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use std::rc::Rc;
 
-use mrubyedge::yamrb::value::RObject;
+pub use mrubyedge::yamrb::value::{RObject, RSym, Value};
 
 pub use mrubyedge::yamrb::helpers::mrb_funcall;
 
@@ -88,10 +88,14 @@ pub(crate) fn mrbc_compile_debug(fname: &'static str, code: &'static str) -> Vec
     std::fs::read(dest).unwrap()
 }
 
-pub(crate) fn int(n: i64) -> Rc<RObject> {
-    Rc::new(RObject::integer(n))
+pub(crate) fn int(n: i64) -> Value {
+    Value::Integer(n)
 }
 
-pub(crate) fn string(s: &str) -> Rc<RObject> {
-    Rc::new(RObject::string(s.to_string()))
+pub(crate) fn string(s: &str) -> Value {
+    Value::from_rc(Rc::new(RObject::string(s.to_string())))
+}
+
+pub(crate) fn symbol(s: &str) -> Value {
+    Value::from_rc(Rc::new(RObject::symbol(RSym::new(s.to_string()))))
 }
