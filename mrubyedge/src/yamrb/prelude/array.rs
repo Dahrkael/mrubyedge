@@ -155,8 +155,7 @@ pub fn mrb_array_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, 
 pub fn mrb_array_new(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     // honor the block form Array.new(size) { |i| } (the block
     // rides as the trailing argument) and the default-value form
-    // Array.new(size, obj), matching CRuby. The prelude previously filled
-    // with nil and silently ignored the block.
+    // Array.new(size, obj), matching CRuby.
     let block = match args.last().map(|a| a.as_ref().unwrap().clone()) {
         Some(b) if matches!(&b, Value::Object(o) if matches!(o.value, RValue::Proc(_))) => Some(b),
         _ => None,

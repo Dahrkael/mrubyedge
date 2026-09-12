@@ -1460,9 +1460,9 @@ impl TryFrom<&RObject> for String {
         match &value.value {
             RValue::String(s, _) => Ok(String::from_utf8_lossy(&s.borrow()).to_string()),
             RValue::Symbol(sym) => Ok(sym.name.clone()),
-            // the old catch-all was format!("{:?}"), which
-            // walks the cyclic class -> module -> procs -> proc graph and
-            // overflows the stack. Render flat representations instead.
+            // Render flat representations: walking the cyclic
+            // class -> module -> procs -> proc graph with {:?}
+            // overflows the stack.
             RValue::Exception(e) => Ok(e.message.clone()),
             RValue::Integer(n) => Ok(n.to_string()),
             RValue::Float(f) => Ok(f.to_string()),

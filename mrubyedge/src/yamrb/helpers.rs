@@ -74,11 +74,11 @@ fn call_block(
         .as_ref()
         .ok_or_else(|| Error::RuntimeError("No IREP".to_string()))?
         .clone();
-    // the callee's own environ becomes the active upper env,
-    // but the caller's must be restored on return. Deriving the restore from
-    // the callee's environ chain (old behavior) clobbered vm.upper to None
-    // after native->Ruby calls (e.g. Array#delete through rb_eq), corrupting
-    // the upvar chain of enclosing blocks.
+    // The callee's own environ becomes the active upper env; the caller's
+    // must be restored on return. The callee's environ chain is not a
+    // reliable restore source: native->Ruby calls (e.g. Array#delete through
+    // rb_eq) would leave vm.upper as None and corrupt the upvar chain of
+    // enclosing blocks.
     let prev_upper = vm.upper.take();
     vm.upper = block.environ;
 

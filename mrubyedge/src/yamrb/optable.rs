@@ -3062,8 +3062,8 @@ pub(crate) fn op_class(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let superclass = vm.current_regs()[a as usize + 1].as_ref().cloned();
     let name = vm.current_irep.syms[b as usize].clone();
 
-    // Local patch: reuse existing class wrapper instead of replacing it.
-    // This preserves singleton methods registered by native code.
+    // Reuse an existing class wrapper instead of replacing it, so singleton
+    // methods registered by native code survive a reopen.
     // Scope chain only (current namespace, then top level): a same-named
     // class in an unrelated module must not hijack this definition, and a
     // cross-scope reuse must also bind the constant in the current one.
@@ -3131,8 +3131,8 @@ pub(crate) fn op_module(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let name = vm.current_irep.syms[b as usize].clone();
 
-    // Local patch: reuse existing module wrapper instead of replacing it.
-    // This preserves singleton methods registered by native code.
+    // Reuse an existing module wrapper instead of replacing it, so singleton
+    // methods registered by native code survive a reopen.
     let lookup_key = name.name.clone();
     let search_scopes: Vec<Option<Rc<RModule>>> =
         vec![current_namespace(vm), Some(vm.object_class.module.clone())];
