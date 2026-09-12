@@ -8,6 +8,18 @@ use super::{
     vm::VM,
 };
 
+/// backtrace-friendly label for a call frame, e.g.
+/// "Scene#update" for instance calls or "SceneManager#run" for class calls.
+/// Falls back to the bare method name when the receiver class is unknown.
+pub(crate) fn frame_label(vm: &VM, recv: &Rc<RObject>, meth: &str) -> String {
+    let class_name = match &recv.value {
+        RValue::Class(c) => c.full_name(),
+        RValue::Module(m) => m.sym_id.name.clone(),
+        _ => recv.get_class(vm).full_name(),
+    };
+    format!("{class_name}#{meth}")
+}
+
 fn call_block(
     vm: &mut VM,
     block: RProc,
@@ -187,7 +199,8 @@ pub fn mrb_funcall(
     let new_breadcrumb = Rc::new(Breadcrumb {
         upper,
         event: "funcall",
-        caller: Some(name.to_string()),
+        // qualify with receiver class for backtraces.
+        caller: Some(frame_label(vm, &recv, name)),
         return_reg: None,
     });
     vm.current_breadcrumb.replace(new_breadcrumb);

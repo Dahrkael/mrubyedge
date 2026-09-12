@@ -467,9 +467,24 @@ impl RObject {
             return self.singleton_class.borrow().as_ref().unwrap().clone();
         }
 
+        // Local patch: support modules (not just classes) so that
+        // `def self.method` works inside module bodies.
         let class = match &self.value {
             RValue::Class(c) => c.clone(),
-            _ => panic!("Not called on a class"),
+            RValue::Module(m) => {
+                // Create a singleton class whose superclass is the Class class.
+                let class_name = format!("#<Module:{}>", m.sym_id.name);
+                let super_class = vm.get_class_by_name("Class");
+                let sclass = Rc::new(RClass::new_singleton(
+                    &class_name,
+                    Some(super_class),
+                    None,
+                ));
+                sclass.update_module_weakref();
+                self.singleton_class.replace(Some(sclass.clone()));
+                return sclass;
+            }
+            _ => panic!("Not called on a class or module"),
         };
         let class_name = format!("#<Class:{}>", class.full_name());
         let super_class = match &class.super_class {

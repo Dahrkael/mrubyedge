@@ -900,6 +900,20 @@ fn consume_ensure_block(vm: &mut VM) -> Result<(), Error> {
         match consume_expr(vm, op.code, &operand, op.pos, op.len) {
             Ok(_) => {}
             Err(e) => {
+                // snapshot at the deepest raise only (see
+                // vm.rs twin site for rationale).
+                if vm.exception.is_none() {
+                    let mut frames = Vec::new();
+                    let mut bc = vm.current_breadcrumb.clone();
+                    while let Some(b) = bc.as_ref() {
+                        if let Some(caller) = &b.caller {
+                            frames.push(caller.clone());
+                        }
+                        bc = b.upper.clone();
+                    }
+                    frames.reverse();
+                    *vm.last_error_stack.borrow_mut() = frames;
+                }
                 let exception = RException::from_error(vm, &e);
                 vm.exception = Some(Rc::new(exception));
                 continue;
@@ -1060,7 +1074,8 @@ pub(crate) fn do_op_send(
     let new_breadcrumb = Rc::new(Breadcrumb {
         upper,
         event: "do_op_send",
-        caller: Some(method_id.name.clone()),
+        // qualify with receiver class for backtraces.
+        caller: Some(crate::yamrb::helpers::frame_label(vm, &recv, &method_id.name)),
         return_reg: Some(a as usize),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
@@ -1096,6 +1111,30 @@ pub(crate) fn do_op_send(
             }
             Err(e) => {
                 vm.current_regs()[a as usize].replace(Rc::new(RObject::nil()));
+                // capture the backtrace at this send before
+                // popping its breadcrumb (deepest frame wins), mark the
+                // exception as pending so outer conversions skip their own
+                // snapshots, then pop our breadcrumb so failed native calls
+                // do not leak frames into later backtraces.
+                if vm.exception.is_none() {
+                    let mut frames = Vec::new();
+                    let mut bc = vm.current_breadcrumb.clone();
+                    while let Some(b) = bc.as_ref() {
+                        if let Some(caller) = &b.caller {
+                            frames.push(caller.clone());
+                        }
+                        bc = b.upper.clone();
+                    }
+                    frames.reverse();
+                    *vm.last_error_stack.borrow_mut() = frames;
+                    let exception = RException::from_error(vm, &e);
+                    vm.exception = Some(Rc::new(exception));
+                }
+                if let Some(cur) = vm.current_breadcrumb.take()
+                    && let Some(upper) = cur.upper.clone()
+                {
+                    vm.current_breadcrumb.replace(upper);
+                }
                 return Err(e);
             }
         }
@@ -2016,6 +2055,29 @@ pub(crate) fn op_class(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let superclass = vm.current_regs()[a as usize + 1].as_ref().cloned();
     let name = vm.current_irep.syms[b as usize].clone();
+
+    // Local patch: reuse existing class wrapper instead of replacing it.
+    // This preserves singleton methods registered by native code.
+    let lookup_key = name.name.clone();
+    let search_scopes: Vec<Option<Rc<RModule>>> =
+        vec![current_namespace(vm), Some(vm.object_class.module.clone())];
+    for scope in &search_scopes {
+        if let Some(ns) = scope {
+            if let Some(existing) = ns.consts.borrow().get(&lookup_key).cloned() {
+                if let RValue::Class(ref klass) = existing.value {
+                    vm.current_regs()[a as usize].replace(existing);
+                    return Ok(());
+                }
+            }
+        }
+    }
+    if let Some(existing) = vm.get_const_by_name(&lookup_key) {
+        if let RValue::Class(_) = existing.value {
+            vm.current_regs()[a as usize].replace(existing);
+            return Ok(());
+        }
+    }
+
     let superclass = match superclass {
         Some(superclass) => {
             if let RValue::Class(klass) = &superclass.value {
@@ -2049,6 +2111,29 @@ pub(crate) fn op_class(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_module(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let name = vm.current_irep.syms[b as usize].clone();
+
+    // Local patch: reuse existing module wrapper instead of replacing it.
+    // This preserves singleton methods registered by native code.
+    let lookup_key = name.name.clone();
+    let search_scopes: Vec<Option<Rc<RModule>>> =
+        vec![current_namespace(vm), Some(vm.object_class.module.clone())];
+    for scope in &search_scopes {
+        if let Some(ns) = scope {
+            if let Some(existing) = ns.consts.borrow().get(&lookup_key).cloned() {
+                if let RValue::Module(ref m) = existing.value {
+                    vm.current_regs()[a as usize].replace(existing);
+                    return Ok(());
+                }
+            }
+        }
+    }
+    if let Some(existing) = vm.get_const_by_name(&lookup_key) {
+        if let RValue::Module(_) = existing.value {
+            vm.current_regs()[a as usize].replace(existing);
+            return Ok(());
+        }
+    }
+
     let name = name.name;
     let parent_module = current_namespace(vm);
     let module = vm.define_module(&name, parent_module.clone());

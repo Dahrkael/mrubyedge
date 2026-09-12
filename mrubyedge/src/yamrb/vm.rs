@@ -78,6 +78,10 @@ pub struct VM {
     pub current_regs_offset: usize,
     pub current_callinfo: Option<Rc<CALLINFO>>,
     pub current_breadcrumb: Option<Rc<Breadcrumb>>,
+    // call stack of the last raised exception, captured at
+    // raise time from the breadcrumb chain before unwinding destroys it.
+    // Outermost frame first; only frames with a name are kept.
+    pub last_error_stack: RefCell<Vec<String>>,
     pub kargs: RefCell<Option<RHashMap<RSym, Rc<RObject>>>>,
     pub current_kargs: RefCell<Option<Rc<KArgs>>>,
     pub target_class: TargetContext,
@@ -254,6 +258,7 @@ impl VM {
         let regs: [Option<Rc<RObject>>; MAX_REGS_SIZE] = [const { None }; MAX_REGS_SIZE];
         let current_regs_offset = 0;
         let current_callinfo = None;
+        let last_error_stack = RefCell::new(Vec::new());
         let current_breadcrumb = Some(Rc::new(Breadcrumb {
             upper: None,
             event: "root",
@@ -293,6 +298,7 @@ impl VM {
             regs,
             current_regs_offset,
             current_callinfo,
+            last_error_stack,
             current_breadcrumb,
             kargs,
             current_kargs,
@@ -493,6 +499,22 @@ impl VM {
             match consume_expr(self, op.code, &operand, op.pos, op.len) {
                 Ok(_) => {}
                 Err(e) => {
+                    // snapshot named breadcrumb frames at the
+                    // deepest raise; skip while unwinding a pending
+                    // exception, whose later re-conversions see popped
+                    // chains. Last fresh raise wins.
+                    if self.exception.is_none() {
+                        let mut frames = Vec::new();
+                        let mut bc = self.current_breadcrumb.clone();
+                        while let Some(b) = bc.as_ref() {
+                            if let Some(caller) = &b.caller {
+                                frames.push(caller.clone());
+                            }
+                            bc = b.upper.clone();
+                        }
+                    frames.reverse();
+                    *self.last_error_stack.borrow_mut() = frames;
+                    }
                     let exception = RException::from_error(self, &e);
                     self.exception = Some(Rc::new(exception));
                     continue;
