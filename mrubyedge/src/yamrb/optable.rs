@@ -143,6 +143,7 @@ const ENTER_K_MASK: u32 = 0b11111 << 2;
 const ENTER_D_MASK: u32 = 0b1 << 1;
 const ENTER_B_MASK: u32 = 0b1 << 0;
 
+#[inline(always)]
 pub(crate) fn consume_expr(
     vm: &mut VM,
     code: OpCode,
