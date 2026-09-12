@@ -705,3 +705,174 @@ fn array_return_splat_scalar_test() {
     let vals: Vec<i64> = arr.iter().map(|r| r.as_ref().try_into().unwrap()).collect();
     assert_eq!(vals, vec![5]);
 }
+
+// ------------------------------------------------------- GETIDX / SETIDX ----
+
+fn array_run(code: &'static str, fname: &'static str) -> Vec<i64> {
+    let binary = mrbc_compile(fname, code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
+        mrb_funcall(&mut vm, None, "test_main", &[])
+            .unwrap()
+            .as_ref()
+            .try_into()
+            .unwrap();
+    arr.iter().map(|r| r.as_ref().try_into().unwrap()).collect()
+}
+
+#[test]
+fn array_getidx_basic_test() {
+    let code = r#"
+    def test_main
+      a = [10, 20, 30]
+      [a[0], a[1], a[2]]
+    end
+    "#;
+    assert_eq!(array_run(code, "getidx_basic"), vec![10, 20, 30]);
+}
+
+#[test]
+fn array_getidx_negative_test() {
+    let code = r#"
+    def test_main
+      a = [10, 20, 30]
+      [a[-1], a[-2], a[-3]]
+    end
+    "#;
+    assert_eq!(array_run(code, "getidx_negative"), vec![30, 20, 10]);
+}
+
+#[test]
+fn array_getidx_out_of_bounds_nil_test() {
+    let code = r#"
+    def test_main
+      a = [10, 20]
+      [a[5], a[-9]]
+    end
+    "#;
+    let binary = mrbc_compile("getidx_oob", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
+        mrb_funcall(&mut vm, None, "test_main", &[])
+            .unwrap()
+            .as_ref()
+            .try_into()
+            .unwrap();
+    assert!(arr.len() == 2);
+    assert!(arr[0].as_ref().is_nil());
+    assert!(arr[1].as_ref().is_nil());
+}
+
+#[test]
+fn array_setidx_basic_test() {
+    let code = r#"
+    def test_main
+      a = [10, 20]
+      a[1] = 99
+      [a[0], a[1]]
+    end
+    "#;
+    assert_eq!(array_run(code, "setidx_basic"), vec![10, 99]);
+}
+
+#[test]
+fn array_setidx_negative_test() {
+    let code = r#"
+    def test_main
+      a = [10, 20]
+      a[-1] = 7
+      [a[0], a[1]]
+    end
+    "#;
+    assert_eq!(array_run(code, "setidx_negative"), vec![10, 7]);
+}
+
+#[test]
+fn array_setidx_append_test() {
+    // index == len appends (falls back to the native [] = path).
+    let code = r#"
+    def test_main
+      a = [10, 20]
+      a[2] = 30
+      a
+    end
+    "#;
+    assert_eq!(array_run(code, "setidx_append"), vec![10, 20, 30]);
+}
+
+#[test]
+fn array_getidx_multidimensional_test() {
+    let code = r#"
+    def test_main
+      a = [[1, 2], [3, 4]]
+      [a[0][1], a[1][0]]
+    end
+    "#;
+    assert_eq!(array_run(code, "getidx_multi"), vec![2, 3]);
+}
+
+#[test]
+fn array_setidx_multidimensional_test() {
+    let code = r#"
+    def test_main
+      a = [[1, 2], [3, 4]]
+      a[1][1] = 9
+      [a[0][1], a[1][1]]
+    end
+    "#;
+    assert_eq!(array_run(code, "setidx_multi"), vec![2, 9]);
+}
+
+#[test]
+fn hash_getidx_still_works_test() {
+    // GETIDX on a non-Array receiver must keep dispatching to [].
+    let code = r#"
+    def test_main
+      h = {1 => "a", 2 => "b"}
+      [h[1], h[2]]
+    end
+    "#;
+    let binary = mrbc_compile("getidx_hash", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
+        mrb_funcall(&mut vm, None, "test_main", &[])
+            .unwrap()
+            .as_ref()
+            .try_into()
+            .unwrap();
+    let vals: Vec<String> = arr.iter().map(|r| r.as_ref().try_into().unwrap()).collect();
+    assert_eq!(vals, vec!["a".to_string(), "b".to_string()]);
+}
+
+#[test]
+fn redefined_array_index_is_respected_test() {
+    // Overriding Array#[] must disable the GETIDX fast path.
+    let code = r#"
+    class Array
+      def [](i)
+        "custom"
+      end
+    end
+
+    def test_main
+      a = [1, 2, 3]
+      a[0]
+    end
+    "#;
+    let binary = mrbc_compile("getidx_redefined", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let result: String = mrb_funcall(&mut vm, None, "test_main", &[])
+        .unwrap()
+        .as_ref()
+        .try_into()
+        .unwrap();
+    assert_eq!(result, "custom");
+}

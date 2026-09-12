@@ -264,3 +264,81 @@ fn class_can_have_singleton_instance_variables() {
         .expect("get_world should return string");
     assert_eq!(value, "hello");
 }
+
+#[test]
+fn attr_accessor_independent_instances() {
+    let code = r#"
+    class Hello
+      attr_accessor :world
+    end
+
+    def test_main
+      a = Hello.new
+      b = Hello.new
+      a.world = "one"
+      b.world = "two"
+      a.world + ":" + b.world
+    end
+    "#;
+    let binary = mrbc_compile("attr_independent", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let result: String = mrb_funcall(&mut vm, None, "test_main", &[])
+        .unwrap()
+        .as_ref()
+        .try_into()
+        .unwrap();
+    assert_eq!(result, "one:two");
+}
+
+#[test]
+fn attr_writer_returns_value() {
+    let code = r#"
+    class Hello
+      attr_accessor :world
+    end
+
+    def test_main
+      h = Hello.new
+      r = (h.world = 7)
+      r
+    end
+    "#;
+    let binary = mrbc_compile("attr_writer_ret", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let result: i32 = mrb_funcall(&mut vm, None, "test_main", &[])
+        .unwrap()
+        .as_ref()
+        .try_into()
+        .unwrap();
+    assert_eq!(result, 7);
+}
+
+#[test]
+fn attr_accessor_multiple_symbols() {
+    let code = r#"
+    class Point
+      attr_accessor :x, :y
+    end
+
+    def test_main
+      p = Point.new
+      p.x = 1
+      p.y = 2
+      p.x + p.y
+    end
+    "#;
+    let binary = mrbc_compile("attr_multi", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let result: i32 = mrb_funcall(&mut vm, None, "test_main", &[])
+        .unwrap()
+        .as_ref()
+        .try_into()
+        .unwrap();
+    assert_eq!(result, 3);
+}

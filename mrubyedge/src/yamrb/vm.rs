@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::mem::MaybeUninit;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -22,6 +23,15 @@ use super::{op, optable::*};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const ENGINE: &str = "mruby/edge";
+
+/// FNV-1a 64 of a byte slice, matching `FnvBuildHasher` over the same bytes.
+/// Used for dispatch-cache keys; independent of the ivar-map hasher feature.
+pub(crate) fn fnv_hash(name: &str) -> u64 {
+    use std::hash::Hasher;
+    let mut h = fnv::FnvHasher::default();
+    h.write(name.as_bytes());
+    h.finish()
+}
 
 pub(crate) const MAX_REGS_SIZE: usize = 256;
 
@@ -179,6 +189,10 @@ impl Breadcrumb {
     }
 }
 
+/// Name-keyed dispatch cache for `mrb_funcall`. Key: (method version, class
+/// identity, fnv of the method name).
+type MethodNameCache = HashMap<(u64, usize, u64), (Rc<RModule>, RProc)>;
+
 pub struct VM {
     pub irep: Rc<IREP>,
 
@@ -246,6 +260,19 @@ pub struct VM {
 
     pub fn_table: RFnTable,
     pub fn_block_stack: RFnStack,
+
+    /// Global method-definition version. Every definition, alias, undef or
+    /// include bumps it, so dispatch caches stamp entries with it and go cold
+    /// when it moves. Wrapping after 2^64 bumps is accepted as unreachable.
+    pub method_version: Cell<u64>,
+    /// Name-keyed dispatch cache for `mrb_funcall` (no bytecode call site).
+    pub method_name_cache: RefCell<MethodNameCache>,
+    /// `func` index of the pristine Array#[] native, captured after the
+    /// prelude. A redefined Array#[] resolves to a different proc, which
+    /// disables the GETIDX/SETIDX fast path.
+    pub array_index_func: Cell<Option<usize>>,
+    /// Cached "Array index fast path is safe" verdict, reset on version bump.
+    pub array_fast: Cell<Option<bool>>,
 }
 
 pub struct RFnTable {
@@ -385,6 +412,7 @@ impl VM {
             lv: None,
             catch_target_pos: Vec::new(),
             lines: Vec::new(),
+            send_cache: RefCell::new(vec![None; 1]),
         };
         Self::new_by_raw_irep(irep)
     }
@@ -468,6 +496,10 @@ impl VM {
             insn_limit,
             builtin_class_table,
             class_object_table,
+            method_version: Cell::new(0),
+            method_name_cache: RefCell::new(HashMap::new()),
+            array_index_func: Cell::new(None),
+            array_fast: Cell::new(None),
             // Placeholders; filled from the prelude classes below.
             class_class: object_class.clone(),
             module_class: object_class.clone(),
@@ -510,7 +542,41 @@ impl VM {
         vm.nil_class = vm.get_class_by_name("NilClass");
         vm.shared_memory_class = vm.get_class_by_name("SharedMemory");
 
+        vm.array_index_func
+            .set(resolve_method(&vm.array_class, "[]").and_then(|(_, m)| m.func));
+
         vm
+    }
+
+    /// Invalidates every dispatch cache: any method definition, alias, undef
+    /// or include changes what send sites may resolve to.
+    pub fn bump_method_version(&self) {
+        self.method_version
+            .set(self.method_version.get().wrapping_add(1));
+        self.method_name_cache.borrow_mut().clear();
+        self.array_fast.set(None);
+    }
+
+    /// Resolves a method by (class, name) through the name-keyed cache used
+    /// by `mrb_funcall`. Entries are keyed on the method version and class
+    /// identity, so a stale hit can never outlive a redefinition.
+    pub fn resolve_method_cached(
+        &self,
+        klass: &Rc<RClass>,
+        name: &str,
+    ) -> Option<(Rc<RModule>, RProc)> {
+        let version = self.method_version.get();
+        let key = (version, Rc::as_ptr(klass) as usize, fnv_hash(name));
+        if let Some((owner, method)) = self.method_name_cache.borrow().get(&key) {
+            return Some((owner.clone(), method.clone()));
+        }
+        let resolved = resolve_method(klass, name);
+        if let Some((owner, method)) = &resolved {
+            self.method_name_cache
+                .borrow_mut()
+                .insert(key, (owner.clone(), method.clone()));
+        }
+        resolved
     }
 
     /// Resets the instruction counter. Only available when the `insn-limit` feature is enabled.
@@ -675,7 +741,7 @@ impl VM {
             }),
             object_id: 0.into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
         .to_refcount_assigned();
         if self.current_regs()[0].is_none() {
@@ -1106,6 +1172,7 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
         lv: None,
         catch_target_pos: Vec::new(),
         lines: irep.lines.clone(),
+        send_cache: RefCell::new(Vec::new()),
     };
     for sym in irep.syms.iter() {
         irep1
@@ -1155,6 +1222,7 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
     irep1.catch_target_pos.sort();
 
     irep1.code = code;
+    irep1.send_cache = RefCell::new(vec![None; irep1.code.len()]);
     (irep1, pos + 1)
 }
 
@@ -1191,6 +1259,20 @@ pub struct IREP {
     /// Source line changes (instruction-byte offset, line), ascending.
     /// Empty when the blob was compiled without debug info.
     pub lines: Vec<(u32, u32)>,
+    /// Inline method dispatch cache, one slot per instruction. `do_op_send`
+    /// reads and fills its slot at the instruction index; entries go stale
+    /// when the global method version moves.
+    pub send_cache: RefCell<Vec<Option<SendCacheEntry>>>,
+}
+
+/// One inline cache slot: the last method a bytecode send site resolved to
+/// for a given receiver class, stamped with the method version at fill time.
+#[derive(Debug, Clone)]
+pub struct SendCacheEntry {
+    pub version: u64,
+    pub klass: Rc<RClass>,
+    pub owner: Rc<RModule>,
+    pub method: RProc,
 }
 
 impl IREP {

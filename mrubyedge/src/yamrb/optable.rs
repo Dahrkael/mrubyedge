@@ -909,12 +909,53 @@ pub(crate) fn op_setupvar(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     Ok(())
 }
 
+/// Whether the GETIDX/SETIDX fast path is safe for this receiver: it must be
+/// a plain Array (not a subclass) whose `[]` still resolves to the pristine
+/// builtin. The verdict is cached and reset on every method-version bump, so
+/// a redefined Array#[] immediately falls back to dispatch.
+fn array_index_fast(vm: &VM, recv: &Rc<RObject>) -> bool {
+    if !Rc::ptr_eq(&recv.get_class(vm), &vm.array_class) {
+        return false;
+    }
+    match vm.array_fast.get() {
+        Some(verdict) => verdict,
+        None => {
+            let pristine = vm
+                .resolve_method_cached(&vm.array_class, "[]")
+                .and_then(|(_, m)| m.func)
+                == vm.array_index_func.get();
+            vm.array_fast.set(Some(pristine));
+            pristine
+        }
+    }
+}
+
 pub(crate) fn op_getidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let recv = vm.get_current_regs_cloned(a)?;
     let idx = vm.get_current_regs_cloned(a + 1)?;
+    // Fast path: single-integer index into a pristine Array, preserving the
+    // native semantics (negative indices, out-of-range reads return nil).
+    if array_index_fast(vm, &recv)
+        && let (RValue::Array(arr), RValue::Integer(i)) = (&recv.value, &idx.value)
+    {
+        let val = {
+            let borrow = arr.borrow();
+            let len = borrow.len() as i64;
+            let mut i = *i;
+            if i < 0 {
+                i += len;
+            }
+            if i >= 0 && i < len {
+                borrow[i as usize].clone()
+            } else {
+                RObject::nil_rc()
+            }
+        };
+        vm.current_regs()[a].replace(val);
+        return Ok(());
+    }
     let args = vec![idx];
-    // TODO: direct call of array_index for performance
     let val = mrb_funcall(vm, Some(recv), "[]", &args)?;
     vm.current_regs()[a].replace(val);
     Ok(())
@@ -925,6 +966,24 @@ pub(crate) fn op_setidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let recv = vm.get_current_regs_cloned(a)?;
     let idx = vm.get_current_regs_cloned(a + 1)?;
     let val = vm.get_current_regs_cloned(a + 2)?;
+    // Fast path only for in-bounds integer writes; anything else (appending,
+    // out-of-range, non-integer) falls back to the native [] = which may
+    // extend the array.
+    if array_index_fast(vm, &recv)
+        && let (RValue::Array(arr), RValue::Integer(i)) = (&recv.value, &idx.value)
+    {
+        let mut borrow = arr.borrow_mut();
+        let len = borrow.len() as i64;
+        let mut i = *i;
+        if i < 0 {
+            i += len;
+        }
+        if i >= 0 && i < len {
+            borrow[i as usize] = val;
+            return Ok(());
+        }
+        drop(borrow);
+    }
     let args = vec![idx, val];
     mrb_funcall(vm, Some(recv), "[]=", &args)?;
     Ok(())
@@ -1189,20 +1248,52 @@ pub(crate) fn do_op_send(
         recv.singleton_or_this_class(vm)
     };
     let mut via_method_missing = false;
-    let (owner_module, method) = resolve_method(&klass, &method_id.name)
-        .or_else(|| {
-            unshift_method_name(vm, method_id, a as usize, n + k * 2 + 1);
-            n += 1;
-            via_method_missing = true;
-            resolve_method(&klass, "method_missing")
-        })
-        .ok_or_else(|| {
-            Error::Internal(format!(
-                "[BUG] method_missing not defined. {} for {}",
-                method_id.name,
-                klass.full_name()
-            ))
-        })?;
+    // Inline dispatch cache: the send site is the current pc (the loop
+    // advanced past this instruction). A hit needs both the version stamp
+    // and the receiver class identity; any redefinition bumps the version,
+    // so a stale entry can never hit.
+    let site = vm.pc.get() - 1;
+    let version = vm.method_version.get();
+    let cached = {
+        let caches = vm.current_irep.send_cache.borrow();
+        caches
+            .get(site)
+            .and_then(|slot| slot.as_ref())
+            .filter(|entry| entry.version == version && Rc::ptr_eq(&entry.klass, &klass))
+            .map(|entry| (entry.owner.clone(), entry.method.clone()))
+    };
+    let (owner_module, method) = match cached {
+        Some(hit) => hit,
+        None => {
+            let resolved = resolve_method(&klass, &method_id.name)
+                .or_else(|| {
+                    unshift_method_name(vm, method_id, a as usize, n + k * 2 + 1);
+                    n += 1;
+                    via_method_missing = true;
+                    resolve_method(&klass, "method_missing")
+                })
+                .ok_or_else(|| {
+                    Error::Internal(format!(
+                        "[BUG] method_missing not defined. {} for {}",
+                        method_id.name,
+                        klass.full_name()
+                    ))
+                })?;
+            // Only direct hits are cached; method_missing stays uncached.
+            if !via_method_missing {
+                let mut caches = vm.current_irep.send_cache.borrow_mut();
+                if let Some(slot) = caches.get_mut(site) {
+                    *slot = Some(SendCacheEntry {
+                        version,
+                        klass: klass.clone(),
+                        owner: resolved.0.clone(),
+                        method: resolved.1.clone(),
+                    });
+                }
+            }
+            resolved
+        }
+    };
 
     // guard the callee's register window before pushing its
     // frame; unbounded recursion must raise SystemStackError, not panic.
@@ -2372,7 +2463,7 @@ pub(crate) fn op_lambda(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         }),
         object_id: u64::MAX.into(),
         singleton_class: RefCell::new(None),
-        ivar: RefCell::new(RHashMap::default()),
+        ivar: RefCell::new(IvarMap::new()),
     };
     vm.current_regs()[a as usize].replace(val.to_refcount_assigned());
     Ok(())
@@ -2406,7 +2497,7 @@ pub(crate) fn op_block(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         }),
         object_id: u64::MAX.into(),
         singleton_class: RefCell::new(None),
-        ivar: RefCell::new(RHashMap::default()),
+        ivar: RefCell::new(IvarMap::new()),
     };
     vm.current_regs()[a as usize].replace(val.to_refcount_assigned());
     Ok(())
@@ -2429,7 +2520,7 @@ pub(crate) fn op_method(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         }),
         object_id: u64::MAX.into(),
         singleton_class: RefCell::new(None),
-        ivar: RefCell::new(RHashMap::default()),
+        ivar: RefCell::new(IvarMap::new()),
     };
     vm.current_regs()[a as usize].replace(val.to_refcount_assigned());
     Ok(())
@@ -2666,6 +2757,7 @@ pub(crate) fn op_def(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             procs.insert(sym.name.clone(), method);
         }
     }
+    vm.bump_method_version();
     vm.current_regs()[a as usize].replace(RObject::symbol(sym).to_refcount_assigned());
     Ok(())
 }
@@ -2698,6 +2790,7 @@ pub(crate) fn op_alias(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
     let mut procs = owner_module.procs.borrow_mut();
     procs.insert(new_name.name.clone(), new_method);
+    vm.bump_method_version();
 
     Ok(())
 }
@@ -2717,6 +2810,7 @@ pub(crate) fn op_undef(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             procs.remove(&sym.name);
         }
     };
+    vm.bump_method_version();
     Ok(())
 }
 
