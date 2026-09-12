@@ -91,7 +91,18 @@ fn mrb_integer_times(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
     for i in 0..this {
         let block = args[0].clone();
         let args = vec![Rc::new(RObject::integer(i))];
-        mrb_call_block(vm, block, None, &args, 0)?;
+        match mrb_call_block(vm, block, None, &args, 0) {
+            Ok(_) => {}
+            // break inside the block stops the iterator and
+            // its value becomes the method result (Ruby semantics). The
+            // pending exception is consumed here — leaving it set would
+            // re-fire as a phantom error in the enclosing loop.
+            Err(Error::Break(v)) => {
+                vm.exception.take();
+                return Ok(v);
+            }
+            Err(e) => return Err(e),
+        }
     }
     vm.getself()
 }

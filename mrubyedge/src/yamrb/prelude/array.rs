@@ -245,7 +245,17 @@ fn mrb_array_each(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Erro
             let a = a.borrow();
             for elem in a.iter() {
                 let args = vec![elem.clone()];
-                mrb_call_block(vm, block.clone(), None, &args, 0)?;
+                match mrb_call_block(vm, block.clone(), None, &args, 0) {
+                    Ok(_) => {}
+                    // break inside the block stops each and
+                    // its value becomes the method result (Ruby semantics).
+                    // Consume the pending exception (see integer.rs note).
+                    Err(Error::Break(v)) => {
+                        vm.exception.take();
+                        return Ok(v);
+                    }
+                    Err(e) => return Err(e),
+                }
             }
         }
         _ => {

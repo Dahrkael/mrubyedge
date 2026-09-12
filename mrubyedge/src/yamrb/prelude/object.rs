@@ -425,7 +425,17 @@ fn mrb_object_loop(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Err
 
     let this = vm.getself()?;
     loop {
-        mrb_call_block(vm, block.clone(), Some(this.clone()), &[], 0)?;
+        match mrb_call_block(vm, block.clone(), Some(this.clone()), &[], 0) {
+            Ok(_) => {}
+            // break inside the block stops loop and its
+            // value becomes the method result (Ruby semantics). Consume the
+            // pending exception (see integer.rs note).
+            Err(Error::Break(v)) => {
+                vm.exception.take();
+                return Ok(v);
+            }
+            Err(e) => return Err(e),
+        }
     }
 }
 

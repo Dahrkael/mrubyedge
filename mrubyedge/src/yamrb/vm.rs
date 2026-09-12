@@ -85,6 +85,12 @@ pub struct VM {
     // raise time from the breadcrumb chain before unwinding destroys it.
     // Outermost frame first; only frames with a name are kept.
     pub last_error_stack: RefCell<Vec<String>>,
+    // landing pad captured at OP_BREAK time — the nearest
+    // do_op_send breadcrumb and its return register. Breadcrumbs popped by
+    // intermediate error paths cannot invalidate it (the Rc keeps it alive);
+    // the unwinder delivers the break value once this crumb is gone from
+    // the live chain.
+    pub break_landing: RefCell<Option<(Rc<Breadcrumb>, usize)>>,
     pub kargs: RefCell<Option<RHashMap<RSym, Rc<RObject>>>>,
     pub current_kargs: RefCell<Option<Rc<KArgs>>>,
     pub target_class: TargetContext,
@@ -209,6 +215,19 @@ impl RFnStack {
     }
 }
 
+// Break unwinding anchors on a do_op_send breadcrumb; this
+// reports whether that crumb is still alive in the current chain.
+fn breadcrumb_chain_contains(head: &Option<Rc<Breadcrumb>>, target: &Rc<Breadcrumb>) -> bool {
+    let mut cursor = head.clone();
+    while let Some(bc) = cursor {
+        if Rc::ptr_eq(&bc, target) {
+            return true;
+        }
+        cursor = bc.upper.clone();
+    }
+    false
+}
+
 impl VM {
     /// Builds a VM from a parsed Rite chunk, consuming the bytecode and
     /// preparing the VM so it can be executed via [`VM::run`].
@@ -263,6 +282,7 @@ impl VM {
         let current_callinfo = None;
         let current_n_args = Cell::new(0);
         let last_error_stack = RefCell::new(Vec::new());
+        let break_landing = RefCell::new(None);
         let current_breadcrumb = Some(Rc::new(Breadcrumb {
             upper: None,
             event: "root",
@@ -304,6 +324,7 @@ impl VM {
             current_callinfo,
             current_n_args,
             last_error_stack,
+            break_landing,
             current_breadcrumb,
             kargs,
             current_kargs,
@@ -415,7 +436,16 @@ impl VM {
         loop {
             if !rescued && let Some(e) = self.exception.clone() {
                 let operand = insn::Fetched::B(0);
-                let mut retreg = None;
+                // Break lands on the send recorded by OP_BREAK
+                // (see break_landing). The unwinder pops frames until that
+                // send's breadcrumb is gone, then delivers the value there.
+                // Without a landing pad it unwinds like any other error.
+                let break_landing: Option<(Rc<Breadcrumb>, usize)> =
+                    if matches!(e.error_type.borrow().clone(), Error::Break(_)) {
+                        self.break_landing.borrow().clone()
+                    } else {
+                        None
+                    };
                 if let Some(pos) = self.find_next_handler_pos() {
                     self.pc.set(pos);
                     rescued = true;
@@ -433,26 +463,22 @@ impl VM {
                     continue;
                 }
 
-                if matches!(e.error_type.borrow().clone(), Error::Break(_)) {
-                    retreg = match self.current_breadcrumb.as_ref() {
-                        Some(bc) if bc.event == "do_op_send" => {
-                            let retreg = bc.as_ref().return_reg.unwrap_or(0);
-                            Some(retreg)
-                        }
-                        _ => None,
-                    };
-                }
                 match op_return(self, &operand) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        if let Some(retreg) = retreg
+                    Ok(_) => {
+                        // once the anchored send crumb has been
+                        // popped its frame is gone; deliver the break value
+                        // into its return register and resume there.
+                        if let Some((target, treg)) = &break_landing
+                            && !breadcrumb_chain_contains(&self.current_breadcrumb, target)
                             && let Error::Break(brkval) = e.error_type.borrow().clone()
                         {
-                            self.current_regs()[retreg].replace(brkval);
+                            self.current_regs()[*treg].replace(brkval);
                             self.exception.take();
-                        } else {
-                            break;
+                            self.break_landing.take();
                         }
+                    }
+                    Err(_) => {
+                        break;
                     }
                 }
                 if self.flag_preemption.get() {
