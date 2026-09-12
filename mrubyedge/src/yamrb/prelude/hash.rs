@@ -490,7 +490,7 @@ fn test_mrb_hash_size() {
     let hash = Rc::new(RObject::hash(RHashMap::default()));
     let key = Rc::new(RObject::string("key".to_string()));
     let value = Rc::new(RObject::integer(42));
-    vm.current_regs()[0].replace(hash.clone());
+    vm.set_reg(0, hash.clone());
 
     let size = mrb_hash_size(&mut vm, &[]).expect("getting size failed");
     let size: i64 = size.as_ref().try_into().expect("size is not integer");

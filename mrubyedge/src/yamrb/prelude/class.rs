@@ -212,7 +212,7 @@ fn test_class_attr_accessor() {
     let class = vm.define_class("Test", None, None);
     let args = vec![RObject::symbol("foo".into()).to_refcount_assigned()];
     let classobj = RObject::class(class.clone(), &mut vm);
-    vm.current_regs()[0].replace(classobj.clone());
+    vm.set_reg(0, classobj.clone());
     mrb_class_attr_acceccor(&mut vm, &args).expect("mrb_class_attr_acceccor failed");
 
     let instance = RObject::instance(class).to_refcount_assigned();

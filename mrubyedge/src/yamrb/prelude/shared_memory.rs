@@ -275,7 +275,7 @@ fn test_mrb_shared_memory_read_by_size() {
 
     let args = vec![Rc::new(RObject::integer(10))];
     let sm = mrb_shared_memory_new(&mut vm, &args).expect("failed to create SharedMemory");
-    vm.current_regs()[0].replace(sm);
+    vm.set_reg(0, sm);
 
     let args = vec![Rc::new(RObject::integer(1)), Rc::new(RObject::integer(0))];
     let result = mrb_shared_memory_read_by_size(&mut vm, &args).expect("failed to read");

@@ -193,7 +193,7 @@ pub struct VM {
     pub bytecode: Vec<u8>,
     pub current_irep: Rc<IREP>,
     pub pc: Cell<usize>,
-    pub regs: [Option<Rc<RObject>>; MAX_REGS_SIZE],
+    pub regs: [Option<Value>; MAX_REGS_SIZE],
     pub current_regs_offset: usize,
     pub current_callinfo: Option<Rc<CALLINFO>>,
     // n_args of the running frame; call_block hides the
@@ -443,7 +443,7 @@ impl VM {
         let bytecode = Vec::new();
         let current_irep = irep.clone();
         let pc = Cell::new(0);
-        let regs: [Option<Rc<RObject>>; MAX_REGS_SIZE] = [const { None }; MAX_REGS_SIZE];
+        let regs: [Option<Value>; MAX_REGS_SIZE] = [const { None }; MAX_REGS_SIZE];
         let current_regs_offset = 0;
         let current_callinfo = None;
         let current_n_args = Cell::new(0);
@@ -780,7 +780,7 @@ impl VM {
         }
         .to_refcount_assigned();
         if self.current_regs()[0].is_none() {
-            self.current_regs()[0].replace(top_self.clone());
+            self.set_reg(0, top_self.clone());
         }
         let mut rescued = false;
 
@@ -808,7 +808,7 @@ impl VM {
                 {
                     // reached caller method's IREP, just return
                     let operand = insn::Fetched::B(16); // FIXME: just a bit far reg
-                    self.current_regs()[16].replace(v);
+                    self.set_reg(16, v);
                     self.exception.take();
                     op_return(self, &operand).expect("[bug]cannot return");
                     continue;
@@ -823,7 +823,7 @@ impl VM {
                             && !breadcrumb_stack_contains(&self.breadcrumbs.borrow(), *target_id)
                             && let Error::Break(brkval) = e.error_type.borrow().clone()
                         {
-                            self.current_regs()[*treg].replace(brkval);
+                            self.set_reg(*treg, brkval);
                             self.exception.take();
                             self.break_landing.take();
                         }
@@ -906,10 +906,10 @@ impl VM {
         }
 
         let retval = match self.current_regs()[0].take() {
-            Some(v) => Ok(v),
+            Some(v) => Ok(v.to_rc()),
             None => Ok(RObject::nil_rc()),
         };
-        self.current_regs()[0].replace(top_self.clone());
+        self.set_reg(0, top_self.clone());
 
         retval
     }
@@ -924,20 +924,34 @@ impl VM {
         None
     }
 
-    pub(crate) fn current_regs(&mut self) -> &mut [Option<Rc<RObject>>] {
+    pub(crate) fn current_regs(&mut self) -> &mut [Option<Value>] {
         &mut self.regs[self.current_regs_offset..]
     }
 
+    /// Register read as a heap `RObject`, boxing an unboxed immediate. Native
+    /// method boundaries use this; hot opcodes read [`Self::current_regs`]
+    /// directly as [`Value`] to stay allocation-free.
     pub(crate) fn get_current_regs_cloned(&mut self, i: usize) -> Result<Rc<RObject>, Error> {
         self.current_regs()[i]
             .clone()
+            .map(|v| v.to_rc())
             .ok_or_else(|| Error::internal(format!("register {} is not assigned", i)))
     }
 
     pub(crate) fn take_current_regs(&mut self, i: usize) -> Result<Rc<RObject>, Error> {
         self.current_regs()[i]
             .take()
+            .map(|v| v.to_rc())
             .ok_or_else(|| Error::internal(format!("register {} is not assigned", i)))
+    }
+
+    /// Stores a heap result into a register, unboxing immediates so they never
+    /// stay boxed, and returns the previous value boxed (the counterpart of
+    /// [`Self::get_current_regs_cloned`]).
+    pub(crate) fn set_reg(&mut self, i: usize, rc: Rc<RObject>) -> Option<Rc<RObject>> {
+        self.current_regs()[i]
+            .replace(Value::from_rc(rc))
+            .map(|v| v.to_rc())
     }
 
     /// Returns the current `self` object from register 0, or an error if it has
@@ -952,6 +966,7 @@ impl VM {
         self.current_regs()[0]
             .clone()
             .expect("self is not assigned")
+            .to_rc()
     }
 
     pub fn get_kwargs(&self) -> Option<RHashMap<String, Rc<RObject>>> {
@@ -1142,20 +1157,21 @@ impl VM {
             for i in 0..size {
                 let reg = self.regs.get(i).unwrap().clone();
                 if let Some(obj) = reg {
-                    let inspect: String = mrb_call_inspect(self, obj.clone())
+                    let rc = obj.to_rc();
+                    let inspect: String = mrb_call_inspect(self, rc.clone())
                         .unwrap()
                         .as_ref()
                         .try_into()
                         .unwrap_or_else(|_| "(uninspectable)".into());
                     if i < current_regs_offset {
-                        eprintln!("  R{}(--): {}(oid={})", i, inspect, obj.object_id.get());
+                        eprintln!("  R{}(--): {}(oid={})", i, inspect, rc.object_id.get());
                     } else {
                         eprintln!(
                             "  R{}(R{}): {}(oid={})",
                             i,
                             i - current_regs_offset,
                             inspect,
-                            obj.object_id.get()
+                            rc.object_id.get()
                         );
                     }
                 } else if i < 16 || i < current_regs_offset {

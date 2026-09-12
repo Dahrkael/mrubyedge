@@ -430,7 +430,7 @@ fn test_mrb_array_pack() {
         Rc::new(RObject::integer(3)),
         Rc::new(RObject::integer(4)),
     ]));
-    vm.current_regs()[0].replace(array);
+    vm.set_reg(0, array);
     let format = Rc::new(RObject::string("c s l q".to_string()));
     let args = vec![format];
     let value = mrb_array_pack(&mut vm, &args).expect("pack failed");

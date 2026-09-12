@@ -48,11 +48,11 @@ fn call_block(
     let funcall_ci = vm.current_callinfo.clone().expect("callinfo just pushed");
 
     // Keep the state before the call inside the new window.
-    let prev_self = vm.current_regs()[0].replace(recv);
+    let prev_self = vm.set_reg(0, recv);
 
     let mut prev_args = vec![];
     for (i, arg) in args.iter().enumerate() {
-        let old = vm.current_regs()[i + 1].replace(arg.clone());
+        let old = vm.set_reg(i + 1, arg.clone());
         prev_args.push(old);
     }
 
@@ -60,7 +60,7 @@ fn call_block(
     // (do_op_send does the same on the send path). Without it, methods that
     // read their block local — e.g. super forwarding the block — hit an
     // unassigned register.
-    vm.current_regs()[args.len() + 1].replace(RObject::nil_rc());
+    vm.set_reg(args.len() + 1, RObject::nil_rc());
 
     vm.pc.set(0);
     vm.current_irep = block
@@ -79,13 +79,13 @@ fn call_block(
     let res = vm.run_internal();
 
     if let Some(prev) = prev_self {
-        vm.current_regs()[0].replace(prev);
+        vm.set_reg(0, prev);
     } else {
         vm.current_regs()[0].take();
     }
     for (i, prev_arg) in prev_args.into_iter().enumerate() {
         if let Some(prev) = prev_arg {
-            vm.current_regs()[i + 1].replace(prev);
+            vm.set_reg(i + 1, prev);
         } else {
             vm.current_regs()[i + 1].take();
         }
@@ -237,11 +237,11 @@ pub fn mrb_funcall(
             0, // unused
         )
     } else {
-        let prev = vm.current_regs()[0].replace(recv.clone());
+        let prev = vm.set_reg(0, recv.clone());
         let func = vm.fn_table.get(method.func.unwrap()).unwrap();
         let res = func(vm, args);
         if let Some(prev) = prev {
-            vm.current_regs()[0].replace(prev);
+            vm.set_reg(0, prev);
         } else {
             vm.current_regs()[0].take();
         }
@@ -271,11 +271,11 @@ pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Rc<RObject>, E
             0, // unused
         )
     } else {
-        let old = vm.current_regs()[0].replace(recv.clone());
+        let old = vm.set_reg(0, recv.clone());
         let func = vm.fn_table.get(method.func.unwrap()).unwrap();
         let res = func(vm, &[]);
         if let Some(old) = old {
-            vm.current_regs()[0].replace(old);
+            vm.set_reg(0, old);
         } else {
             vm.current_regs()[0].take();
         }
@@ -447,7 +447,7 @@ pub fn mrb_define_module_method(vm: &mut VM, module: Rc<RModule>, name: &str, me
 fn test_mrb_inspect() -> Result<(), Box<dyn std::error::Error>> {
     let mut vm = VM::empty();
     let old_top_self = RObject::integer(1).to_refcount_assigned();
-    vm.current_regs()[0].replace(old_top_self.clone());
+    vm.set_reg(0, old_top_self.clone());
 
     let class_a = vm.define_class("A", None, None);
     let class_a = RObject::class(class_a, &mut vm);
