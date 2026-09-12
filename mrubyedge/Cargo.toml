@@ -1,6 +1,6 @@
 [package]
 name = "mrubyedge"
-version = "1.1.12"
+version = "1.1.12-ng.1"
 edition = "2024"
 authors = ["Uchio Kondo <udzura@udzura.jp>"]
 description = "mruby/edge is yet another mruby that is specialized for running on WASM"
@@ -9,7 +9,7 @@ license = "BSD-3-Clause"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-fnv = { version = "1.0.7", optional = true }
+fnv = "1.0.7"
 plain = "0.2.3"
 rand_core = { version = "0.10.0", optional = true }
 rand_xorshift = { version = "0.5.0", optional = true }
@@ -36,10 +36,11 @@ harness = false
 [features]
 default = ["wasi", "mrubyedge-debug"]
 wasi = []
-mruby-hash-fnv = ["dep:fnv"]
+mruby-hash-fnv = []
 mruby-regexp = ["dep:regex"]
 mrubyedge-debug = ["wasi"]
 mruby-random = ["dep:rand_core", "dep:rand_xorshift"]
+ruby-compat = []
 insn-limit = []
 # mruby-securerandom = ["wasi", "dep:getrandom"]
 no-wasi = []
