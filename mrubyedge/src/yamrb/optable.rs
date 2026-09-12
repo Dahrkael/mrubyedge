@@ -981,6 +981,40 @@ fn array_index_fast(vm: &VM, recv: &Value) -> bool {
     }
 }
 
+fn hash_index_fast(vm: &VM, recv: &Value) -> bool {
+    if !Rc::ptr_eq(&recv.get_class(vm), &vm.hash_class) {
+        return false;
+    }
+    match vm.hash_index_fast.get() {
+        Some(verdict) => verdict,
+        None => {
+            let pristine = vm
+                .resolve_method_cached(&vm.hash_class, "[]")
+                .and_then(|(_, m)| m.func)
+                == vm.hash_index_func.get();
+            vm.hash_index_fast.set(Some(pristine));
+            pristine
+        }
+    }
+}
+
+fn hash_aset_fast(vm: &VM, recv: &Value) -> bool {
+    if !Rc::ptr_eq(&recv.get_class(vm), &vm.hash_class) {
+        return false;
+    }
+    match vm.hash_aset_fast.get() {
+        Some(verdict) => verdict,
+        None => {
+            let pristine = vm
+                .resolve_method_cached(&vm.hash_class, "[]=")
+                .and_then(|(_, m)| m.func)
+                == vm.hash_aset_func.get();
+            vm.hash_aset_fast.set(Some(pristine));
+            pristine
+        }
+    }
+}
+
 pub(crate) fn op_getidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let recv = vm.current_regs()[a]
@@ -1009,6 +1043,16 @@ pub(crate) fn op_getidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
                 Value::Nil
             }
         };
+        vm.current_regs()[a].replace(val);
+        return Ok(());
+    }
+    // Fast path: pristine Hash#[] with the Hash receiver does not need a full
+    // method send; mruby inlines this case in OP_GETIDX too.
+    if hash_index_fast(vm, &recv)
+        && let Value::Object(o) = &recv
+        && matches!(o.value, RValue::Hash(_))
+    {
+        let val = crate::yamrb::prelude::hash::mrb_hash_get_index(&recv, idx)?;
         vm.current_regs()[a].replace(val);
         return Ok(());
     }
@@ -1047,6 +1091,15 @@ pub(crate) fn op_setidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             return Ok(());
         }
         drop(borrow);
+    }
+    // Fast path: pristine Hash#[]= with a Hash receiver, same guard rationale
+    // as the read side.
+    if hash_aset_fast(vm, &recv)
+        && let Value::Object(o) = &recv
+        && matches!(o.value, RValue::Hash(_))
+    {
+        let _ = crate::yamrb::prelude::hash::mrb_hash_set_index(&recv, idx, val)?;
+        return Ok(());
     }
     mrb_funcall(vm, Some(recv), "[]=", &[idx, val])?;
     Ok(())

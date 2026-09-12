@@ -335,6 +335,10 @@ pub struct VM {
     /// prelude. A redefined Array#[] resolves to a different proc, which
     /// disables the GETIDX/SETIDX fast path.
     pub array_index_func: Cell<Option<usize>>,
+    /// `func` indexes of the pristine Hash#[] / Hash#[]= natives, captured
+    /// after the prelude. A redefinition disables the Hash index fast path.
+    pub hash_index_func: Cell<Option<usize>>,
+    pub hash_aset_func: Cell<Option<usize>>,
     /// Count of inline numeric/attr fast-path handlings (results and raised
     /// errors). Tests assert it moves to prove the fast path actually runs,
     /// and stays still after a redefinition replaced the tagged method.
@@ -345,6 +349,9 @@ pub struct VM {
     pub attr_cache_hits: Cell<u64>,
     /// Cached "Array index fast path is safe" verdict, reset on version bump.
     pub array_fast: Cell<Option<bool>>,
+    /// Cached "Hash index/aset fast path is safe" verdicts, reset on bump.
+    pub hash_index_fast: Cell<Option<bool>>,
+    pub hash_aset_fast: Cell<Option<bool>>,
 }
 
 pub struct RFnTable {
@@ -570,6 +577,10 @@ impl VM {
             method_name_cache: RefCell::new(RHashMap::default()),
             array_index_func: Cell::new(None),
             array_fast: Cell::new(None),
+            hash_index_func: Cell::new(None),
+            hash_aset_func: Cell::new(None),
+            hash_index_fast: Cell::new(None),
+            hash_aset_fast: Cell::new(None),
             fast_native_hits: Cell::new(0),
             attr_cache_hits: Cell::new(0),
             // Placeholders; filled from the prelude classes below.
@@ -616,6 +627,10 @@ impl VM {
 
         vm.array_index_func
             .set(resolve_method(&vm.array_class, "[]").and_then(|(_, m)| m.func));
+        vm.hash_index_func
+            .set(resolve_method(&vm.hash_class, "[]").and_then(|(_, m)| m.func));
+        vm.hash_aset_func
+            .set(resolve_method(&vm.hash_class, "[]=").and_then(|(_, m)| m.func));
 
         vm
     }
@@ -627,6 +642,8 @@ impl VM {
             .set(self.method_version.get().wrapping_add(1));
         self.method_name_cache.borrow_mut().clear();
         self.array_fast.set(None);
+        self.hash_index_fast.set(None);
+        self.hash_aset_fast.set(None);
     }
 
     /// Invalidates every inline constant cache: any constant definition or
