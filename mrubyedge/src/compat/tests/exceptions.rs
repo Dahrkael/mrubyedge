@@ -40,11 +40,11 @@ fn raise_with_custom_instance_carries_message() {
 }
 
 /// Upstream mrubyedge overflows the stack instantiating exception classes
-/// through the generic Class#new. Our native Exception#new bypasses it; this
-/// frozen reproducer documents the underlying defect. Run manually:
-/// `cargo test -p motorpg-bindings-edge -- --ignored` (it aborts the process).
+/// through the generic Class#new. The native Exception#new bypasses it; this
+/// frozen reproducer documents the underlying defect. Run manually with
+/// `cargo test -p mrubyedge -- --ignored` (it aborts the process).
 #[test]
-#[ignore = "upstream stack overflow: see agents/mrubyedge.md"]
+#[ignore = "upstream stack overflow in generic Class#new for exceptions"]
 fn repro_upstream_exception_new_overflow() {
     let mut v = VM::empty();
     let blob = unsafe {

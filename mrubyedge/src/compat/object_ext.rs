@@ -50,8 +50,8 @@ fn cm_ivar_set(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
         .cloned()
         .ok_or_else(|| Error::ArgumentError("missing value".into()))?;
     let this = this_obj(vm)?;
-    // Motorpg patch: immediates are shared, so writing an ivar on one would
-    // leak to every instance; MRI forbids it with FrozenError.
+    // Immediates are shared, so writing an ivar on one would leak to every
+    // instance; MRI forbids it with FrozenError.
     if this.is_immediate() {
         return Err(this.frozen_immediate_error(vm));
     }
