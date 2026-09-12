@@ -185,3 +185,118 @@ Child.new(10).value
     let result_int: i32 = result.as_ref().try_into().unwrap();
     assert_eq!(result_int, 11);
 }
+
+#[test]
+fn bare_super_forwards_initialize_args() {
+    let code = r#"
+class Parent
+  def initialize(x, y)
+    @x = x
+    @y = y
+  end
+  def sum
+    @x + @y
+  end
+end
+
+class Child < Parent
+  def initialize(x, y)
+    super
+  end
+end
+
+Child.new(20, 22).sum
+    "#;
+    let binary = mrbc_compile("bare_super_forwards_initialize_args", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    let result = vm.run().unwrap();
+    let result_int: i32 = result.as_ref().try_into().unwrap();
+    assert_eq!(result_int, 42);
+}
+
+#[test]
+fn bare_super_forwards_method_args() {
+    let code = r#"
+class Base
+  def scale(x, y)
+    x * y
+  end
+end
+
+class Derived < Base
+  def scale(x, y)
+    super
+  end
+end
+
+Derived.new.scale(6, 7)
+    "#;
+    let binary = mrbc_compile("bare_super_forwards_method_args", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    let result = vm.run().unwrap();
+    let result_int: i32 = result.as_ref().try_into().unwrap();
+    assert_eq!(result_int, 42);
+}
+
+#[test]
+fn bare_super_chain_through_initialize() {
+    let code = r#"
+class A
+  def initialize(x)
+    @x = x
+  end
+  def value
+    @x
+  end
+end
+
+class B < A
+  def initialize(x)
+    super
+    @x = @x + 1
+  end
+end
+
+class C < B
+  def initialize(x)
+    super
+    @x = @x + 1
+  end
+end
+
+C.new(40).value
+    "#;
+    let binary = mrbc_compile("bare_super_chain_through_initialize", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    let result = vm.run().unwrap();
+    let result_int: i32 = result.as_ref().try_into().unwrap();
+    assert_eq!(result_int, 42);
+}
+
+#[test]
+fn bare_super_with_rest_args() {
+    let code = r#"
+class Base
+  def combine(*items)
+    items[0] + items[1] + items[2]
+  end
+end
+
+class Derived < Base
+  def combine(*items)
+    super
+  end
+end
+
+Derived.new.combine(10, 20, 12)
+    "#;
+    let binary = mrbc_compile("bare_super_with_rest_args", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    let result = vm.run().unwrap();
+    let result_int: i32 = result.as_ref().try_into().unwrap();
+    assert_eq!(result_int, 42);
+}

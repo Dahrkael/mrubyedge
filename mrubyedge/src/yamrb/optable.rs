@@ -305,9 +305,9 @@ pub(crate) fn consume_expr(
         SUPER => {
             op_super(vm, operand)?;
         }
-        // ARGARY => {
-        //     // op_argary(vm, &operand)?;
-        // }
+        ARGARY => {
+            op_argary(vm, operand)?;
+        }
         ENTER => {
             op_enter(vm, operand)?;
         }
@@ -1398,8 +1398,13 @@ pub(crate) fn op_call(vm: &mut VM, _operand: &Fetched) -> Result<(), Error> {
     Ok(())
 }
 
+/// OP_SUPER with this arg count forwards the arguments packed in an array by
+/// ARGARY (regs[a+1]) instead of reading them from consecutive registers.
+const CALL_MAXARGS: usize = 15;
+
 pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
+    let splat = b as usize == CALL_MAXARGS;
     let callinfo = vm
         .current_callinfo
         .as_ref()
@@ -1410,12 +1415,22 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         .clone()
         .ok_or_else(|| Error::RuntimeError("super called outside of method".to_string()))?;
     let recv = vm.getself()?;
-    let args = (0..b)
-        .map(|i| {
-            vm.get_current_regs_cloned((a + i + 1) as usize)
-                .expect("args too short for super")
-        })
-        .collect::<Vec<_>>();
+
+    let args: Vec<Rc<RObject>> = if splat {
+        let ary = vm.get_current_regs_cloned((a + 1) as usize)?;
+        match &ary.value {
+            RValue::Array(inner) => inner.borrow().iter().cloned().collect(),
+            _ => vec![ary],
+        }
+    } else {
+        (0..b)
+            .map(|i| {
+                vm.get_current_regs_cloned((a + i + 1) as usize)
+                    .expect("args too short for super")
+            })
+            .collect()
+    };
+    let arg_count = args.len();
 
     let klass = match &recv.value {
         RValue::Instance(ins) => ins.class.clone(),
@@ -1430,7 +1445,7 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             Error::internal(format!("functon registerd but no entry found: {}", &sym_id))
         })?;
         let res = func(vm, &args);
-        for i in (a as usize + 1)..(a as usize + b as usize + 1) {
+        for i in (a as usize + 1)..(a as usize + arg_count + 1) {
             vm.current_regs()[i].take();
         }
         match res {
@@ -1449,6 +1464,21 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     // frame; unbounded recursion must raise SystemStackError, not panic.
     if let Some(irep) = method.irep.as_ref() {
         vm.check_frame_window(a as usize, irep.nregs)?;
+    }
+
+    // A splat super keeps its block at a+2; capture it before the arg writes
+    // overwrite that slot, then place it at the callee's block local.
+    let blk = if splat {
+        vm.current_regs()[a as usize + 2].clone()
+    } else {
+        None
+    };
+    for (i, arg) in args.iter().enumerate() {
+        vm.current_regs()[a as usize + 1 + i].replace(arg.clone());
+    }
+    if splat {
+        vm.current_regs()[a as usize + arg_count + 1]
+            .replace(blk.unwrap_or_else(RObject::nil_rc));
     }
 
     let upper = vm.current_breadcrumb.take();
@@ -1479,6 +1509,51 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         .ok_or_else(|| Error::internal("empty irep"))?
         .clone();
     vm.current_regs_offset += a as usize;
+    Ok(())
+}
+
+/// OP_ARGARY: packs the running method's arguments (leading args, optional
+/// rest array and post args) into a new array at regs[a] and moves the block
+/// next to it, so a following bare `super` can forward them. The operand is
+/// (m5:r1:m5:d1:lv4); args are read from regs[1..] of the current frame.
+pub(crate) fn op_argary(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
+    let (a, s) = operand.as_bs()?;
+    let m1 = ((s >> 11) & 0x1f) as usize;
+    let r = ((s >> 10) & 0x1) as usize;
+    let m2 = ((s >> 5) & 0x1f) as usize;
+    let lv = (s & 0xf) as usize;
+    if lv != 0 {
+        return Err(Error::internal(
+            "super from a nested block (ARGARY lv>0) is not supported",
+        ));
+    }
+
+    let mut values: Vec<Rc<RObject>> = Vec::new();
+    let mut i = 0;
+    for _ in 0..m1 {
+        values.push(vm.get_current_regs_cloned(i + 1)?);
+        i += 1;
+    }
+    if r == 1 {
+        let rest = vm.get_current_regs_cloned(i + 1)?;
+        if let RValue::Array(ary) = &rest.value {
+            for item in ary.borrow().iter() {
+                values.push(item.clone());
+            }
+        } else {
+            values.push(rest);
+        }
+        i += 1;
+    }
+    for _ in 0..m2 {
+        values.push(vm.get_current_regs_cloned(i + 1)?);
+        i += 1;
+    }
+    let array = RObject::array(values);
+    vm.current_regs()[a as usize].replace(array.to_refcount_assigned());
+    // The block sits right after the args; move it next to the array.
+    let blk = vm.get_current_regs_cloned(i + 1)?;
+    vm.current_regs()[(a + 1) as usize].replace(blk);
     Ok(())
 }
 
@@ -1515,6 +1590,11 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     // argument fall back to its default for funcall-invoked methods.
     let argc = vm.current_n_args.get();
     let arg_info = EnterArgInfo::from(a);
+    // The block arrives at the call-based slot (regs[argc+1]) and must land
+    // on the signature-based block local (regs[len+1]); capture it before the
+    // rest packing overwrites the call-based slot, and place it at the end.
+    let block_len = arg_info.m1 + arg_info.o + arg_info.r + arg_info.m2;
+    let blk = vm.current_regs()[argc + 1].clone();
     let m1_argc = arg_info.m1 as usize;
     for i in 0..m1_argc {
         match vm.current_regs()[i + 1].as_ref() {
@@ -1587,6 +1667,13 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
         let kwrest = RObject::hash(map);
         vm.current_regs()[kwrest_pos].replace(kwrest.to_refcount_assigned());
+    }
+    // Land the block on the signature-based block local, unless that slot
+    // already holds an argument (native funcalls can pass a proc as a
+    // positional argument to a `&block` parameter, e.g. Enumerable#map).
+    if vm.current_regs()[(block_len + 1) as usize].is_none() {
+        vm.current_regs()[(block_len + 1) as usize]
+            .replace(blk.unwrap_or_else(RObject::nil_rc));
     }
 
     Ok(())
