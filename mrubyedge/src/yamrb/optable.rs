@@ -1335,14 +1335,13 @@ fn try_fast_op(
     a: usize,
     n: usize,
 ) -> Option<Result<Value, Error>> {
-    let func = method.func?;
-    let op = *vm.fast_ops.borrow().get(&func)?;
+    let op = method.fast_op?;
 
     // attr_accessor closures: a direct IvarMap access on the receiver, no call
     // frame. The receiver can be any object; the guard is the dispatch cache's
     // receiver-class check, and redefinition replaces the method + tag.
     if let FastOp::AttrGet | FastOp::AttrSet = op {
-        let key = *vm.fast_attrs.borrow().get(&func)?;
+        let key = method.attr_key?;
         let recv_rc = match recv {
             Value::Object(o) => o.clone(),
             _ => return None,
@@ -1612,13 +1611,9 @@ pub(crate) fn do_op_send(
                 // Mirror into the attr cache: when the resolved method is an
                 // attr_accessor closure, record the ivar so op_send can run the
                 // access without entering do_op_send at all.
-                let tag = resolved
-                    .1
-                    .func
-                    .and_then(|f| vm.fast_ops.borrow().get(&f).copied());
-                if let (Some(FastOp::AttrGet | FastOp::AttrSet), Some(func)) =
-                    (tag, resolved.1.func)
-                    && let Some(key) = vm.fast_attrs.borrow().get(&func).copied()
+                let tag = resolved.1.fast_op;
+                if let Some(FastOp::AttrGet | FastOp::AttrSet) = tag
+                    && let Some(key) = resolved.1.attr_key
                 {
                     let is_set = matches!(tag, Some(FastOp::AttrSet));
                     let mut attrs = vm.current_irep.attr_cache.borrow_mut();
@@ -2921,6 +2916,8 @@ pub(crate) fn op_lambda(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             func: None,
             environ: Some(environ),
             block_self: Some(vm.getself()?),
+            fast_op: None,
+            attr_key: None,
         }),
         object_id: u64::MAX.into(),
         singleton_class: RefCell::new(None),
@@ -2957,6 +2954,8 @@ pub(crate) fn op_block(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             func: None,
             environ: Some(environ),
             block_self: Some(vm.getself()?),
+            fast_op: None,
+            attr_key: None,
         }),
         object_id: u64::MAX.into(),
         singleton_class: RefCell::new(None),
@@ -2980,6 +2979,8 @@ pub(crate) fn op_method(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             func: None,
             environ: None,
             block_self: None,
+            fast_op: None,
+            attr_key: None,
         }),
         object_id: u64::MAX.into(),
         singleton_class: RefCell::new(None),

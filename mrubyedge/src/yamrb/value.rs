@@ -310,7 +310,7 @@ pub enum FastOp {
     /// Object#!= on same-kind numeric operands (value inequality).
     NumNe,
     /// attr_accessor getter: direct IvarMap read on the receiver, no call.
-    /// The ivar key and its FNV hash live in the VM's fast_attrs registry.
+    /// The ivar key lives on the tagged [`RProc`](crate::yamrb::value::RProc).
     AttrGet,
     /// attr_accessor setter: direct IvarMap write, returns the assigned value.
     AttrSet,
@@ -1873,6 +1873,14 @@ pub struct RProc {
     pub func: Option<usize>,
     pub environ: Option<Rc<ENV>>,
     pub block_self: Option<Value>,
+    /// Inline numeric operation this native implements, if tagged via
+    /// `mrb_define_cmethod_fast`. Travels with the proc so the send fast path
+    /// never consults a side table; a redefinition replaces the proc and the
+    /// tag together.
+    pub fast_op: Option<FastOp>,
+    /// Ivar key backing an `attr_accessor` closure, if tagged via
+    /// `mrb_define_cmethod_attr`. See [`Self::fast_op`].
+    pub attr_key: Option<u32>,
 }
 
 /// Native Rust callable used to implement Ruby methods in the VM.

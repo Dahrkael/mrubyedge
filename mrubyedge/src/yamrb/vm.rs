@@ -1,5 +1,4 @@
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::mem::MaybeUninit;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -23,15 +22,6 @@ use super::{op, optable::*};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const ENGINE: &str = "mruby/edge";
-
-/// FNV-1a 64 of a byte slice, matching `FnvBuildHasher` over the same bytes.
-/// Used for dispatch-cache keys; independent of the ivar-map hasher feature.
-pub(crate) fn fnv_hash(name: &str) -> u64 {
-    use std::hash::Hasher;
-    let mut h = fnv::FnvHasher::default();
-    h.write(name.as_bytes());
-    h.finish()
-}
 
 /// Cap for the inline argument buffer used at native boundaries. Small enough
 /// to live on the stack; larger arities fall back to a caller-owned Vec.
@@ -251,7 +241,7 @@ impl Breadcrumb {
 
 /// Name-keyed dispatch cache for `mrb_funcall`. Key: (method version, class
 /// identity, fnv of the method name).
-type MethodNameCache = HashMap<(u64, usize, u64), (Rc<RModule>, RProc)>;
+type MethodNameCache = RHashMap<(u64, usize, u32), (Rc<RModule>, RProc)>;
 
 pub struct VM {
     pub irep: Rc<IREP>,
@@ -342,15 +332,6 @@ pub struct VM {
     /// prelude. A redefined Array#[] resolves to a different proc, which
     /// disables the GETIDX/SETIDX fast path.
     pub array_index_func: Cell<Option<usize>>,
-    /// Identity registry for send fast paths: func index -> inline operation
-    /// (numeric math or attr_accessor access). Populated at method registration
-    /// through the `_fast` helpers; `do_op_send` consults it on a
-    /// dispatch-cache hit only, so a redefined method (new func, bumped
-    /// version) can never reuse a tag.
-    pub fast_ops: RefCell<std::collections::HashMap<usize, FastOp>>,
-    /// Ivar identity for attr_accessor fast-path closures, keyed by func index:
-    /// the `@name` key shared with the closure and its precomputed FNV hash.
-    pub fast_attrs: RefCell<std::collections::HashMap<usize, u32>>,
     /// Count of inline numeric/attr fast-path handlings (results and raised
     /// errors). Tests assert it moves to prove the fast path actually runs,
     /// and stays still after a redefinition replaced the tagged method.
@@ -579,11 +560,9 @@ impl VM {
             class_object_table,
             method_version: Cell::new(0),
             const_version: Cell::new(0),
-            method_name_cache: RefCell::new(HashMap::new()),
+            method_name_cache: RefCell::new(RHashMap::default()),
             array_index_func: Cell::new(None),
             array_fast: Cell::new(None),
-            fast_ops: RefCell::new(HashMap::new()),
-            fast_attrs: RefCell::new(HashMap::new()),
             fast_native_hits: Cell::new(0),
             attr_cache_hits: Cell::new(0),
             // Placeholders; filled from the prelude classes below.
@@ -660,11 +639,15 @@ impl VM {
         name: &str,
     ) -> Option<(Rc<RModule>, RProc)> {
         let version = self.method_version.get();
-        let key = (version, Rc::as_ptr(klass) as usize, fnv_hash(name));
+        // Key on the interned method id, not the name string: the id is a small
+        // integer, so the map hashes cheaply and the FNV name hash is computed
+        // (intern) once per call rather than per lookup.
+        let id = intern_symbol(name);
+        let key = (version, Rc::as_ptr(klass) as usize, id);
         if let Some((owner, method)) = self.method_name_cache.borrow().get(&key) {
             return Some((owner.clone(), method.clone()));
         }
-        let resolved = resolve_method(klass, name);
+        let resolved = resolve_method_by_id(klass, id);
         if let Some((owner, method)) = &resolved {
             self.method_name_cache
                 .borrow_mut()
@@ -1089,21 +1072,6 @@ impl VM {
         self.fn_table.set(Rc::new(f));
         self.fn_table.len() - 1
     }
-
-    /// Tags a registered native function so `do_op_send` can execute it inline
-    /// (numeric math or attr_accessor access). The tag is looked up by `func`
-    /// identity at a dispatch-cache hit, so it never outlives the exact
-    /// registration.
-    pub fn register_fast_native(&self, func: usize, op: FastOp) {
-        self.fast_ops.borrow_mut().insert(func, op);
-    }
-
-    /// Records the ivar identity backing an attr_accessor fast-path closure;
-    /// see [`Self::register_fast_native`] for the lifetime guarantee.
-    pub fn register_fast_attr(&self, func: usize, key: u32) {
-        self.fast_attrs.borrow_mut().insert(func, key);
-    }
-
     pub(crate) fn push_fnblock(&mut self, f: Rc<RFn>) -> Result<(), Error> {
         self.fn_block_stack.push(f)
     }

@@ -133,6 +133,8 @@ fn rproc_from_rust_block(vm: &mut VM, rfn: RFn) -> Result<Rc<RObject>, Error> {
         func: None,
         environ: None,
         block_self: vm.getself().ok(),
+        fast_op: None,
+        attr_key: None,
     };
     Ok(RObject::proc(block).to_refcount_assigned())
 }

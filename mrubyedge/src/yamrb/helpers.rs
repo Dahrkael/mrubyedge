@@ -307,12 +307,6 @@ fn register_cmethod(
     cmethod: RFn,
 ) {
     let index = vm.register_fn(cmethod);
-    if let Some(op) = tag {
-        vm.register_fast_native(index, op);
-    }
-    if let Some(key) = attr {
-        vm.register_fast_attr(index, key);
-    }
     let method = RProc {
         is_rb_func: false,
         is_fnblock: false,
@@ -322,6 +316,8 @@ fn register_cmethod(
         func: Some(index),
         environ: None,
         block_self: None,
+        fast_op: tag,
+        attr_key: attr,
     };
     procs.borrow_mut().insert(intern_symbol(name), method);
     vm.bump_method_version();
