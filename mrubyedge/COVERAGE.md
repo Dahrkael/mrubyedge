@@ -447,6 +447,79 @@ Uses the Rust `regex` crate.
 
 ---
 
+## Ruby stdlib compatibility layer `[feature: ruby-compat]`
+
+`src/compat/` — implemented in Rust on top of the public VM API. Enable the
+`ruby-compat` feature and call `mrubyedge::compat::register(&mut vm)`.
+
+### Array
+
+`#delete`, `#index` (alias: `#find_index`), `#rindex`, `#insert`, `#first`,
+`#last`, `#reverse`, `#reverse!`, `#reverse_each`, `#rotate`, `#take`,
+`#drop`, `#values_at`, `#dig`, `#each_with_object`, `#compact!`, `#product`,
+`#zip`, `#shuffle` `[feature: mruby-random]`, `#sample` `[feature: mruby-random]`,
+`#reject`, `#reject!`, `#concat`, `#fill`, `#<=>`
+
+### Comparable
+
+`#<`, `#<=`, `#>`, `#>=`, `#==`, `#between?`, `#clamp` (included in `Integer`,
+`Float`, `String`, `Symbol`)
+
+### Hash
+
+`#fetch`, `#key?` (alias: `#member?`), `#value?`, `#dig`, `#values_at`,
+`#transform_values`, `#transform_keys`, `#invert`, `#store`, `#each_pair`,
+`#merge`, `#merge!`, `#keep_if`
+
+### Integer / Float
+
+`#upto`, `#downto`, `#step`, `#even?`, `#odd?`, `#zero?`, `#positive?`,
+`#negative?`, `#succ`, `#pred`, `#divmod`, `#%` (alias: `#modulo`), `#fdiv`,
+`#div`, `#pow`, `#digits`, `#gcd`, `#lcm`, `#bit_length`, `#coerce`, `#round`,
+`#remainder`, `#floor`, `#ceil`, `#truncate`
+
+### Math
+
+`.sin`, `.cos`, `.tan`, `.asin`, `.acos`, `.atan`, `.atan2`, `.sinh`, `.cosh`,
+`.tanh`, `.sqrt`, `.cbrt`, `.exp`, `.log`, `.log2`, `.log10`, `.hypot`, `.pow`,
+`.abs`; constants `PI`, `E`
+
+### Object / Kernel
+
+`#instance_variable_get`, `#instance_variable_set`, `#instance_variable_defined?`,
+`#instance_variables`, `#tap`, `#then` (alias: `#yield_self`), `#send`
+(alias: `#__send__`), `#eql?`, `#hash`, `#freeze`, `#frozen?`, `#print`,
+`#Integer`, `#Float`, `#String`; `Class#new` constructs native exceptions
+
+### Proc
+
+`#===`, `#to_proc`, `#arity`
+
+### Range
+
+`#begin`, `#end`, `#first`, `#last`, `#exclude_end?`, `#cover?` (alias: `#===`),
+`#size`, `#step`
+
+### String
+
+`#%`, `#gsub`, `#sub`, `#tr`, `#delete`, `#squeeze`, `#count`, `#reverse`,
+`#ljust`, `#rjust`, `#center`, `#swapcase`, `#capitalize`, `#casecmp`,
+`#casecmp?`, `#<=>`, `#chop`, `#prepend`, `#replace`, `#concat`, `#partition`,
+`#each_char`, `#each_byte`, `#each_line`, `#lines`, `#hex`, `#oct`, `#succ`;
+`Kernel#sprintf` / `#format`
+
+### Symbol
+
+`#length`, `#size`, `#upcase`, `#downcase`, `#capitalize`, `#swapcase`,
+`#succ`, `#empty?`, `#[]`, `#<=>`, `#casecmp`
+
+### Exceptions
+
+`Exception#initialize`, `#message`, `#to_s`, `#inspect`; classes `KeyError`,
+`IndexError`, `StopIteration`, `LocalJumpError`, `FrozenError`, `IOError`
+
+---
+
 ## Notes
 
 - Some arithmetic operators (`*`, `/`) for Integer are not defined as instance methods in this prelude; they are handled directly by the VM bytecode interpreter (`eval.rs`).

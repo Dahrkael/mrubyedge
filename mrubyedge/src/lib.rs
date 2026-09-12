@@ -55,7 +55,7 @@
 //!
 //! mruby/edge implements a subset of the Ruby standard library.
 //! The built-in classes and methods that are currently supported are listed in
-//! [`COVERAGE.md`](https://github.com/mrubyedge/mrubyedge/blob/master/mrubyedge/COVERAGE.md).
+//! [`COVERAGE.md`](https://github.com/Dahrkael/mrubyedge/blob/nextgen/mrubyedge/COVERAGE.md).
 //!
 //! In brief, the following classes are available out of the box:
 //! `Object`, `Integer`, `Float`, `String`, `Array`, `Hash`, `Range`,
@@ -63,6 +63,9 @@
 //! `Class`, `Exception` (and standard subclasses), and the `Enumerable`
 //! module. Additional classes such as `Random` and `Regexp` are available
 //! behind Cargo feature flags (`mruby-random` and `mruby-regexp`).
+//! The optional `ruby-compat` feature builds `compat`, an extended
+//! standard-library layer that is registered explicitly with
+//! `compat::register`.
 //! A `SharedMemory` class unique to mruby/edge provides zero-copy access to
 //! WASM linear memory.
 //!
