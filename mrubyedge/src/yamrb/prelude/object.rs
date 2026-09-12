@@ -3,7 +3,7 @@ use std::rc::Rc;
 use crate::{
     Error,
     yamrb::{
-        helpers::{mrb_call_block, mrb_define_cmethod, mrb_funcall},
+        helpers::{mrb_call_block, mrb_define_cmethod, mrb_define_cmethod_fast, mrb_funcall},
         value::*,
         vm::VM,
     },
@@ -40,7 +40,13 @@ pub(crate) fn initialize_object(vm: &mut VM) {
         "==",
         Box::new(mrb_object_double_eq),
     );
-    mrb_define_cmethod(vm, object_class.clone(), "!=", Box::new(mrb_object_not_eq));
+    mrb_define_cmethod_fast(
+        vm,
+        object_class.clone(),
+        "!=",
+        FastOp::NumNe,
+        Box::new(mrb_object_not_eq),
+    );
     mrb_define_cmethod(
         vm,
         object_class.clone(),
@@ -104,10 +110,11 @@ pub(crate) fn initialize_object(vm: &mut VM) {
         "class",
         Box::new(mrb_object_class),
     );
-    mrb_define_cmethod(
+    mrb_define_cmethod_fast(
         vm,
         object_class.clone(),
         "<=>",
+        FastOp::NumSpaceship,
         Box::new(mrb_object_compare),
     );
     mrb_define_cmethod(

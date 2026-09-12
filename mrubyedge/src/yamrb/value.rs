@@ -66,6 +66,60 @@ pub enum RValue {
     Nil,
 }
 
+/// Numeric operations that the send dispatch can execute inline, skipping the
+/// native-call machinery. One variant per concrete closure registered through
+/// the fast path, so the inline code replicates that closure's exact semantics
+/// (e.g. floored vs truncated modulo). Variants are identity-tagged onto a
+/// method's `func` at registration and read back through the dispatch cache:
+/// a redefinition replaces the method, bumps the method version, and forces a
+/// fresh resolve, so a stale entry can never fast-path through an old tag.
+///
+/// Only closures whose behavior has no dynamic component are tagged: modulo,
+/// power, `<=>` and `!=` operate purely on operand values. The Comparable
+/// family (`<`, `<=`, ...) deliberately is NOT tagged because it calls `<=>`
+/// dynamically, and a user `<=>` override would otherwise be bypassed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FastOp {
+    /// Integer#% as registered by the prelude: Rust-style truncated modulo,
+    /// divisor must be a non-zero Integer.
+    IntModTrunc,
+    /// Integer#% as registered by the engine compat layer: floored modulo,
+    /// result carries the divisor's sign; Float divisor yields a Float.
+    IntModFloored,
+    /// Float#% as registered by the engine compat layer: floored modulo.
+    FloatModFloored,
+    /// Integer#** — positive exponent stays Integer, negative or Float
+    /// exponent promotes to Float (prelude semantics).
+    IntPow,
+    /// Float#** (prelude semantics).
+    FloatPow,
+    /// Object#<=> restricted to numeric operands (prelude semantics).
+    NumSpaceship,
+    /// Object#!= on same-kind numeric operands (value inequality).
+    NumNe,
+}
+
+/// Ruby's floored modulo: the result carries the divisor's sign. Shared by the
+/// engine compat layer and the send fast path so they cannot drift apart.
+pub fn rubylike_mod_f64(a: f64, b: f64) -> f64 {
+    let r = a % b;
+    if r != 0.0 && (r < 0.0) != (b < 0.0) {
+        r + b
+    } else {
+        r
+    }
+}
+
+/// Ruby's floored modulo for integers; see [`rubylike_mod_f64`].
+pub fn rubylike_mod_i64(a: i64, b: i64) -> i64 {
+    let r = a % b;
+    if r != 0 && (r < 0) != (b < 0) {
+        r + b
+    } else {
+        r
+    }
+}
+
 /// Canonical representation used when Ruby objects serve as Hash keys.
 /// TODO: This will be used to implement Hash#hash and Hash#eql?.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

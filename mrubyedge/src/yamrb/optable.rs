@@ -1170,6 +1170,159 @@ pub(crate) fn op_sendb(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     do_op_send(vm, a as usize, Some(a as usize + n + k * 2 + 1), a, b, c)
 }
 
+/// Tries to execute a tagged numeric send inline, skipping the native-call
+/// machinery (arg Vec, fn-table lookup, frame bookkeeping). Eligible sends are
+/// those whose resolved method carries a [`FastOp`] tag (modulo, power,
+/// spaceship, `!=`) AND whose operands are numeric; any other operand type
+/// falls through to the real method so coercion and errors keep their native
+/// behavior. Returns `None` when not eligible.
+///
+/// The tag is bound to the method's `func` identity at registration and read
+/// back through a version-and-class-guarded dispatch cache hit, so a
+/// redefinition (new func, bumped version) can never fast-path with a stale
+/// tag. Only value-only operations are tagged — the Comparable family is not,
+/// because it dispatches `<=>` dynamically and would bypass user overrides.
+fn try_fast_op(
+    vm: &mut VM,
+    method: &RProc,
+    recv: Rc<RObject>,
+    a: usize,
+    n: usize,
+) -> Option<Result<Rc<RObject>, Error>> {
+    let func = method.func?;
+    let op = *vm.fast_ops.borrow().get(&func)?;
+
+    // First operand: the receiver. Every tagged op expects a numeric one.
+    let (recv_i, recv_f) = match &recv.value {
+        RValue::Integer(i) => (Some(*i), None),
+        RValue::Float(f) => (None, Some(*f)),
+        _ => return None,
+    };
+    // Second operand (binary ops only). A missing or non-numeric operand falls
+    // through to the native method, which reports arity/type errors as usual.
+    let arg = if n == 0 {
+        None
+    } else {
+        vm.current_regs()[a + 1].clone()
+    };
+    let (arg_i, arg_f) = match &arg {
+        Some(obj) => match &obj.value {
+            RValue::Integer(i) => (Some(*i), None),
+            RValue::Float(f) => (None, Some(*f)),
+            _ => (None, None),
+        },
+        None => (None, None),
+    };
+
+    // Numeric ordering used by `<=>`. Integer pairs compare exactly as i64
+    // (matching Object#<=> and the comparison opcodes); mixed pairs promote to
+    // f64, exactly like the native closure.
+    let order = |a: f64, b: f64| -> i64 {
+        if a < b {
+            -1
+        } else if a > b {
+            1
+        } else {
+            0
+        }
+    };
+    let spaceship = || -> Option<i64> {
+        match (recv_i, recv_f, arg_i, arg_f) {
+            (Some(a), None, Some(b), None) => Some(if a < b {
+                -1
+            } else if a > b {
+                1
+            } else {
+                0
+            }),
+            (None, Some(a), None, Some(b)) => Some(order(a, b)),
+            (Some(a), None, None, Some(b)) => Some(order(a as f64, b)),
+            (None, Some(a), Some(b), None) => Some(order(a, b as f64)),
+            _ => None,
+        }
+    };
+
+    // Each arm produces a `Result`; fall-throughs (`return None`) skip the
+    // counter below because the native method runs instead.
+    let result: Result<Rc<RObject>, Error> = match op {
+        FastOp::IntModTrunc => {
+            // Prelude semantics: truncated modulo over two Integers. A zero
+            // divisor falls through to the native method, which panics on `%0`
+            // exactly as the prelude's own implementation would.
+            let (Some(a), Some(b)) = (recv_i, arg_i) else {
+                return None;
+            };
+            if b == 0 {
+                return None;
+            }
+            Ok(RObject::integer_rc(a % b))
+        }
+        FastOp::IntModFloored => {
+            // Engine compat semantics: floored modulo; Integer divisor keeps
+            // the result Integer, Float divisor promotes to Float.
+            if let (Some(a), Some(b)) = (recv_i, arg_i) {
+                if b == 0 {
+                    Err(Error::ZeroDivisionError)
+                } else {
+                    Ok(RObject::integer_rc(rubylike_mod_i64(a, b)))
+                }
+            } else {
+                let a = match recv_i.map(|i| i as f64).or(recv_f) {
+                    Some(v) => v,
+                    None => return None,
+                };
+                let b = match arg_i.map(|i| i as f64).or(arg_f) {
+                    Some(v) => v,
+                    None => return None,
+                };
+                if b == 0.0 {
+                    Err(Error::ZeroDivisionError)
+                } else {
+                    Ok(Rc::new(RObject::float(rubylike_mod_f64(a, b))))
+                }
+            }
+        }
+        FastOp::FloatModFloored => {
+            let a = recv_f?;
+            let b = arg_f.or_else(|| arg_i.map(|i| i as f64))?;
+            if b == 0.0 {
+                Err(Error::ZeroDivisionError)
+            } else {
+                Ok(Rc::new(RObject::float(rubylike_mod_f64(a, b))))
+            }
+        }
+        FastOp::IntPow => {
+            let base = recv_i?;
+            match (arg_i, arg_f) {
+                // Same `pow` as the native: overflow panics in debug and wraps
+                // in release, so both paths stay identical.
+                (Some(exp), _) if exp >= 0 => Ok(RObject::integer_rc(base.pow(exp as u32))),
+                (Some(exp), _) => Ok(Rc::new(RObject::float((base as f64).powf(exp as f64)))),
+                (None, Some(exp)) => Ok(Rc::new(RObject::float((base as f64).powf(exp)))),
+                _ => return None,
+            }
+        }
+        FastOp::FloatPow => {
+            let base = recv_f?;
+            let exp = arg_f.or_else(|| arg_i.map(|i| i as f64))?;
+            Ok(Rc::new(RObject::float(base.powf(exp))))
+        }
+        FastOp::NumSpaceship => Ok(RObject::integer_rc(spaceship()?)),
+        // Object#!= uses ValueEquality, where Integer and Float are never
+        // equal; only same-kind operands are fast-pathed, mixed falls back.
+        FastOp::NumNe => match (recv_i, recv_f, arg_i, arg_f) {
+            (Some(a), None, Some(b), None) => Ok(RObject::boolean_rc(a != b)),
+            (None, Some(a), None, Some(b)) => Ok(RObject::boolean_rc(a != b)),
+            _ => return None,
+        },
+    };
+    // Count every inline handling (result or raised error) — fall-throughs
+    // returned None above and did not reach here — so tests can prove the fast
+    // path runs and stays disabled for redefined (untagged) methods.
+    vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
+    Some(result)
+}
+
 pub(crate) fn do_op_send(
     vm: &mut VM,
     recv_index: usize,
@@ -1246,6 +1399,12 @@ pub(crate) fn do_op_send(
     // so a stale entry can never hit.
     let site = vm.pc.get() - 1;
     let version = vm.method_version.get();
+    let was_cache_hit = vm
+        .current_irep
+        .send_cache
+        .borrow()
+        .get(site)
+        .is_some_and(|slot| slot.is_some());
     let cached = {
         let caches = vm.current_irep.send_cache.borrow();
         caches
@@ -1286,6 +1445,26 @@ pub(crate) fn do_op_send(
             resolved
         }
     };
+
+    // inline numeric fast path. Runs when the send site's cache
+    // slot is populated with no kwargs or block; the resolved `method` comes
+    // from the version-and-class-guarded entry (or a fresh resolve when the
+    // slot is stale), so the tag always matches the method that would run.
+    // Errors mirror the native call: the result register is cleared before the
+    // exception propagates to the interpreter loop.
+    if was_cache_hit && k == 0 && blk_index.is_none() {
+        match try_fast_op(vm, &method, recv.clone(), a as usize, n) {
+            Some(Ok(val)) => {
+                vm.current_regs()[a as usize].replace(val);
+                return Ok(());
+            }
+            Some(Err(e)) => {
+                vm.current_regs()[a as usize].replace(RObject::nil_rc());
+                return Err(e);
+            }
+            None => {}
+        }
+    }
 
     // guard the callee's register window before pushing its
     // frame; unbounded recursion must raise SystemStackError, not panic.
