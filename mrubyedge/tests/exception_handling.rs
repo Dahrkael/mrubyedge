@@ -211,3 +211,34 @@ outer
     // Assert
     assert_eq!(result, "caught:deep");
 }
+
+#[test]
+fn an_exception_raised_in_an_ensure_leaving_a_loop_is_rescued_test() {
+    let code = "
+def run
+  i = 0
+  while i < 3
+    begin
+      break
+    ensure
+      raise \"from ensure\"
+    end
+  end
+  \"dropped\"
+end
+
+begin
+  run
+rescue => e
+  \"p:\" + e.message
+end
+";
+    let binary = mrbc_compile("compiled", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    let result = vm.run().unwrap();
+    let result: String = result.as_ref().try_into().unwrap();
+
+    // Assert
+    assert_eq!(result, "p:from ensure");
+}

@@ -976,11 +976,12 @@ fn consume_ensure_block(vm: &mut VM) -> Result<(), Error> {
 
         match consume_expr(vm, op.code, &operand, op.pos, op.len) {
             Ok(_) => {}
-            Err(e) => {
+            Err(e @ (Error::Break(_) | Error::BlockReturn(_, _))) => {
                 let exception = RException::from_error(vm, &e);
                 vm.exception = Some(Rc::new(exception));
                 continue;
             }
+            Err(e) => return Err(e),
         }
     }
 }
