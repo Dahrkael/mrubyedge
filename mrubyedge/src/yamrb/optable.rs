@@ -2255,7 +2255,7 @@ pub(crate) fn op_return_blk(vm: &mut VM, operand: &Fetched) -> Result<(), Error>
     // entered through a send do not.
     let is_funcall = vm.current_callinfo.as_ref().is_some_and(|c| c.is_funcall);
     if !is_funcall {
-        return op_return(vm, &operand);
+        return op_return(vm, operand);
     }
 
     // Block/lambda frame: unwind to the nearest enclosing lambda (its return
