@@ -910,15 +910,11 @@ impl VM {
             rescued = false;
 
             let pc = self.pc.get();
-            if self.current_irep.code.len() <= pc {
+            if pc >= self.current_irep.code.len() {
                 // reached end of the IREP
                 break;
             }
-            let op = *self
-                .current_irep
-                .code
-                .get(pc)
-                .ok_or_else(|| Error::internal("end of opcode reached"))?;
+            let op = self.current_irep.code[pc];
             let operand = op.operand;
             self.pc.set(pc + 1);
 

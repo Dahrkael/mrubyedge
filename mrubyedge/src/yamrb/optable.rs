@@ -143,6 +143,7 @@ const ENTER_K_MASK: u32 = 0b11111 << 2;
 const ENTER_D_MASK: u32 = 0b1 << 1;
 const ENTER_B_MASK: u32 = 0b1 << 0;
 
+#[inline(always)]
 pub(crate) fn consume_expr(
     vm: &mut VM,
     code: OpCode,
@@ -644,27 +645,31 @@ pub(crate) fn op_setgv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_getiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let this = vm.getself()?;
-    // The irep symbol for an ivar read already carries the interned id.
-    let value = this.get_ivar_by_id(vm.current_irep.syms[b as usize].id);
+    let id = vm.current_irep.syms[b as usize].id;
+    // Read the ivar through the receiver borrowed in place (no self Rc clone);
+    // only a non-object self (rare) falls back to boxing.
+    let value = match &vm.regs[vm.current_regs_offset] {
+        Some(Value::Object(o)) => o.get_ivar_by_id(id),
+        Some(v) => v.to_rc().get_ivar_by_id(id),
+        None => return Err(Error::internal("self is not assigned")),
+    };
     vm.current_regs()[a as usize].replace(value);
     Ok(())
 }
 
 pub(crate) fn op_setiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let this = vm.getself()?;
-    // immediates are shared, so writing an ivar on one would
-    // leak to every instance; MRI forbids it with FrozenError.
-    if this.is_immediate() {
-        return Err(this.frozen_immediate_error(vm));
-    }
+    let id = vm.current_irep.syms[b as usize].id;
     let val = vm.current_regs()[a as usize]
         .clone()
         .ok_or_else(|| Error::internal(format!("register {} is not assigned", a)))?;
-    // Borrow the sym name instead of cloning it; the ivar map hashes it
-    // transiently and never stores the key by value.
-    this.set_ivar_by_id(vm.current_irep.syms[b as usize].id, val);
+    // immediates are shared, so writing an ivar on one would
+    // leak to every instance; MRI forbids it with FrozenError.
+    match &vm.regs[vm.current_regs_offset] {
+        Some(Value::Object(o)) => o.set_ivar_by_id(id, val),
+        Some(v) => return Err(v.to_rc().frozen_immediate_error(vm)),
+        None => return Err(Error::internal("self is not assigned")),
+    }
     Ok(())
 }
 
@@ -1206,34 +1211,31 @@ pub(crate) fn op_send(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         let recv = vm.current_regs()[a as usize].clone();
         // Attr accessors are instance methods, so the receiver must be an
         // object; an immediate (or unassigned) receiver falls through.
-        let recv_rc = match &recv {
-            Some(Value::Object(o)) => Some(o.clone()),
-            _ => None,
-        };
-        if let Some(recv) = recv_rc {
-            // Clone the entry so the cache borrow ends before register writes.
-            let entry = vm
-                .current_irep
-                .attr_cache
-                .borrow()
-                .get(site)
-                .and_then(|slot| slot.as_ref())
-                .cloned();
-            if let Some(entry) = entry
-                && entry.version == version
-                && Rc::ptr_eq(&entry.klass, &recv.singleton_or_this_class(vm))
+        if let Some(Value::Object(recv_obj)) = &recv {
+            // Snapshot the cache entry as Copy fields (+ the class pointer) so
+            // the borrow ends before `singleton_or_this_class` needs `&mut vm`.
+            let cached = {
+                let cache = vm.current_irep.attr_cache.borrow();
+                cache
+                    .get(site)
+                    .and_then(|slot| slot.as_ref())
+                    .map(|e| (e.version, Rc::as_ptr(&e.klass) as usize, e.key, e.is_set))
+            };
+            if let Some((cached_version, cached_klass, key, is_set)) = cached
+                && cached_version == version
+                && cached_klass == Rc::as_ptr(&recv_obj.singleton_or_this_class(vm)) as usize
             {
-                if entry.is_set {
+                if is_set {
                     let value = vm.current_regs()[a as usize + 1].clone();
                     if let Some(value) = value {
-                        recv.set_ivar_by_id(entry.key, value.clone());
+                        recv_obj.set_ivar_by_id(key, value.clone());
                         vm.current_regs()[a as usize].replace(value);
                         vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
                         vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
                         return Ok(());
                     }
                 } else {
-                    let val = recv.get_ivar_by_id(entry.key);
+                    let val = recv_obj.get_ivar_by_id(key);
                     vm.current_regs()[a as usize].replace(val);
                     vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
                     vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
