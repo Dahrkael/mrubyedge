@@ -5,7 +5,7 @@ use crate::{Error, yamrb::vm::Breadcrumb};
 use super::{
     optable::push_callinfo,
     value::{RClass, RFn, RModule, RObject, RProc, RSym, RValue, resolve_method},
-    vm::VM,
+    vm::{MAX_REGS_SIZE, VM},
 };
 
 /// backtrace-friendly label for a call frame, e.g.
@@ -32,12 +32,23 @@ fn call_block(
         Some((id, owner)) => (id, Some(owner)),
         None => (RSym::new("<block>".to_string()), None),
     };
+
+    // the callee gets its own register window above the
+    // caller's frame. Sharing the window made reentrant funcalls issued from
+    // native code clobber in-flight caller registers.
+    let saved_offset = vm.current_regs_offset;
+    let caller_frame_size = vm.current_irep.nregs;
+    vm.current_regs_offset = saved_offset + caller_frame_size;
+    if vm.current_regs_offset + 32 >= MAX_REGS_SIZE {
+        vm.current_regs_offset = saved_offset;
+        return Err(Error::Internal("register window exhausted".into()));
+    }
+
     push_callinfo(vm, method_id, args.len(), method_owner, return_register);
 
     let old_callinfo = vm.current_callinfo.take();
 
-    // Since call_block does not move the registers offset,
-    // keep the state before the call.
+    // Keep the state before the call inside the new window.
     let prev_self = vm.current_regs()[0].replace(recv);
 
     let mut prev_args = vec![];
@@ -75,7 +86,7 @@ fn call_block(
         }
         vm.current_irep = ci.pc_irep.clone();
         vm.pc.set(ci.pc);
-        vm.current_regs_offset = ci.current_regs_offset;
+        vm.current_regs_offset = saved_offset;
         vm.target_class = ci.target_class.clone();
     }
     if let Some(upper) = vm.upper.take()

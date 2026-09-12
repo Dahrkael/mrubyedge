@@ -196,8 +196,28 @@ pub fn mrb_kernel_debug(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
     Ok(Rc::new(RObject::nil()))
 }
 
-pub fn mrb_object_is_equal(_vm: &mut VM, lhs: Rc<RObject>, rhs: Rc<RObject>) -> Rc<RObject> {
-    RObject::boolean(lhs.as_eq_value() == rhs.as_eq_value()).to_refcount_assigned()
+// honor custom #== overrides. Primitive pairs keep the
+// structural fast path; otherwise dispatch unless only the Object default
+// (which would recurse back into this function) resolves.
+pub fn mrb_object_is_equal(vm: &mut VM, lhs: Rc<RObject>, rhs: Rc<RObject>) -> Rc<RObject> {
+    let structural = || RObject::boolean(lhs.as_eq_value() == rhs.as_eq_value()).to_refcount_assigned();
+    let primitive = |o: &Rc<RObject>| {
+        matches!(
+            o.value,
+            RValue::Integer(_) | RValue::Float(_) | RValue::String(..) | RValue::Bool(_) | RValue::Nil | RValue::Symbol(_)
+        )
+    };
+    if primitive(&lhs) && primitive(&rhs) {
+        return structural();
+    }
+    if let Some((owner, _method)) = resolve_method(&lhs.get_class(vm), "==") {
+        if owner.sym_id.name != "Object" {
+            if let Ok(r) = mrb_funcall(vm, Some(lhs.clone()), "==", std::slice::from_ref(&rhs)) {
+                return r;
+            }
+        }
+    }
+    structural()
 }
 
 pub fn mrb_object_is_not_equal(_vm: &mut VM, lhs: Rc<RObject>, rhs: Rc<RObject>) -> Rc<RObject> {

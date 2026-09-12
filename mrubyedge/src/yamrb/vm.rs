@@ -15,7 +15,7 @@ use super::{op, optable::*};
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const ENGINE: &str = "mruby/edge";
 
-const MAX_REGS_SIZE: usize = 256;
+pub(crate) const MAX_REGS_SIZE: usize = 256;
 
 #[derive(Debug, Clone)]
 pub enum TargetContext {

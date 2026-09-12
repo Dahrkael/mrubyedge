@@ -1675,19 +1675,41 @@ pub(crate) fn op_div(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     Ok(())
 }
 
+/// Falls back to <=> dispatch for non-numeric operands, mirroring op_div.
+fn compare_via_spaceship(
+    vm: &mut VM,
+    val1: Rc<RObject>,
+    val2: Rc<RObject>,
+    op: &str,
+) -> Result<RObject, Error> {
+    let r = mrb_funcall(vm, Some(val1.clone()), "<=>", &[val2.clone()])?;
+    match r.value {
+        RValue::Nil => Err(Error::ArgumentError("comparison failed".into())),
+        _ => {
+            let ord = i64::try_from(r.as_ref())
+                .map_err(|_| Error::ArgumentError("bad <=> result".into()))?;
+            let hit = match op {
+                "<" => ord < 0,
+                "<=" => ord <= 0,
+                ">" => ord > 0,
+                _ => ord >= 0,
+            };
+            Ok(RObject::boolean(hit))
+        }
+    }
+}
+
 pub(crate) fn op_lt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let b = a + 1;
-    let val1 = vm.take_current_regs(a)?;
+    let val1 = vm.get_current_regs_cloned(a)?;
     let val2 = vm.get_current_regs_cloned(b)?;
     let result = match (&val1.value, &val2.value) {
         (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean(n1 < n2),
         (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean(n1 < n2),
         (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean((*n1 as f64) < *n2),
         (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean(*n1 < (*n2 as f64)),
-        _ => {
-            unreachable!("lt supports only numeric")
-        }
+        _ => compare_via_spaceship(vm, val1.clone(), val2.clone(), "<")?,
     };
     vm.current_regs()[a].replace(Rc::new(result));
     Ok(())
@@ -1696,16 +1718,14 @@ pub(crate) fn op_lt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_le(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let b = a + 1;
-    let val1 = vm.take_current_regs(a)?;
+    let val1 = vm.get_current_regs_cloned(a)?;
     let val2 = vm.get_current_regs_cloned(b)?;
     let result = match (&val1.value, &val2.value) {
         (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean(n1 <= n2),
         (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean(n1 <= n2),
         (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean((*n1 as f64) <= *n2),
         (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean(*n1 <= (*n2 as f64)),
-        _ => {
-            unreachable!("le supports only numeric")
-        }
+        _ => compare_via_spaceship(vm, val1.clone(), val2.clone(), "<=")?,
     };
     vm.current_regs()[a].replace(Rc::new(result));
     Ok(())
@@ -1724,16 +1744,14 @@ pub(crate) fn op_eq(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_gt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let b = a + 1;
-    let val1 = vm.take_current_regs(a)?;
+    let val1 = vm.get_current_regs_cloned(a)?;
     let val2 = vm.get_current_regs_cloned(b)?;
     let result = match (&val1.value, &val2.value) {
         (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean(n1 > n2),
         (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean(n1 > n2),
         (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean((*n1 as f64) > *n2),
         (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean(*n1 > (*n2 as f64)),
-        _ => {
-            unreachable!("gt supports only numeric")
-        }
+        _ => compare_via_spaceship(vm, val1.clone(), val2.clone(), ">")?,
     };
     vm.current_regs()[a].replace(Rc::new(result));
     Ok(())
@@ -1742,16 +1760,14 @@ pub(crate) fn op_gt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_ge(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let b = a + 1;
-    let val1 = vm.take_current_regs(a)?;
+    let val1 = vm.get_current_regs_cloned(a)?;
     let val2 = vm.get_current_regs_cloned(b)?;
     let result = match (&val1.value, &val2.value) {
         (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean(n1 >= n2),
         (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean(n1 >= n2),
         (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean((*n1 as f64) >= *n2),
         (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean(*n1 >= (*n2 as f64)),
-        _ => {
-            unreachable!("ge supports only numeric")
-        }
+        _ => compare_via_spaceship(vm, val1.clone(), val2.clone(), ">=")?,
     };
     vm.current_regs()[a].replace(Rc::new(result));
     Ok(())
