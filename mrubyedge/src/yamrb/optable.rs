@@ -647,7 +647,7 @@ pub(crate) fn op_getiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     // Borrow the sym name instead of cloning it; get_ivar hashes it
     // transiently and never stores the key by value.
     let value = this.get_ivar(&vm.current_irep.syms[b as usize].name);
-    vm.set_reg(a as usize, value);
+    vm.current_regs()[a as usize].replace(value);
     Ok(())
 }
 
@@ -659,10 +659,12 @@ pub(crate) fn op_setiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     if this.is_immediate() {
         return Err(this.frozen_immediate_error(vm));
     }
-    let val = vm.get_current_regs_cloned(a as usize)?;
+    let val = vm.current_regs()[a as usize]
+        .clone()
+        .ok_or_else(|| Error::internal(format!("register {} is not assigned", a)))?;
     // Borrow the sym name instead of cloning it; the ivar map hashes it
     // transiently and never stores the key by value.
-    this.set_ivar(vm.current_irep.syms[b as usize].name.as_str(), val.clone());
+    this.set_ivar(vm.current_irep.syms[b as usize].name.as_str(), val);
     Ok(())
 }
 
@@ -712,7 +714,7 @@ fn cvar_lookup(vm: &mut VM, name: &str) -> Result<Rc<RObject>, Error> {
     while let Some(klass) = current.clone() {
         let wrapper = RObject::class(klass.clone(), vm);
         if let Some(val) = wrapper.ivar.borrow().get(name).cloned() {
-            return Ok(val);
+            return Ok(val.to_rc());
         }
         current = klass.super_class.clone();
     }
@@ -730,13 +732,19 @@ fn cvar_set(vm: &mut VM, name: &str, value: Rc<RObject>) {
     while let Some(klass) = current.clone() {
         let wrapper = RObject::class(klass.clone(), vm);
         if wrapper.ivar.borrow().contains_key(name) {
-            wrapper.ivar.borrow_mut().insert(Rc::from(name), value);
+            wrapper
+                .ivar
+                .borrow_mut()
+                .insert(Rc::from(name), Value::from_rc(value));
             return;
         }
         current = klass.super_class.clone();
     }
     let wrapper = RObject::class(cls, vm);
-    wrapper.ivar.borrow_mut().insert(Rc::from(name), value);
+    wrapper
+        .ivar
+        .borrow_mut()
+        .insert(Rc::from(name), Value::from_rc(value));
 }
 
 pub(crate) fn op_getconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
@@ -1196,15 +1204,15 @@ pub(crate) fn op_send(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
                 if entry.is_set {
                     let value = vm.current_regs()[a as usize + 1].clone();
                     if let Some(value) = value {
-                        recv.set_ivar_hashed(entry.key.clone(), entry.hash, value.to_rc());
-                        vm.set_reg(a as usize, value.to_rc());
+                        recv.set_ivar_hashed(entry.key.clone(), entry.hash, value.clone());
+                        vm.current_regs()[a as usize].replace(value);
                         vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
                         vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
                         return Ok(());
                     }
                 } else {
                     let val = recv.get_ivar_hashed(&entry.key, entry.hash);
-                    vm.set_reg(a as usize, val);
+                    vm.current_regs()[a as usize].replace(val);
                     vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
                     vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
                     return Ok(());
@@ -1255,10 +1263,10 @@ fn try_fast_op(
             _ => return None,
         };
         let result = match op {
-            FastOp::AttrGet => Ok(Value::from_rc(recv_rc.get_ivar_hashed(&key, hash))),
+            FastOp::AttrGet => Ok(recv_rc.get_ivar_hashed(&key, hash)),
             _ => {
                 let value = vm.current_regs()[a + 1].clone()?;
-                recv_rc.set_ivar_hashed(key, hash, value.to_rc());
+                recv_rc.set_ivar_hashed(key, hash, value.clone());
                 Ok(value)
             }
         };
@@ -1446,12 +1454,14 @@ pub(crate) fn do_op_send(
 
     // The block value is captured here but only appended to the argument
     // vector for native calls; Ruby callees read it from the registers.
-    let mut block_val: Option<Rc<RObject>> = None;
+    let mut block_val: Option<Value> = None;
     if let Some(blk_index) = blk_index {
-        let blk_val = vm.get_current_regs_cloned(blk_index)?;
-        if matches!(blk_val.tt, RType::Symbol) {
-            let proc_val = mrb_funcall(vm, Some(blk_val), "to_proc", &[])?;
-            block_val = Some(proc_val);
+        let blk_val = vm.current_regs()[blk_index]
+            .clone()
+            .ok_or_else(|| Error::internal(format!("register {} is not assigned", blk_index)))?;
+        if matches!(blk_val, Value::Symbol(_)) {
+            let proc_val = mrb_funcall(vm, Some(blk_val.to_rc()), "to_proc", &[])?;
+            block_val = Some(Value::from_rc(proc_val));
         } else {
             block_val = Some(blk_val);
         }
@@ -1594,24 +1604,35 @@ pub(crate) fn do_op_send(
 
     vm.set_reg(a as usize, recv.clone());
     if !method.is_rb_func {
-        // Build the argument vector only for native calls (Ruby callees read
+        // Build the argument slice only for native calls (Ruby callees read
         // the registers directly). After method_missing the name sits at
         // a+1 and the original args were shifted up by one. Both this build
         // and get_fn run before the KArgs frame, so an error path cannot
-        // leave an unpopped frame.
+        // leave an unpopped frame. The register window is copied into a stack
+        // buffer as unboxed `Option<Value>`; arity is at most 15 + method
+        // name + block, so the buffer always fits.
         let mm = via_method_missing;
         let native_n = n - mm as usize;
         let first_arg = a as usize + 1 + mm as usize;
-        let mut args = Vec::with_capacity(native_n + mm as usize + block_val.is_some() as usize);
+        let mut buf = arg_buf();
+        let mut len = 0usize;
         if mm {
-            args.push(vm.get_current_regs_cloned(a as usize + 1)?);
+            buf[len] = Some(vm.current_regs()[a as usize + 1].clone().ok_or_else(|| {
+                Error::internal(format!("register {} is not assigned", a as usize + 1))
+            })?);
+            len += 1;
         }
         for i in 0..native_n {
-            args.push(vm.get_current_regs_cloned(first_arg + i)?);
+            buf[len] = Some(vm.current_regs()[first_arg + i].clone().ok_or_else(|| {
+                Error::internal(format!("register {} is not assigned", first_arg + i))
+            })?);
+            len += 1;
         }
         if let Some(blk) = block_val {
-            args.push(blk);
+            buf[len] = Some(blk);
+            len += 1;
         }
+        let args = &buf[..len];
 
         let func = vm
             .get_fn(method.func.unwrap())
@@ -1626,7 +1647,7 @@ pub(crate) fn do_op_send(
         }
         vm.current_regs_offset += a as usize;
 
-        let res = func(vm, &args);
+        let res = func(vm, args);
 
         if k > 0 {
             kwarg_op_return(vm);
@@ -1639,11 +1660,11 @@ pub(crate) fn do_op_send(
 
         match res {
             Ok(val) => {
-                vm.set_reg(a as usize, val);
+                vm.current_regs()[a as usize].replace(val);
                 vm.pop_breadcrumb();
             }
             Err(e) => {
-                vm.set_reg(a as usize, RObject::nil_rc());
+                vm.current_regs()[a as usize].replace(Value::Nil);
                 // capture the backtrace at this send before
                 // popping its breadcrumb (deepest frame wins), mark the
                 // exception as pending so outer conversions skip their own
@@ -1769,21 +1790,39 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         .ok_or_else(|| Error::RuntimeError("super called outside of method".to_string()))?;
     let recv = vm.getself()?;
 
-    let args: Vec<Rc<RObject>> = if splat {
+    let mut buf = arg_buf();
+    let mut tmp: Vec<Option<Value>> = Vec::new();
+    let args: &[Option<Value>];
+    let arg_count: usize;
+    if splat {
         let ary = vm.get_current_regs_cloned((a + 1) as usize)?;
         match &ary.value {
-            RValue::Array(inner) => inner.borrow().iter().cloned().collect(),
-            _ => vec![ary],
+            RValue::Array(inner) => {
+                let inner = inner.borrow();
+                arg_count = inner.len();
+                if arg_count <= buf.len() {
+                    for (i, v) in inner.iter().enumerate() {
+                        buf[i] = Some(Value::from_rc(v.clone()));
+                    }
+                    args = &buf[..arg_count];
+                } else {
+                    tmp = inner
+                        .iter()
+                        .map(|v| Some(Value::from_rc(v.clone())))
+                        .collect();
+                    args = tmp.as_slice();
+                }
+            }
+            _ => {
+                buf[0] = Some(Value::from_rc(ary));
+                arg_count = 1;
+                args = &buf[..1];
+            }
         }
     } else {
-        (0..b)
-            .map(|i| {
-                vm.get_current_regs_cloned((a + i + 1) as usize)
-                    .expect("args too short for super")
-            })
-            .collect()
-    };
-    let arg_count = args.len();
+        arg_count = b as usize;
+        args = reg_args(vm, (a + 1) as usize, arg_count, &mut buf, &mut tmp)?;
+    }
 
     let klass = match &recv.value {
         RValue::Instance(ins) => ins.class.clone(),
@@ -1797,16 +1836,16 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         let func = vm.get_fn(method.func.unwrap()).ok_or_else(|| {
             Error::internal(format!("functon registerd but no entry found: {}", sym_id))
         })?;
-        let res = func(vm, &args);
+        let res = func(vm, args);
         for i in (a as usize + 1)..(a as usize + arg_count + 1) {
             vm.current_regs()[i].take();
         }
         match res {
             Ok(val) => {
-                vm.set_reg(a as usize, val);
+                vm.current_regs()[a as usize].replace(val);
             }
             Err(e) => {
-                vm.set_reg(a as usize, RObject::nil_rc());
+                vm.current_regs()[a as usize].replace(Value::Nil);
                 return Err(e);
             }
         }
@@ -1827,7 +1866,7 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         None
     };
     for (i, arg) in args.iter().enumerate() {
-        vm.set_reg(a as usize + 1 + i, arg.clone());
+        vm.current_regs()[a as usize + 1 + i] = arg.clone();
     }
     if splat {
         vm.set_reg(

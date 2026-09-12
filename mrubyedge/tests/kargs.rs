@@ -7,7 +7,7 @@ use std::rc::Rc;
 use helpers::*;
 use mrubyedge::Error;
 use mrubyedge::yamrb::helpers::mrb_define_cmethod;
-use mrubyedge::yamrb::value::RObject;
+use mrubyedge::yamrb::value::{RObject, Value};
 use mrubyedge::yamrb::vm::VM;
 
 #[test]
@@ -99,11 +99,11 @@ fn keyword_args_nested_call_test() {
 
 #[test]
 fn keyword_args_c_definition_test() {
-    fn test_mrb_multiply(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+    fn test_mrb_multiply(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
         let a: i32 = args
             .first()
+            .and_then(|a| a.as_ref())
             .ok_or_else(|| Error::ArgumentError("missing positional argument 'a'".to_string()))?
-            .as_ref()
             .try_into()?;
         let kwargs = vm.get_kwargs();
         match kwargs {
@@ -116,7 +116,7 @@ fn keyword_args_c_definition_test() {
                 })?;
                 let b: i32 = b_obj.as_ref().try_into()?;
                 let c: i32 = c_obj.as_ref().try_into()?;
-                Ok(Rc::new(RObject::integer((a * b * c) as i64)))
+                Ok(Value::Integer((a * b * c) as i64))
             }
             None => Err(Error::ArgumentError(
                 "missing keyword arguments".to_string(),

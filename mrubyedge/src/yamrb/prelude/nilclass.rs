@@ -3,7 +3,10 @@ use std::rc::Rc;
 use crate::Error;
 use crate::yamrb::helpers::mrb_define_cmethod;
 
-use crate::yamrb::{value::RObject, vm::VM};
+use crate::yamrb::{
+    value::{RObject, Value},
+    vm::VM,
+};
 
 pub(crate) fn initialize_nilclass(vm: &mut VM) {
     let nilclass = vm.define_standard_class("NilClass");
@@ -18,14 +21,14 @@ pub(crate) fn initialize_nilclass(vm: &mut VM) {
     mrb_define_cmethod(vm, nilclass.clone(), "nil?", Box::new(mrb_nilclass_nil_p));
 }
 
-fn mrb_nilclass_to_s(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    Ok(Rc::new(RObject::string("".to_string())))
+fn mrb_nilclass_to_s(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
+    Ok(Value::from_rc(Rc::new(RObject::string("".to_string()))))
 }
 
-fn mrb_nilclass_inspect(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    Ok(Rc::new(RObject::string("nil".to_string())))
+fn mrb_nilclass_inspect(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
+    Ok(Value::from_rc(Rc::new(RObject::string("nil".to_string()))))
 }
 
-fn mrb_nilclass_nil_p(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    Ok(RObject::boolean_rc(true))
+fn mrb_nilclass_nil_p(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
+    Ok(Value::Bool(true))
 }

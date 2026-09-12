@@ -33,6 +33,67 @@ pub(crate) fn fnv_hash(name: &str) -> u64 {
     h.finish()
 }
 
+/// Cap for the inline argument buffer used at native boundaries. Small enough
+/// to live on the stack; larger arities fall back to a caller-owned Vec.
+pub(crate) const NATIVE_ARG_BUF: usize = 32;
+
+/// Fresh `Option<Value>` argument buffer (values are not `Copy`, so `[None; N]`
+/// repeat syntax is unavailable).
+pub(crate) fn arg_buf() -> [Option<Value>; NATIVE_ARG_BUF] {
+    std::array::from_fn(|_| None)
+}
+
+/// Converts public `&[Rc<RObject>]` arguments into unboxed `Option<Value>`,
+/// using the stack buffer when it fits. `out` is reused so the fallback path
+/// does not allocate per call. `from_rc` never allocates for immediates and
+/// moves objects without cloning.
+pub(crate) fn rc_args<'a>(
+    args: &[Rc<RObject>],
+    buf: &'a mut [Option<Value>; NATIVE_ARG_BUF],
+    out: &'a mut Vec<Option<Value>>,
+) -> &'a [Option<Value>] {
+    if args.len() <= buf.len() {
+        for (i, a) in args.iter().enumerate() {
+            buf[i] = Some(Value::from_rc(a.clone()));
+        }
+        &buf[..args.len()]
+    } else {
+        out.clear();
+        out.extend(args.iter().map(|a| Some(Value::from_rc(a.clone()))));
+        out.as_slice()
+    }
+}
+
+/// Copies a register window into an unboxed `Option<Value>` argument slice,
+/// failing loudly when a slot was never assigned (an internal invariant: the
+/// compiler always initializes argument registers before a send).
+pub(crate) fn reg_args<'a>(
+    vm: &mut VM,
+    start: usize,
+    count: usize,
+    buf: &'a mut [Option<Value>; NATIVE_ARG_BUF],
+    out: &'a mut Vec<Option<Value>>,
+) -> Result<&'a [Option<Value>], Error> {
+    let regs = vm.current_regs();
+    let fill = |i: usize| -> Result<Option<Value>, Error> {
+        Ok(Some(regs[start + i].clone().ok_or_else(|| {
+            Error::internal(format!("register {} is not assigned", start + i))
+        })?))
+    };
+    if count <= buf.len() {
+        for (i, slot) in buf[..count].iter_mut().enumerate() {
+            *slot = fill(i)?;
+        }
+        Ok(&buf[..count])
+    } else {
+        out.clear();
+        for i in 0..count {
+            out.push(fill(i)?);
+        }
+        Ok(out.as_slice())
+    }
+}
+
 pub(crate) const MAX_REGS_SIZE: usize = 256;
 
 #[derive(Debug, Clone)]

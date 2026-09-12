@@ -1,11 +1,9 @@
-use std::rc::Rc;
-
 use crate::{
     Error,
     yamrb::{
         helpers::{mrb_call_block, mrb_define_cmethod},
         prelude::module::mrb_include_module,
-        value::{RObject, RValue},
+        value::{RObject, RValue, Value},
         vm::VM,
     },
 };
@@ -25,28 +23,28 @@ pub(crate) fn initialize_range(vm: &mut VM) {
     mrb_include_module(&range_class, enumerable_module).expect("failed to include Enumerable");
 }
 
-pub fn mrb_range_is_include(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_range_is_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     match &this.value {
         RValue::Range(start, end, exclusive) => {
-            let obj = args[0].clone();
+            let obj = args[0].as_ref().unwrap().to_rc();
             match (&start.value, &end.value, &obj.value) {
                 (RValue::Integer(start), RValue::Integer(end), RValue::Integer(obj)) => {
                     if *exclusive {
-                        Ok(RObject::boolean_rc(*start <= *obj && *obj < *end))
+                        Ok(Value::Bool(*start <= *obj && *obj < *end))
                     } else {
-                        Ok(RObject::boolean_rc(*start <= *obj && *obj <= *end))
+                        Ok(Value::Bool(*start <= *obj && *obj <= *end))
                     }
                 }
                 (RValue::Integer(start), RValue::Integer(end), RValue::Float(obj)) => {
                     let obj = *obj as i64;
                     if *exclusive {
-                        Ok(RObject::boolean_rc(*start <= obj && obj < *end))
+                        Ok(Value::Bool(*start <= obj && obj < *end))
                     } else {
-                        Ok(RObject::boolean_rc(*start <= obj && obj <= *end))
+                        Ok(Value::Bool(*start <= obj && obj <= *end))
                     }
                 }
-                _ => Ok(RObject::boolean_rc(false)),
+                _ => Ok(Value::Bool(false)),
             }
         }
         _ => Err(Error::RuntimeError(
@@ -55,9 +53,9 @@ pub fn mrb_range_is_include(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObj
     }
 }
 
-pub fn mrb_range_each(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_range_each(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let block = &args[0];
+    let block = args[0].as_ref().unwrap().to_rc();
     match &this.value {
         RValue::Range(start, end, exclusive) => match (&start.value, &end.value) {
             (RValue::Integer(start), RValue::Integer(end)) => {
@@ -75,7 +73,7 @@ pub fn mrb_range_each(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
                         // Consume the pending exception (see integer.rs note).
                         Err(Error::Break(v)) => {
                             vm.exception.take();
-                            return Ok(v);
+                            return Ok(Value::from_rc(v));
                         }
                         Err(e) => return Err(e),
                     }
@@ -93,5 +91,5 @@ pub fn mrb_range_each(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
             ));
         }
     }
-    Ok(this.clone())
+    Ok(Value::from_rc(this.clone()))
 }

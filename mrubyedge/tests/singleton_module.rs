@@ -7,7 +7,7 @@ use helpers::*;
 use std::rc::Rc;
 
 use mrubyedge::yamrb::helpers::{mrb_define_singleton_cmethod, mrb_funcall};
-use mrubyedge::yamrb::value::{RObject, RValue};
+use mrubyedge::yamrb::value::{RObject, RValue, Value};
 use mrubyedge::yamrb::vm::VM;
 
 /// Case 1: `def self.m` inside a module body must define a callable
@@ -90,7 +90,7 @@ fn native_singleton_then_ruby_singleton_coexist() {
         &mut vm,
         q_wrapper,
         "native_answer",
-        Box::new(|_vm, _args| Ok(Rc::new(RObject::integer(5)))),
+        Box::new(|_vm, _args| Ok(Value::Integer(5))),
     );
 
     // Blob 2: Ruby-level singleton definition.
@@ -174,7 +174,7 @@ fn second_wrapper_shares_singleton_state() {
         &mut vm,
         w1,
         "tag",
-        Box::new(|_vm, _args| Ok(Rc::new(RObject::integer(3)))),
+        Box::new(|_vm, _args| Ok(Value::Integer(3))),
     );
 
     // Build a second wrapper over the same RModule identity.

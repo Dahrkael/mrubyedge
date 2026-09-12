@@ -17,12 +17,12 @@ pub(crate) fn initialize_proc(vm: &mut VM) {
     mrb_define_cmethod(vm, proc_class.clone(), "call", Box::new(mrb_proc_call));
 }
 
-fn mrb_proc_new(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    let block = args[0].clone();
+fn mrb_proc_new(_vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+    let block = args[0].as_ref().unwrap().clone();
     Ok(block)
 }
 
-pub fn mrb_proc_call(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_proc_call(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     // handle Proc#call as special: replace the send crumb with a Proc#call
     // crumb, keeping its return register so break and unwinding still land.
     let cur = vm
@@ -39,5 +39,12 @@ pub fn mrb_proc_call(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
     );
 
     let this = vm.getself()?;
-    mrb_call_block(vm, this.clone(), None, args, 0)
+    let args: Vec<Rc<RObject>> = args.iter().map(|a| a.as_ref().unwrap().to_rc()).collect();
+    Ok(Value::from_rc(mrb_call_block(
+        vm,
+        this.clone(),
+        None,
+        &args,
+        0,
+    )?))
 }

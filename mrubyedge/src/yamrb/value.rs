@@ -256,15 +256,13 @@ impl PartialEq for ValueEqualityForKeyValue {
     }
 }
 
-type IvarSlot = Option<(Rc<str>, u64, Rc<RObject>)>;
-
 /// Open-addressing ivar table with stored FNV hashes. Ivar sets are tiny and
 /// never delete entries, so linear probing with load-factor growth is fast
 /// and simple, and reads can skip re-hashing by passing a precomputed hash
 /// (the attr accessors compute each key's hash once).
 #[derive(Debug, Clone)]
 pub struct IvarMap {
-    slots: Vec<IvarSlot>,
+    slots: Vec<Option<(Rc<str>, u64, Value)>>,
     len: usize,
 }
 
@@ -276,11 +274,11 @@ impl IvarMap {
         }
     }
 
-    pub fn get(&self, key: &str) -> Option<&Rc<RObject>> {
+    pub fn get(&self, key: &str) -> Option<&Value> {
         self.get_hashed(key, crate::yamrb::vm::fnv_hash(key))
     }
 
-    pub fn get_hashed(&self, key: &str, hash: u64) -> Option<&Rc<RObject>> {
+    pub fn get_hashed(&self, key: &str, hash: u64) -> Option<&Value> {
         let cap = self.slots.len();
         if cap == 0 {
             return None;
@@ -310,12 +308,12 @@ impl IvarMap {
             .filter_map(|s| s.as_ref().map(|(k, _, _)| k))
     }
 
-    pub fn insert(&mut self, key: Rc<str>, value: Rc<RObject>) {
+    pub fn insert(&mut self, key: Rc<str>, value: Value) {
         let hash = crate::yamrb::vm::fnv_hash(&key);
         self.insert_hashed(key, hash, value);
     }
 
-    pub fn insert_hashed(&mut self, key: Rc<str>, hash: u64, value: Rc<RObject>) {
+    pub fn insert_hashed(&mut self, key: Rc<str>, hash: u64, value: Value) {
         if self.slots.is_empty() || (self.len + 1) * 10 >= self.slots.len() * 7 {
             self.grow();
         }
@@ -671,31 +669,27 @@ impl RObject {
 
     /// Stores an ivar. `key` may be an already-shared `Rc<str>` (zero copy,
     /// used by the attr_accessor hot path) or a plain `&str` (copied once).
-    pub fn set_ivar(&self, key: impl Into<Rc<str>>, value: Rc<RObject>) {
+    pub fn set_ivar(&self, key: impl Into<Rc<str>>, value: Value) {
         self.ivar.borrow_mut().insert(key.into(), value);
     }
 
-    pub fn get_ivar(&self, key: &str) -> Rc<RObject> {
-        self.ivar
-            .borrow()
-            .get(key)
-            .cloned()
-            .unwrap_or(RObject::nil_rc())
+    pub fn get_ivar(&self, key: &str) -> Value {
+        self.ivar.borrow().get(key).cloned().unwrap_or(Value::Nil)
     }
 
     /// Ivar read with a caller-supplied FNV-1a hash of `key`, so the attr
     /// accessors hash once per definition instead of once per read.
-    pub fn get_ivar_hashed(&self, key: &str, hash: u64) -> Rc<RObject> {
+    pub fn get_ivar_hashed(&self, key: &str, hash: u64) -> Value {
         self.ivar
             .borrow()
             .get_hashed(key, hash)
             .cloned()
-            .unwrap_or(RObject::nil_rc())
+            .unwrap_or(Value::Nil)
     }
 
     /// Ivar write with a caller-supplied FNV-1a hash of `key`; see
     /// [`Self::get_ivar_hashed`].
-    pub fn set_ivar_hashed(&self, key: Rc<str>, hash: u64, value: Rc<RObject>) {
+    pub fn set_ivar_hashed(&self, key: Rc<str>, hash: u64, value: Value) {
         self.ivar.borrow_mut().insert_hashed(key, hash, value);
     }
 
@@ -1664,7 +1658,10 @@ pub struct RProc {
 }
 
 /// Native Rust callable used to implement Ruby methods in the VM.
-pub type RFn = Box<dyn Fn(&mut VM, &[Rc<RObject>]) -> Result<Rc<RObject>, Error>>;
+/// Native method function. Arguments arrive as unboxed register values
+/// (`None` means the slot was never assigned); a method boxes only the
+/// arguments it needs as `RObject` via [`Value::to_rc`].
+pub type RFn = Box<dyn Fn(&mut VM, &[Option<Value>]) -> Result<Value, Error>>;
 /// Interned symbol name used across the VM to identify methods and constants.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RSym {

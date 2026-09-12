@@ -38,12 +38,14 @@ pub(crate) fn initialize_exception(vm: &mut VM) {
     mrb_define_cmethod(vm, exp_class, "message", Box::new(mrb_exception_message));
 }
 
-pub fn mrb_exception_message(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_exception_message(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let exp = vm.getself()?;
     match &exp.value {
         RValue::Exception(e) => {
             let message = e.as_ref().message.clone();
-            Ok(RObject::string(message).to_refcount_assigned())
+            Ok(Value::from_rc(
+                RObject::string(message).to_refcount_assigned(),
+            ))
         }
         _ => Err(Error::RuntimeError(
             "Exception#message must be called on an Exception".to_string(),

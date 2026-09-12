@@ -51,7 +51,7 @@ pub(crate) fn initialize_class(vm: &mut VM) {
     mrb_define_cmethod(vm, class_class, "ancestors", Box::new(mrb_class_ancestors));
 }
 
-fn mrb_class_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_class_new(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let class = vm.getself()?;
     let class = match &class.value {
         RValue::Class(c) => c.clone(),
@@ -64,12 +64,13 @@ fn mrb_class_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error
 
     let obj = RObject::instance(class).to_refcount_assigned();
 
-    mrb_funcall(vm, Some(obj.clone()), "initialize", args)?;
+    let rc_args: Vec<Rc<RObject>> = args.iter().map(|a| a.as_ref().unwrap().to_rc()).collect();
+    mrb_funcall(vm, Some(obj.clone()), "initialize", &rc_args)?;
 
-    Ok(obj)
+    Ok(Value::from_rc(obj))
 }
 
-fn mrb_class_attr_reader(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_class_attr_reader(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let class_ = vm.getself()?;
     let class = match &class_.value {
         RValue::Class(c) => c.clone(),
@@ -80,8 +81,8 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
         }
     };
     for arg in args.iter() {
-        match arg.value {
-            RValue::Symbol(ref sym) => {
+        match arg.as_ref().unwrap() {
+            Value::Symbol(sym) => {
                 let sym_id: &'static str = sym.name.clone().leak();
                 // Build the ivar key and its FNV hash once; property reads
                 // reuse the hash so they never re-hash the key.
@@ -89,7 +90,7 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
                 let hash = crate::yamrb::vm::fnv_hash(&key);
                 let method = {
                     let key = key.clone();
-                    move |vm: &mut VM, _args: &[Rc<RObject>]| {
+                    move |vm: &mut VM, _args: &[Option<Value>]| {
                         let this = vm.getself()?;
                         Ok(this.get_ivar_hashed(&key, hash))
                     }
@@ -104,7 +105,7 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
                     Box::new(method),
                 );
             }
-            RValue::Nil => {
+            Value::Nil => {
                 // skip
             }
             _ => {
@@ -114,10 +115,10 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
             }
         }
     }
-    Ok(RObject::nil_rc())
+    Ok(Value::Nil)
 }
 
-fn mrb_class_attr_writer(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_class_attr_writer(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let class_ = vm.getself()?;
     let class = match &class_.value {
         RValue::Class(c) => c.clone(),
@@ -128,8 +129,8 @@ fn mrb_class_attr_writer(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
         }
     };
     for arg in args.iter() {
-        match arg.value {
-            RValue::Symbol(ref sym) => {
+        match arg.as_ref().unwrap() {
+            Value::Symbol(sym) => {
                 let sym_id: &'static str = sym.name.clone().leak();
                 // Shared Rc<str> key and its FNV hash built once; writes use
                 // the precomputed hash so they never re-hash the key.
@@ -137,9 +138,9 @@ fn mrb_class_attr_writer(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
                 let hash = crate::yamrb::vm::fnv_hash(&key);
                 let method = {
                     let key = key.clone();
-                    move |vm: &mut VM, args: &[Rc<RObject>]| {
+                    move |vm: &mut VM, args: &[Option<Value>]| {
                         let this = vm.getself()?;
-                        let value = args[0].clone();
+                        let value = args[0].as_ref().unwrap().clone();
                         this.set_ivar_hashed(key.clone(), hash, value.clone());
                         Ok(value)
                     }
@@ -155,7 +156,7 @@ fn mrb_class_attr_writer(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
                     Box::new(method),
                 );
             }
-            RValue::Nil => {
+            Value::Nil => {
                 // skip
             }
             _ => {
@@ -165,15 +166,15 @@ fn mrb_class_attr_writer(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
             }
         }
     }
-    Ok(RObject::nil_rc())
+    Ok(Value::Nil)
 }
 
-fn mrb_class_attr_acceccor(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_class_attr_acceccor(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     mrb_class_attr_reader(vm, args)?;
     mrb_class_attr_writer(vm, args)
 }
 
-fn mrb_class_ancestors(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_class_ancestors(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let self_module = vm.getself()?;
     let target_class = match &self_module.value {
         RValue::Class(class) => class.clone(),
@@ -187,10 +188,12 @@ fn mrb_class_ancestors(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>
         .iter()
         .map(|m| RObject::class_or_module(m.clone(), vm))
         .collect();
-    Ok(RObject::array(ancestors).to_refcount_assigned())
+    Ok(Value::from_rc(
+        RObject::array(ancestors).to_refcount_assigned(),
+    ))
 }
 
-fn mrb_module_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_module_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let class = vm.getself()?;
     let class_name = match &class.value {
         RValue::Class(c) => c.full_name(),
@@ -201,7 +204,7 @@ fn mrb_module_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>,
             ));
         }
     };
-    Ok(Rc::new(RObject::string(class_name)))
+    Ok(Value::from_rc(Rc::new(RObject::string(class_name))))
 }
 
 #[test]
@@ -210,7 +213,9 @@ fn test_class_attr_accessor() {
 
     let mut vm = VM::empty();
     let class = vm.define_class("Test", None, None);
-    let args = vec![RObject::symbol("foo".into()).to_refcount_assigned()];
+    let args = [Some(Value::from_rc(
+        RObject::symbol("foo".into()).to_refcount_assigned(),
+    ))];
     let classobj = RObject::class(class.clone(), &mut vm);
     vm.set_reg(0, classobj.clone());
     mrb_class_attr_acceccor(&mut vm, &args).expect("mrb_class_attr_acceccor failed");

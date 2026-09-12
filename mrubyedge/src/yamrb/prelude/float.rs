@@ -1,10 +1,8 @@
-use std::rc::Rc;
-
 use crate::Error;
 use crate::yamrb::helpers::{mrb_define_cmethod, mrb_define_cmethod_fast};
 
 use crate::yamrb::{
-    value::{FastOp, RObject},
+    value::{FastOp, RObject, Value},
     vm::VM,
 };
 
@@ -63,12 +61,12 @@ pub(crate) fn initialize_float(vm: &mut VM) {
     );
 }
 
-pub fn mrb_float_to_i(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_to_i(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     match &this.value {
         crate::yamrb::value::RValue::Float(f) => {
             let int_value = *f as i64;
-            Ok(RObject::integer(int_value).to_refcount_assigned())
+            Ok(Value::Integer(int_value))
         }
         _ => Err(Error::RuntimeError(
             "Float#to_i must be called on a Float".to_string(),
@@ -76,52 +74,52 @@ pub fn mrb_float_to_i(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>,
     }
 }
 
-pub fn mrb_float_to_f(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_to_f(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(RObject::float(*f).to_refcount_assigned()),
+        crate::yamrb::value::RValue::Float(f) => Ok(Value::Float(*f)),
         _ => Err(Error::RuntimeError(
             "Float#to_f must be called on a Float".to_string(),
         )),
     }
 }
 
-pub fn mrb_float_finite(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_finite(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(RObject::boolean_rc(f.is_finite())),
+        crate::yamrb::value::RValue::Float(f) => Ok(Value::Bool(f.is_finite())),
         _ => Err(Error::RuntimeError(
             "Float#finite? must be called on a Float".to_string(),
         )),
     }
 }
 
-pub fn mrb_float_infinite(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_infinite(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(RObject::boolean_rc(f.is_infinite())),
+        crate::yamrb::value::RValue::Float(f) => Ok(Value::Bool(f.is_infinite())),
         _ => Err(Error::RuntimeError(
             "Float#infinite? must be called on a Float".to_string(),
         )),
     }
 }
 
-pub fn mrb_float_nan(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_nan(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(RObject::boolean_rc(f.is_nan())),
+        crate::yamrb::value::RValue::Float(f) => Ok(Value::Bool(f.is_nan())),
         _ => Err(Error::RuntimeError(
             "Float#nan? must be called on a Float".to_string(),
         )),
     }
 }
 
-pub fn mrb_float_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     match &this.value {
         crate::yamrb::value::RValue::Float(f) => {
             let s = format!("{}", f);
-            Ok(RObject::string(s).to_refcount_assigned())
+            Ok(Value::from_rc(RObject::string(s).to_refcount_assigned()))
         }
         _ => Err(Error::RuntimeError(
             "Float#inspect must be called on a Float".to_string(),
@@ -129,7 +127,7 @@ pub fn mrb_float_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObjec
     }
 }
 
-pub fn mrb_float_clamp(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_clamp(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     if args.len() < 2 {
         return Err(Error::ArgumentError(format!(
             "wrong number of arguments (given {}, expected 2)",
@@ -148,15 +146,15 @@ pub fn mrb_float_clamp(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>,
     };
 
     // Convert min and max to f64
-    let min = match &args[0].value {
-        crate::yamrb::value::RValue::Float(f) => *f,
-        crate::yamrb::value::RValue::Integer(i) => *i as f64,
+    let min = match args[0].as_ref().unwrap() {
+        Value::Float(f) => *f,
+        Value::Integer(i) => *i as f64,
         _ => return Err(Error::TypeMismatch),
     };
 
-    let max = match &args[1].value {
-        crate::yamrb::value::RValue::Float(f) => *f,
-        crate::yamrb::value::RValue::Integer(i) => *i as f64,
+    let max = match args[1].as_ref().unwrap() {
+        Value::Float(f) => *f,
+        Value::Integer(i) => *i as f64,
         _ => return Err(Error::TypeMismatch),
     };
 
@@ -174,10 +172,10 @@ pub fn mrb_float_clamp(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>,
         this_float
     };
 
-    Ok(RObject::float(result).to_refcount_assigned())
+    Ok(Value::Float(result))
 }
 
-pub fn mrb_float_add(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_add(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     if args.is_empty() {
         return Err(Error::ArgumentError(
             "wrong number of arguments (given 0, expected 1)".to_string(),
@@ -194,16 +192,16 @@ pub fn mrb_float_add(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
         }
     };
 
-    let other = match &args[0].value {
-        crate::yamrb::value::RValue::Float(f) => *f,
-        crate::yamrb::value::RValue::Integer(i) => *i as f64,
+    let other = match args[0].as_ref().unwrap() {
+        Value::Float(f) => *f,
+        Value::Integer(i) => *i as f64,
         _ => return Err(Error::TypeMismatch),
     };
 
-    Ok(RObject::float(this_float + other).to_refcount_assigned())
+    Ok(Value::Float(this_float + other))
 }
 
-pub fn mrb_float_sub(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_sub(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     if args.is_empty() {
         return Err(Error::ArgumentError(
             "wrong number of arguments (given 0, expected 1)".to_string(),
@@ -220,16 +218,16 @@ pub fn mrb_float_sub(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
         }
     };
 
-    let other = match &args[0].value {
-        crate::yamrb::value::RValue::Float(f) => *f,
-        crate::yamrb::value::RValue::Integer(i) => *i as f64,
+    let other = match args[0].as_ref().unwrap() {
+        Value::Float(f) => *f,
+        Value::Integer(i) => *i as f64,
         _ => return Err(Error::TypeMismatch),
     };
 
-    Ok(RObject::float(this_float - other).to_refcount_assigned())
+    Ok(Value::Float(this_float - other))
 }
 
-pub fn mrb_float_mul(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_mul(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     if args.is_empty() {
         return Err(Error::ArgumentError(
             "wrong number of arguments (given 0, expected 1)".to_string(),
@@ -246,16 +244,16 @@ pub fn mrb_float_mul(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
         }
     };
 
-    let other = match &args[0].value {
-        crate::yamrb::value::RValue::Float(f) => *f,
-        crate::yamrb::value::RValue::Integer(i) => *i as f64,
+    let other = match args[0].as_ref().unwrap() {
+        Value::Float(f) => *f,
+        Value::Integer(i) => *i as f64,
         _ => return Err(Error::TypeMismatch),
     };
 
-    Ok(RObject::float(this_float * other).to_refcount_assigned())
+    Ok(Value::Float(this_float * other))
 }
 
-pub fn mrb_float_div(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_div(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     if args.is_empty() {
         return Err(Error::ArgumentError(
             "wrong number of arguments (given 0, expected 1)".to_string(),
@@ -272,9 +270,9 @@ pub fn mrb_float_div(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
         }
     };
 
-    let other = match &args[0].value {
-        crate::yamrb::value::RValue::Float(f) => *f,
-        crate::yamrb::value::RValue::Integer(i) => *i as f64,
+    let other = match args[0].as_ref().unwrap() {
+        Value::Float(f) => *f,
+        Value::Integer(i) => *i as f64,
         _ => return Err(Error::TypeMismatch),
     };
 
@@ -282,30 +280,30 @@ pub fn mrb_float_div(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
         return Err(Error::ZeroDivisionError);
     }
 
-    Ok(RObject::float(this_float / other).to_refcount_assigned())
+    Ok(Value::Float(this_float / other))
 }
 
-pub fn mrb_float_positive(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_positive(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(RObject::float(*f).to_refcount_assigned()),
+        crate::yamrb::value::RValue::Float(f) => Ok(Value::Float(*f)),
         _ => Err(Error::RuntimeError(
             "Float#+@ must be called on a Float".to_string(),
         )),
     }
 }
 
-pub fn mrb_float_negative(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_negative(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(RObject::float(-*f).to_refcount_assigned()),
+        crate::yamrb::value::RValue::Float(f) => Ok(Value::Float(-*f)),
         _ => Err(Error::RuntimeError(
             "Float#-@ must be called on a Float".to_string(),
         )),
     }
 }
 
-pub fn mrb_float_power(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_power(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     if args.is_empty() {
         return Err(Error::ArgumentError(
             "wrong number of arguments (given 0, expected 1)".to_string(),
@@ -322,19 +320,19 @@ pub fn mrb_float_power(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>,
         }
     };
 
-    let other = match &args[0].value {
-        crate::yamrb::value::RValue::Float(f) => *f,
-        crate::yamrb::value::RValue::Integer(i) => *i as f64,
+    let other = match args[0].as_ref().unwrap() {
+        Value::Float(f) => *f,
+        Value::Integer(i) => *i as f64,
         _ => return Err(Error::TypeMismatch),
     };
 
-    Ok(RObject::float(this_float.powf(other)).to_refcount_assigned())
+    Ok(Value::Float(this_float.powf(other)))
 }
 
-pub fn mrb_float_abs(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_float_abs(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(RObject::float(f.abs()).to_refcount_assigned()),
+        crate::yamrb::value::RValue::Float(f) => Ok(Value::Float(f.abs())),
         _ => Err(Error::RuntimeError(
             "Float#abs must be called on a Float".to_string(),
         )),

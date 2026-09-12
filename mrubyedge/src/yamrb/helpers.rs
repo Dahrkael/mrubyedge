@@ -6,7 +6,7 @@ use crate::Error;
 use super::{
     optable::push_callinfo,
     value::{FastOp, RClass, RFn, RHashMap, RModule, RObject, RProc, RSym, RValue, resolve_method},
-    vm::{CallerLabel, CallerReceiver, VM},
+    vm::{CallerLabel, CallerReceiver, VM, arg_buf, rc_args},
 };
 
 fn call_block(
@@ -155,7 +155,9 @@ pub fn mrb_call_block(
         call_block(vm, block, recv, args, None, return_register)
     } else if block.is_fnblock {
         let func = vm.pop_fnblock()?;
-        let res = func(vm, args);
+        let mut buf = arg_buf();
+        let mut tmp = Vec::new();
+        let res = func(vm, rc_args(args, &mut buf, &mut tmp)).map(|v| v.to_rc());
         vm.push_fnblock(func)?;
         res
     } else {
@@ -239,7 +241,9 @@ pub fn mrb_funcall(
     } else {
         let prev = vm.set_reg(0, recv.clone());
         let func = vm.fn_table.get(method.func.unwrap()).unwrap();
-        let res = func(vm, args);
+        let mut buf = arg_buf();
+        let mut tmp = Vec::new();
+        let res = func(vm, rc_args(args, &mut buf, &mut tmp)).map(|v| v.to_rc());
         if let Some(prev) = prev {
             vm.set_reg(0, prev);
         } else {
@@ -273,7 +277,7 @@ pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Rc<RObject>, E
     } else {
         let old = vm.set_reg(0, recv.clone());
         let func = vm.fn_table.get(method.func.unwrap()).unwrap();
-        let res = func(vm, &[]);
+        let res = func(vm, &[]).map(|v| v.to_rc());
         if let Some(old) = old {
             vm.set_reg(0, old);
         } else {

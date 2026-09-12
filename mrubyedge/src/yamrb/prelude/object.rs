@@ -163,13 +163,13 @@ pub(crate) fn initialize_object(vm: &mut VM) {
     mrb_define_cmethod(vm, object_class.clone(), "wasm?", Box::new(mrb_is_wasm));
 }
 
-pub fn mrb_self(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    vm.getself()
+pub fn mrb_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
+    Ok(Value::from_rc(vm.getself()?))
 }
 
 #[cfg(feature = "wasi")]
-pub fn mrb_kernel_puts(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    let msg = args[0].clone();
+pub fn mrb_kernel_puts(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+    let msg = args[0].as_ref().unwrap().to_rc();
     match &msg.value {
         RValue::String(s, _) => {
             println!("{}", String::from_utf8_lossy(&s.borrow()));
@@ -183,24 +183,24 @@ pub fn mrb_kernel_puts(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>,
             println!("{}", inspect);
         }
     }
-    Ok(RObject::nil_rc())
+    Ok(Value::Nil)
 }
 
 #[cfg(feature = "wasi")]
-pub fn mrb_kernel_p(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    let msg = args[0].clone();
+pub fn mrb_kernel_p(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+    let msg = args[0].as_ref().unwrap().to_rc();
     let inspect = mrb_funcall(vm, Some(msg), "inspect", &[])?;
     let inspect: String = inspect.as_ref().try_into()?;
     println!("{}", inspect);
-    Ok(RObject::nil_rc())
+    Ok(Value::Nil)
 }
 
 #[cfg(feature = "wasi")]
-pub fn mrb_kernel_debug(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_kernel_debug(_vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     for (i, obj) in args.iter().enumerate() {
         dbg!(i, obj.clone());
     }
-    Ok(RObject::nil_rc())
+    Ok(Value::Nil)
 }
 
 // honor custom #== overrides. Primitive pairs keep the
@@ -235,47 +235,52 @@ pub fn mrb_object_is_not_equal(_vm: &mut VM, lhs: Rc<RObject>, rhs: Rc<RObject>)
     RObject::boolean_rc(lhs.as_eq_value() != rhs.as_eq_value())
 }
 
-pub fn mrb_object_double_eq(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_object_double_eq(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let lhs = vm.getself()?;
-    let rhs = args[0].clone();
-    Ok(mrb_object_is_equal(vm, lhs, rhs))
+    let rhs = args[0].as_ref().unwrap().to_rc();
+    Ok(Value::from_rc(mrb_object_is_equal(vm, lhs, rhs)))
 }
 
-pub fn mrb_object_not_eq(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_object_not_eq(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let lhs = vm.getself()?;
-    let rhs = args[0].clone();
-    Ok(mrb_object_is_not_equal(vm, lhs, rhs))
+    let rhs = args[0].as_ref().unwrap().to_rc();
+    Ok(Value::from_rc(mrb_object_is_not_equal(vm, lhs, rhs)))
 }
 
-pub fn mrb_object_triple_eq(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_object_triple_eq(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let lhs = vm.getself()?;
-    let rhs = args[0].clone();
+    let rhs = args[0].as_ref().unwrap().to_rc();
 
     match (&lhs.value, &rhs.value) {
-        (RValue::Integer(i1), RValue::Integer(i2)) => Ok(RObject::boolean_rc(*i1 == *i2)),
-        (RValue::Float(f1), RValue::Float(f2)) => Ok(RObject::boolean_rc(*f1 == *f2)),
-        (RValue::Symbol(sym1), RValue::Symbol(sym2)) => Ok(RObject::boolean_rc(sym1 == sym2)),
-        (RValue::String(s1, _), RValue::String(s2, _)) => Ok(RObject::boolean_rc(s1 == s2)),
+        (RValue::Integer(i1), RValue::Integer(i2)) => Ok(Value::Bool(*i1 == *i2)),
+        (RValue::Float(f1), RValue::Float(f2)) => Ok(Value::Bool(*f1 == *f2)),
+        (RValue::Symbol(sym1), RValue::Symbol(sym2)) => Ok(Value::Bool(sym1 == sym2)),
+        (RValue::String(s1, _), RValue::String(s2, _)) => Ok(Value::Bool(s1 == s2)),
         (RValue::Class(c1), _) => match &lhs.value {
-            RValue::Class(c2) => Ok(RObject::boolean_rc(c1.sym_id == c2.sym_id)),
+            RValue::Class(c2) => Ok(Value::Bool(c1.sym_id == c2.sym_id)),
             _ => {
                 let c2 = lhs.get_class(vm);
-                Ok(RObject::boolean_rc(c1.sym_id == c2.sym_id))
+                Ok(Value::Bool(c1.sym_id == c2.sym_id))
             }
         },
         (RValue::Range(_s, _e, _v), _) => {
             let arg = vec![rhs];
-            mrb_funcall(vm, Some(lhs), "include?", &arg)
+            Ok(Value::from_rc(mrb_funcall(
+                vm,
+                Some(lhs),
+                "include?",
+                &arg,
+            )?))
         }
         // TODO: Implement object id for generic instance
-        _ => Ok(RObject::boolean_rc(false)),
+        _ => Ok(Value::Bool(false)),
     }
 }
 
 // Object#<=>: Comparison operator (returns -1, 0, or 1)
-pub fn mrb_object_compare(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_object_compare(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let lhs = vm.getself()?;
-    let rhs = &args[0];
+    let rhs = args[0].as_ref().unwrap().to_rc();
 
     // Use as_eq_value for comparison
     let lhs_val = lhs.as_eq_value();
@@ -346,49 +351,59 @@ pub fn mrb_object_compare(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObjec
         }
     };
 
-    Ok(RObject::integer_rc(result))
+    Ok(Value::Integer(result))
 }
 
-pub fn mrb_object_object_id(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_object_object_id(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     // Abstract method; do nothing
     let x = vm.getself()?.object_id.get();
     // ref: https://stackoverflow.com/questions/74491204/how-do-i-represent-an-i64-in-the-u64-domain
     let to_i64 = ((x as i64) ^ (1 << 63)) & (1 << 63) | (x & (u64::MAX >> 1)) as i64;
-    Ok(RObject::integer_rc(to_i64))
+    Ok(Value::Integer(to_i64))
 }
 
-pub fn mrb_object_to_s(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_object_to_s(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let obj = vm.getself()?;
     if obj.is_main() {
-        return Ok(RObject::string("main".to_string()).to_refcount_assigned());
+        return Ok(Value::from_rc(
+            RObject::string("main".to_string()).to_refcount_assigned(),
+        ));
     }
     let class = obj.get_class(vm);
     let addr = format!("{:018p}", Rc::as_ptr(&obj));
-    Ok(RObject::string(format!("#<{}:{}>", class.full_name(), addr)).to_refcount_assigned())
+    Ok(Value::from_rc(
+        RObject::string(format!("#<{}:{}>", class.full_name(), addr)).to_refcount_assigned(),
+    ))
 }
 
-pub fn mrb_object_raise(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    if let Some(RValue::Class(klass)) = args.first().map(|a| &a.value) {
+pub fn mrb_object_raise(_vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+    if let Some(RValue::Class(klass)) = args
+        .first()
+        .and_then(|a| a.as_ref())
+        .map(|v| v.to_rc())
+        .as_deref()
+        .map(|rc| &rc.value)
+    {
         // raise ImageNotFoundError, "title not found" (or raise SomeClass)
         let class_name = klass.full_name();
         let msg = args
             .get(1)
-            .map(|a| String::try_from(a.as_ref()).unwrap_or_default())
+            .map(|a| String::try_from(a.as_ref().unwrap().to_rc().as_ref()).unwrap_or_default())
             .unwrap_or_else(|| class_name.clone());
         return Err(Error::TaggedError(class_name, msg));
     }
     let msg = args
         .first()
-        .map(|a| String::try_from(a.as_ref()).unwrap_or_default())
+        .map(|a| String::try_from(a.as_ref().unwrap().to_rc().as_ref()).unwrap_or_default())
         .unwrap_or_default();
     Err(Error::RuntimeError(msg))
 }
 
-fn mrb_object_nil_p(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    Ok(RObject::boolean_rc(false))
+fn mrb_object_nil_p(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
+    Ok(Value::Bool(false))
 }
 
-fn mrb_object_block_given(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_object_block_given(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     // CALLINFO の has_block フラグをチェック
     let has_block = if let Some(ci) = vm.current_callinfo.as_ref() {
         ci.has_block.get()
@@ -396,18 +411,18 @@ fn mrb_object_block_given(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObje
         false
     };
 
-    Ok(RObject::boolean_rc(has_block))
+    Ok(Value::Bool(has_block))
 }
 
-pub fn mrb_object_initialize(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_object_initialize(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     // Abstract method; do nothing
-    Ok(RObject::nil_rc())
+    Ok(Value::Nil)
 }
 
-pub fn mrb_object_lambda(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    let proc = args[args.len() - 1].clone();
+pub fn mrb_object_lambda(_vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+    let proc = args[args.len() - 1].as_ref().unwrap().to_rc();
     if matches!(proc.value, RValue::Proc(_)) {
-        Ok(proc)
+        Ok(Value::from_rc(proc))
     } else {
         Err(Error::RuntimeError(
             "Object#lambda expects a Proc as the last argument".to_string(),
@@ -415,9 +430,9 @@ pub fn mrb_object_lambda(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObjec
     }
 }
 
-fn mrb_object_is_a(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_object_is_a(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let obj = vm.getself()?;
-    let class_arg = &args[0];
+    let class_arg = args[0].as_ref().unwrap().to_rc();
     let is_a = match &class_arg.value {
         RValue::Class(c) => mrb_is_a(vm, obj, c.clone()),
         RValue::Module(m) => mrb_is_a(vm, obj, m.clone()),
@@ -427,17 +442,20 @@ fn mrb_object_is_a(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Err
             ));
         }
     };
-    Ok(RObject::boolean_rc(is_a))
+    Ok(Value::Bool(is_a))
 }
 
-fn mrb_object_class(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_object_class(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let obj = vm.getself()?;
     let class = obj.get_class(vm);
-    Ok(RObject::class_or_module(class.as_module(), vm))
+    Ok(Value::from_rc(RObject::class_or_module(
+        class.as_module(),
+        vm,
+    )))
 }
 
-fn mrb_object_loop(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    let block = args[0].clone();
+fn mrb_object_loop(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+    let block = args[0].as_ref().unwrap().to_rc();
     if !matches!(block.value, RValue::Proc(_)) {
         return Err(Error::ArgumentError(
             "Object#loop expects a block".to_string(),
@@ -453,41 +471,54 @@ fn mrb_object_loop(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Err
             // pending exception (see integer.rs note).
             Err(Error::Break(v)) => {
                 vm.exception.take();
-                return Ok(v);
+                return Ok(Value::from_rc(v));
             }
             Err(e) => return Err(e),
         }
     }
 }
 
-fn mrb_object_respond_to(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    let method_name: String = args[0].as_ref().try_into()?;
+fn mrb_object_respond_to(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+    let method_name: String = args[0].as_ref().unwrap().to_rc().as_ref().try_into()?;
     let obj = vm.getself()?;
     let klass = obj.singleton_or_this_class(vm);
     let has_method = resolve_method(&klass, &method_name).is_some();
-    Ok(RObject::boolean_rc(has_method))
+    Ok(Value::Bool(has_method))
 }
 
-fn mrb_object_public_send(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_object_public_send(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     if args.is_empty() {
         return Err(Error::ArgumentError(
             "wrong number of arguments (given 0, expected 1+)".to_string(),
         ));
     }
 
-    let method_name: String = args[0].as_ref().try_into()?;
+    let method_name: String = args[0].as_ref().unwrap().to_rc().as_ref().try_into()?;
     let obj = vm.getself()?;
-    let method_args = &args[1..];
+    let method_args = args[1..]
+        .iter()
+        .map(|a| a.as_ref().unwrap().to_rc())
+        .collect::<Vec<_>>();
 
     // For now, public_send behaves the same as send since we don't have visibility modifiers
-    mrb_funcall(vm, Some(obj), &method_name, method_args)
+    Ok(Value::from_rc(mrb_funcall(
+        vm,
+        Some(obj),
+        &method_name,
+        &method_args,
+    )?))
 }
 
-fn mrb_object_method_missing(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_object_method_missing(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let method_name_obj = &args
         .first()
         .ok_or_else(|| Error::Internal("[BUG] method_missing without any args".to_string()))?;
-    let method_name: String = method_name_obj.as_ref().try_into()?;
+    let method_name: String = method_name_obj
+        .as_ref()
+        .unwrap()
+        .to_rc()
+        .as_ref()
+        .try_into()?;
     Err(Error::NoMethodError(format!(
         "undefined method `{}` for {}",
         method_name,
@@ -506,9 +537,9 @@ pub fn mrb_is_a(vm: &mut VM, obj: Rc<RObject>, class: impl AsModule) -> bool {
     false
 }
 
-fn mrb_is_wasm(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_is_wasm(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let is_wasm = cfg!(target_arch = "wasm32");
-    Ok(RObject::boolean_rc(is_wasm))
+    Ok(Value::Bool(is_wasm))
 }
 
 #[test]
@@ -897,7 +928,7 @@ fn test_mrb_object_is_equal_instance() {
     assert!(!ret);
 }
 
-fn mrb_object_extend(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_object_extend(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
 
     if args.is_empty() {
@@ -910,7 +941,7 @@ fn mrb_object_extend(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
     let singleton_class = this.initialize_or_get_singleton_class(vm);
 
     // Extend with each module argument
-    for arg in args.iter().rev() {
+    for arg in args.iter().rev().map(|a| a.as_ref().unwrap().to_rc()) {
         let module = match &arg.value {
             RValue::Module(m) => m.clone(),
             RValue::Class(c) => c.module.clone(),
@@ -931,5 +962,5 @@ fn mrb_object_extend(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
             .insert(0, module);
     }
 
-    Ok(this)
+    Ok(Value::from_rc(this))
 }

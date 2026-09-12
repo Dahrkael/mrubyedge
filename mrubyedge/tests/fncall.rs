@@ -7,7 +7,7 @@ use std::rc::Rc;
 use helpers::*;
 use mrubyedge::Error;
 use mrubyedge::yamrb::helpers::mrb_define_cmethod;
-use mrubyedge::yamrb::value::RObject;
+use mrubyedge::yamrb::value::{RObject, Value};
 use mrubyedge::yamrb::vm::VM;
 
 #[test]
@@ -25,11 +25,11 @@ end
     // Rust method that calls mrb_funcall internally
     fn rust_method_calling_mrb_funcall(
         vm: &mut VM,
-        args: &[Rc<RObject>],
-    ) -> Result<Rc<RObject>, Error> {
+        args: &[Option<Value>],
+    ) -> Result<Value, Error> {
         // Get the first argument (should be an integer)
         let n = if !args.is_empty() {
-            let arg: i64 = args[0].as_ref().try_into()?;
+            let arg: i64 = args[0].as_ref().unwrap().try_into()?;
             arg
         } else {
             0
@@ -39,7 +39,7 @@ end
         let args_for_call = vec![Rc::new(RObject::integer(n))];
         let result = mrb_funcall(vm, None, "double", &args_for_call)?;
 
-        Ok(result)
+        Ok(Value::from_rc(result))
     }
 
     let kernel = vm.object_class.clone();
@@ -74,18 +74,18 @@ complex_calc(2, 3)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
 
-    fn rust_method_do_multiply(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-        let a: i64 = args[0].as_ref().try_into()?;
-        let b: i64 = args[1].as_ref().try_into()?;
+    fn rust_method_do_multiply(_vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+        let a: i64 = args[0].as_ref().unwrap().try_into()?;
+        let b: i64 = args[1].as_ref().unwrap().try_into()?;
 
         let result = a * b;
-        Ok(Rc::new(RObject::integer(result)))
+        Ok(Value::Integer(result))
     }
 
     // Rust method that calls multiple Ruby methods
-    fn complex_calculation(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-        let a: i64 = args[0].as_ref().try_into()?;
-        let b: i64 = args[1].as_ref().try_into()?;
+    fn complex_calculation(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+        let a: i64 = args[0].as_ref().unwrap().try_into()?;
+        let b: i64 = args[1].as_ref().unwrap().try_into()?;
 
         // Call add(a, b)
         let add_args = vec![Rc::new(RObject::integer(a)), Rc::new(RObject::integer(b))];
@@ -99,7 +99,7 @@ complex_calc(2, 3)
         ];
         let result = mrb_funcall(vm, None, "multiply", &mul_args)?;
 
-        Ok(result)
+        Ok(Value::from_rc(result))
     }
 
     let kernel = vm.object_class.clone();
