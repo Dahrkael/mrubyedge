@@ -153,19 +153,40 @@ pub fn mrb_array_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObjec
     Ok(Rc::new(RObject::string(s)))
 }
 
-pub fn mrb_array_new(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    let array = if args.is_empty() {
-        vec![]
-    } else {
-        let size: usize = args[0].as_ref().try_into()?;
-        {
-            let mut v = Vec::with_capacity(size);
-            for _ in 0..size {
-                v.push(Rc::new(RObject::nil()));
-            }
-            v
-        }
+pub fn mrb_array_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+    // honor the block form Array.new(size) { |i| } (the block
+    // rides as the trailing argument) and the default-value form
+    // Array.new(size, obj), matching CRuby. The prelude previously filled
+    // with nil and silently ignored the block.
+    let block = match args.last().map(|a| &a.value) {
+        Some(RValue::Proc(_)) => args.last().cloned(),
+        _ => None,
     };
+    let positional: &[Rc<RObject>] = if block.is_some() {
+        &args[..args.len() - 1]
+    } else {
+        args
+    };
+    let mut array = Vec::new();
+    if let Some(size) = positional.first() {
+        let n: i64 = size.as_ref().try_into()?;
+        if n < 0 {
+            return Err(Error::ArgumentError("negative array size".to_string()));
+        }
+        for i in 0..n {
+            let elem = match &block {
+                Some(b) => {
+                    let idx = Rc::new(RObject::integer(i));
+                    mrb_call_block(vm, b.clone(), None, std::slice::from_ref(&idx), 0)?
+                }
+                None => positional
+                    .get(1)
+                    .cloned()
+                    .unwrap_or_else(|| Rc::new(RObject::nil())),
+            };
+            array.push(elem);
+        }
+    }
     Ok(Rc::new(RObject::array(array)))
 }
 
