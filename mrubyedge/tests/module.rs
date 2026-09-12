@@ -443,7 +443,7 @@ fn setmcnst_class_const_test() {
 #[test]
 fn nested_define_module_preserves_existing_methods() {
     use mrubyedge::yamrb::helpers::mrb_define_module_cmethod;
-    use mrubyedge::yamrb::value::RObject;
+    use mrubyedge::yamrb::value::{Value, intern_symbol};
     use std::rc::Rc;
 
     let mut vm = mrubyedge::yamrb::vm::VM::empty();
@@ -456,7 +456,7 @@ fn nested_define_module_preserves_existing_methods() {
         &mut vm,
         outer.clone(),
         "foo",
-        Box::new(|_vm, _args| Ok(RObject::integer(42).to_refcount_assigned())),
+        Box::new(|_vm, _args| Ok(Value::Integer(42))),
     );
 
     // Define Inner nested under Outer
@@ -466,7 +466,7 @@ fn nested_define_module_preserves_existing_methods() {
         &mut vm,
         inner.clone(),
         "bar",
-        Box::new(|_vm, _args| Ok(RObject::integer(99).to_refcount_assigned())),
+        Box::new(|_vm, _args| Ok(Value::Integer(99))),
     );
 
     // Re-open Outer via define_module — should return the same module
@@ -478,7 +478,7 @@ fn nested_define_module_preserves_existing_methods() {
 
     // foo should still be defined on re-opened Outer
     assert!(
-        outer2.procs.borrow().contains_key("foo"),
+        outer2.procs.borrow().contains_key(&intern_symbol("foo")),
         "existing cmethod 'foo' should be preserved after re-opening"
     );
 
@@ -491,7 +491,7 @@ fn nested_define_module_preserves_existing_methods() {
 
     // bar should still be defined on re-opened Inner
     assert!(
-        inner2.procs.borrow().contains_key("bar"),
+        inner2.procs.borrow().contains_key(&intern_symbol("bar")),
         "existing cmethod 'bar' should be preserved after re-opening nested module"
     );
 }
@@ -499,7 +499,7 @@ fn nested_define_module_preserves_existing_methods() {
 #[test]
 fn include_nested_module_and_call_method() {
     use mrubyedge::yamrb::helpers::mrb_define_module_cmethod;
-    use mrubyedge::yamrb::value::RObject;
+    use mrubyedge::yamrb::value::{RObject, Value};
 
     let mut vm = mrubyedge::yamrb::vm::VM::empty();
     let outer = vm.define_module("Outer", None);
@@ -507,7 +507,7 @@ fn include_nested_module_and_call_method() {
         &mut vm,
         outer.clone(),
         "foo",
-        Box::new(|_vm, _args| Ok(RObject::integer(42).to_refcount_assigned())),
+        Box::new(|_vm, _args| Ok(Value::Integer(42))),
     );
     let inner = vm.define_module("Inner", Some(outer.clone()));
     mrb_define_module_cmethod(
@@ -515,7 +515,9 @@ fn include_nested_module_and_call_method() {
         inner.clone(),
         "greet",
         Box::new(|_vm, _args| {
-            Ok(RObject::string("hello from Inner".to_string()).to_refcount_assigned())
+            Ok(Value::from_rc(
+                RObject::string("hello from Inner".to_string()).to_refcount_assigned(),
+            ))
         }),
     );
 
@@ -530,9 +532,6 @@ MyClass.new.greet
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let result = vm.eval_rite(&mut rite).unwrap();
 
-    let value: String = result
-        .as_ref()
-        .try_into()
-        .expect("greet should return string");
+    let value: String = String::try_from(&result).expect("greet should return string");
     assert_eq!(value, "hello from Inner");
 }
