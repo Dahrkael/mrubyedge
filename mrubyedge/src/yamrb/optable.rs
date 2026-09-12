@@ -2277,10 +2277,7 @@ pub(crate) fn op_return_blk(vm: &mut VM, operand: &Fetched) -> Result<(), Error>
     // carries no block environment; OP_RETURN_BLK is then just a local return.
     // Blocks/lambdas run with an is_funcall callinfo (call_block), methods
     // entered through a send do not.
-    let is_funcall = vm
-        .callinfo_stack
-        .last()
-        .is_some_and(|c| c.is_funcall);
+    let is_funcall = vm.callinfo_stack.last().is_some_and(|c| c.is_funcall);
     if !is_funcall {
         return op_return(vm, operand);
     }
@@ -2764,40 +2761,45 @@ pub(crate) fn op_strcat(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         Value::Object(a) => a,
         _ => unreachable!("strcat supports only string"),
     };
-    let rb = val2.to_rc();
-    match (&ra.value, &rb.value) {
-        (RValue::String(s1, _), RValue::String(s2, _)) => {
-            let mut s1 = s1.borrow_mut();
-            let s2 = s2.borrow();
-            for c in s2.iter() {
-                s1.push(*c);
-            }
-        }
-        (RValue::String(s1, _), RValue::Integer(s2)) => {
-            let mut s1 = s1.borrow_mut();
-            let s2 = s2.to_string();
-            for c in s2.as_bytes() {
-                s1.push(*c);
-            }
-        }
-        (RValue::String(s1, _), _) => {
-            let mut s1 = s1.borrow_mut();
-            let s2 = mrb_funcall(vm, Some(val2.clone()), "to_s", &[])?;
-            let s2 = match &s2 {
-                Value::Object(o) => match &o.value {
-                    RValue::String(s, _) => s.borrow(),
-                    _ => unreachable!("to_s must return string"),
-                },
-                _ => unreachable!("to_s must return string"),
-            };
-            for c in s2.to_vec().iter() {
-                s1.push(*c);
-            }
-        }
-        _ => {
-            unreachable!("strcat supports only string")
-        }
+    let s1 = match &ra.value {
+        RValue::String(s, _) => s,
+        _ => unreachable!("strcat supports only string"),
     };
+    // Append by memcpy (not per-byte push) and without boxing the right
+    // operand. `to_s` only runs for operands that are not already a String or
+    // Integer.
+    match &val2 {
+        Value::Object(o2) => match &o2.value {
+            RValue::String(s2, _) => {
+                if Rc::ptr_eq(ra, o2) {
+                    let bytes = s2.borrow().clone();
+                    s1.borrow_mut().extend_from_slice(&bytes);
+                } else {
+                    let s2 = s2.borrow();
+                    s1.borrow_mut().extend_from_slice(&s2);
+                }
+            }
+            _ => append_to_string(vm, s1, val2)?,
+        },
+        Value::Integer(i) => {
+            s1.borrow_mut().extend_from_slice(i.to_string().as_bytes());
+        }
+        _ => append_to_string(vm, s1, val2)?,
+    }
+    Ok(())
+}
+
+/// Slow path of `OP_STRCAT`: coerce the right operand through `to_s`.
+fn append_to_string(vm: &mut VM, s1: &RefCell<Vec<u8>>, val2: Value) -> Result<(), Error> {
+    let s2 = mrb_funcall(vm, Some(val2), "to_s", &[])?;
+    let bytes = match &s2 {
+        Value::Object(o) => match &o.value {
+            RValue::String(s, _) => s.borrow().to_vec(),
+            _ => unreachable!("to_s must return string"),
+        },
+        _ => unreachable!("to_s must return string"),
+    };
+    s1.borrow_mut().extend_from_slice(&bytes);
     Ok(())
 }
 
