@@ -761,20 +761,20 @@ pub(crate) fn op_getconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     // runtime class of self to reach constants defined in that class body.
     let mut current = current_namespace(vm).or_else(|| {
         let obj = vm.current_regs()[0].clone();
-        obj.as_ref().map(|o| o.to_rc().get_class(vm).module.clone())
+        obj.as_ref().map(|o| o.get_class(vm).module.clone())
     });
 
     // Walk namespace chain upwards until found or reach top-level
     while let Some(ns) = current.clone() {
         if let Some(val) = ns.consts.borrow().get(name).cloned() {
-            vm.set_reg(a as usize, val);
+            vm.set_reg_value(a as usize, Value::from_rc(val));
             return Ok(());
         }
         current = ns.parent.borrow().clone();
     }
 
     if let Some(val) = vm.consts.get(name).cloned() {
-        vm.set_reg(a as usize, val);
+        vm.set_reg_value(a as usize, Value::from_rc(val));
         return Ok(());
     }
 
@@ -2949,10 +2949,10 @@ pub(crate) fn op_oclass(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 }
 
 fn current_namespace(vm: &mut VM) -> Option<Rc<RModule>> {
-    let obj = vm.current_regs()[0].as_ref()?.to_rc();
-    match &obj.value {
-        RValue::Class(klass) => Some(klass.module.clone()),
-        RValue::Module(module) => Some(module.clone()),
+    let obj = vm.current_regs()[0].as_ref()?;
+    match obj.rvalue() {
+        Some(RValue::Class(klass)) => Some(klass.module.clone()),
+        Some(RValue::Module(module)) => Some(module.clone()),
         _ => None,
     }
 }
