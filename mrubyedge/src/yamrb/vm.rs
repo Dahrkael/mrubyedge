@@ -448,32 +448,59 @@ impl VM {
         self.current_irep.line_at_op(self.pc.get().saturating_sub(1))
     }
 
-    /// call stack of the current exception. The innermost
-    /// frame uses the currently executing pc (the failing spot); outer frames
-    /// use the irep/pc recorded at their breadcrumb push (where they were
-    /// called from). Frames without a line fall back to the bare method label.
+    /// call stack of the current exception, MRI-style. Each frame
+    /// is a method label and the line where that method's body called the next
+    /// frame (the inner crumb's recorded call site). The innermost frame is the
+    /// failing callee and drops its line when the caller frame already shows it
+    /// (the usual native-send/method_missing case). A synthetic <main> frame
+    /// tops the stack at the top-level call site.
     pub fn capture_error_stack(&self) -> Vec<String> {
-        let mut frames = Vec::new();
+        let mut crumbs: Vec<(String, Option<u32>)> = Vec::new();
         let mut bc = self.current_breadcrumb.clone();
-        // The innermost named frame is the currently executing spot.
-        let mut cur_frame = true;
         while let Some(b) = bc.as_ref() {
             if let Some(caller) = &b.caller {
-                let line = if cur_frame {
-                    self.current_frame_line()
-                } else {
-                    b.irep
-                        .as_ref()
-                        .and_then(|i| b.pc.and_then(|p| i.line_at_op(p)))
-                };
-                frames.push(match line {
-                    Some(l) => format!("{caller}:{l}"),
-                    None => caller.clone(),
-                });
-                cur_frame = false;
+                let line = b
+                    .irep
+                    .as_ref()
+                    .and_then(|i| b.pc.and_then(|p| i.line_at_op(p)));
+                crumbs.push((caller.clone(), line));
             }
             bc = b.upper.clone();
         }
+        // crumbs is innermost -> outermost.
+
+        let mut frames: Vec<String> = Vec::new();
+        let n = crumbs.len();
+        if n == 0 {
+            if let Some(line) = self.current_frame_line() {
+                frames.push(format!("<main>:{line}"));
+            }
+            return frames;
+        }
+
+        let current_line = self.current_frame_line();
+        // The failing line belongs to the caller frame when both resolve to the
+        // same line; the callee frame then carries no line of its own.
+        let innermost_line = if n >= 2 && current_line.is_some() && current_line == crumbs[0].1 {
+            None
+        } else {
+            current_line
+        };
+        frames.push(match innermost_line {
+            Some(l) => format!("{}:{l}", crumbs[0].0),
+            None => crumbs[0].0.clone(),
+        });
+        for i in 1..n {
+            let caller = &crumbs[i].0;
+            frames.push(match crumbs[i - 1].1 {
+                Some(l) => format!("{caller}:{l}"),
+                None => caller.clone(),
+            });
+        }
+        frames.push(match crumbs[n - 1].1 {
+            Some(l) => format!("<main>:{l}"),
+            None => "<main>".to_string(),
+        });
         frames.reverse();
         frames
     }
