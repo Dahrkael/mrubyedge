@@ -3,7 +3,7 @@ use std::rc::Rc;
 use crate::{
     Error,
     yamrb::{
-        helpers::{mrb_define_cmethod, mrb_funcall},
+        helpers::{mrb_define_cmethod, mrb_define_cmethod_attr, mrb_funcall},
         value::*,
         vm::VM,
     },
@@ -85,13 +85,24 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
                 let sym_id: &'static str = sym.name.clone().leak();
                 // Build the ivar key and its FNV hash once; property reads
                 // reuse the hash so they never re-hash the key.
-                let key = format!("@{}", sym_id);
+                let key: Rc<str> = format!("@{}", sym_id).into();
                 let hash = crate::yamrb::vm::fnv_hash(&key);
-                let method = move |vm: &mut VM, _args: &[Rc<RObject>]| {
-                    let this = vm.getself()?;
-                    Ok(this.get_ivar_hashed(&key, hash))
+                let method = {
+                    let key = key.clone();
+                    move |vm: &mut VM, _args: &[Rc<RObject>]| {
+                        let this = vm.getself()?;
+                        Ok(this.get_ivar_hashed(&key, hash))
+                    }
                 };
-                mrb_define_cmethod(vm, class.clone(), sym_id, Box::new(method));
+                mrb_define_cmethod_attr(
+                    vm,
+                    class.clone(),
+                    sym_id,
+                    FastOp::AttrGet,
+                    key,
+                    hash,
+                    Box::new(method),
+                );
             }
             RValue::Nil => {
                 // skip
@@ -124,14 +135,25 @@ fn mrb_class_attr_writer(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
                 // the precomputed hash so they never re-hash the key.
                 let key: Rc<str> = format!("@{}", sym_id).into();
                 let hash = crate::yamrb::vm::fnv_hash(&key);
-                let method = move |vm: &mut VM, args: &[Rc<RObject>]| {
-                    let this = vm.getself()?;
-                    let value = args[0].clone();
-                    this.set_ivar_hashed(key.clone(), hash, value.clone());
-                    Ok(value)
+                let method = {
+                    let key = key.clone();
+                    move |vm: &mut VM, args: &[Rc<RObject>]| {
+                        let this = vm.getself()?;
+                        let value = args[0].clone();
+                        this.set_ivar_hashed(key.clone(), hash, value.clone());
+                        Ok(value)
+                    }
                 };
                 let method_name = format!("{}=", sym_id);
-                mrb_define_cmethod(vm, class.clone(), &method_name, Box::new(method));
+                mrb_define_cmethod_attr(
+                    vm,
+                    class.clone(),
+                    &method_name,
+                    FastOp::AttrSet,
+                    key,
+                    hash,
+                    Box::new(method),
+                );
             }
             RValue::Nil => {
                 // skip

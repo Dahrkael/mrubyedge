@@ -293,17 +293,22 @@ pub fn mrb_call_p(vm: &mut VM, recv: Rc<RObject>) {
 }
 
 /// Registers a native method into a proc table and bumps the method version.
-/// `tag` optionally marks the func for the inline numeric send fast path.
+/// `tag` optionally marks the func for the inline numeric send fast path, and
+/// `attr` carries the ivar identity for an attr_accessor fast-path closure.
 fn register_cmethod(
     vm: &mut VM,
     procs: &RefCell<RHashMap<String, RProc>>,
     name: &str,
     tag: Option<FastOp>,
+    attr: Option<(Rc<str>, u64)>,
     cmethod: RFn,
 ) {
     let index = vm.register_fn(cmethod);
     if let Some(op) = tag {
         vm.register_fast_native(index, op);
+    }
+    if let Some((key, hash)) = attr {
+        vm.register_fast_attr(index, key, hash);
     }
     let method = RProc {
         is_rb_func: false,
@@ -328,7 +333,7 @@ fn register_cmethod(
 /// * `name` - The name of the method
 /// * `cmethod` - The native Rust function to bind as a method
 pub fn mrb_define_cmethod(vm: &mut VM, klass: Rc<RClass>, name: &str, cmethod: RFn) {
-    register_cmethod(vm, &klass.procs, name, None, cmethod);
+    register_cmethod(vm, &klass.procs, name, None, None, cmethod);
 }
 
 /// Like [`mrb_define_cmethod`], but additionally tags the registered native so
@@ -342,7 +347,23 @@ pub fn mrb_define_cmethod_fast(
     op: FastOp,
     cmethod: RFn,
 ) {
-    register_cmethod(vm, &klass.procs, name, Some(op), cmethod);
+    register_cmethod(vm, &klass.procs, name, Some(op), None, cmethod);
+}
+
+/// Like [`mrb_define_cmethod_fast`], for attr_accessor closures: additionally
+/// records the `@name` ivar key and its FNV hash so `do_op_send` can execute
+/// the getter/setter as a direct IvarMap access with no call at all. `op`
+/// must be [`FastOp::AttrGet`] or [`FastOp::AttrSet`].
+pub fn mrb_define_cmethod_attr(
+    vm: &mut VM,
+    klass: Rc<RClass>,
+    name: &str,
+    op: FastOp,
+    key: Rc<str>,
+    hash: u64,
+    cmethod: RFn,
+) {
+    register_cmethod(vm, &klass.procs, name, Some(op), Some((key, hash)), cmethod);
 }
 
 /// Defines a Ruby method (RProc) on a Ruby class.
@@ -361,7 +382,7 @@ pub fn mrb_define_method(vm: &mut VM, klass: Rc<RClass>, name: &str, method: RPr
 
 pub fn mrb_define_class_cmethod(vm: &mut VM, klass: Rc<RClass>, name: &str, cmethod: RFn) {
     let klass_singleton = RObject::class_singleton(klass, vm);
-    register_cmethod(vm, &klass_singleton.procs, name, None, cmethod);
+    register_cmethod(vm, &klass_singleton.procs, name, None, None, cmethod);
 }
 
 /// Defines a singleton C method (native Rust function) on a specific Ruby object.
@@ -376,7 +397,7 @@ pub fn mrb_define_class_cmethod(vm: &mut VM, klass: Rc<RClass>, name: &str, cmet
 /// * `cmethod` - The native Rust function to bind as a singleton method
 pub fn mrb_define_singleton_cmethod(vm: &mut VM, dest: Rc<RObject>, name: &str, cmethod: RFn) {
     let klass = dest.initialize_or_get_singleton_class(vm);
-    register_cmethod(vm, &klass.procs, name, None, cmethod);
+    register_cmethod(vm, &klass.procs, name, None, None, cmethod);
 }
 
 /// Defines a singleton Ruby method (RProc) on a specific Ruby object.
@@ -405,7 +426,7 @@ pub fn mrb_define_singleton_method(vm: &mut VM, dest: Rc<RObject>, name: &str, m
 /// * `name` - The name of the method
 /// * `cmethod` - The native Rust function to bind as a method
 pub fn mrb_define_module_cmethod(vm: &mut VM, module: Rc<RModule>, name: &str, cmethod: RFn) {
-    register_cmethod(vm, &module.procs, name, None, cmethod);
+    register_cmethod(vm, &module.procs, name, None, None, cmethod);
 }
 
 /// Defines a Ruby method (RProc) on a Ruby module.

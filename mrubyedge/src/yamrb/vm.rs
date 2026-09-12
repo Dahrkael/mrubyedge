@@ -268,15 +268,23 @@ pub struct VM {
     /// prelude. A redefined Array#[] resolves to a different proc, which
     /// disables the GETIDX/SETIDX fast path.
     pub array_index_func: Cell<Option<usize>>,
-    /// Identity registry for send fast paths: func index -> inline numeric
-    /// operation. Populated at method registration through the `_fast`
-    /// helpers; `do_op_send` consults it on a dispatch-cache hit only, so a
-    /// redefined method (new func, bumped version) can never reuse a tag.
+    /// Identity registry for send fast paths: func index -> inline operation
+    /// (numeric math or attr_accessor access). Populated at method registration
+    /// through the `_fast` helpers; `do_op_send` consults it on a
+    /// dispatch-cache hit only, so a redefined method (new func, bumped
+    /// version) can never reuse a tag.
     pub fast_ops: RefCell<std::collections::HashMap<usize, FastOp>>,
-    /// Count of inline numeric fast-path handlings (results and raised errors).
-    /// Tests assert it moves to prove the fast path actually runs, and stays
-    /// still after a redefinition replaced the tagged method.
+    /// Ivar identity for attr_accessor fast-path closures, keyed by func index:
+    /// the `@name` key shared with the closure and its precomputed FNV hash.
+    pub fast_attrs: RefCell<std::collections::HashMap<usize, (Rc<str>, u64)>>,
+    /// Count of inline numeric/attr fast-path handlings (results and raised
+    /// errors). Tests assert it moves to prove the fast path actually runs,
+    /// and stays still after a redefinition replaced the tagged method.
     pub fast_native_hits: Cell<u64>,
+    /// Count of attribute accesses served by `op_send`'s inline cache, which
+    /// bypasses `do_op_send` entirely. Tests assert it moves so the op_send
+    /// cache is observable independently of the do_op_send fast path.
+    pub attr_cache_hits: Cell<u64>,
     /// Cached "Array index fast path is safe" verdict, reset on version bump.
     pub array_fast: Cell<Option<bool>>,
 }
@@ -413,6 +421,7 @@ impl VM {
             catch_target_pos: Vec::new(),
             lines: Vec::new(),
             send_cache: RefCell::new(vec![None; 1]),
+            attr_cache: RefCell::new(vec![None; 1]),
         };
         Self::new_by_raw_irep(irep)
     }
@@ -496,7 +505,9 @@ impl VM {
             array_index_func: Cell::new(None),
             array_fast: Cell::new(None),
             fast_ops: RefCell::new(HashMap::new()),
+            fast_attrs: RefCell::new(HashMap::new()),
             fast_native_hits: Cell::new(0),
+            attr_cache_hits: Cell::new(0),
             // Placeholders; filled from the prelude classes below.
             class_class: object_class.clone(),
             module_class: object_class.clone(),
@@ -961,10 +972,17 @@ impl VM {
     }
 
     /// Tags a registered native function so `do_op_send` can execute it inline
-    /// on numeric operands. The tag is looked up by `func` identity at a
-    /// dispatch-cache hit, so it never outlives the exact registration.
+    /// (numeric math or attr_accessor access). The tag is looked up by `func`
+    /// identity at a dispatch-cache hit, so it never outlives the exact
+    /// registration.
     pub fn register_fast_native(&self, func: usize, op: FastOp) {
         self.fast_ops.borrow_mut().insert(func, op);
+    }
+
+    /// Records the ivar identity backing an attr_accessor fast-path closure;
+    /// see [`Self::register_fast_native`] for the lifetime guarantee.
+    pub fn register_fast_attr(&self, func: usize, key: Rc<str>, hash: u64) {
+        self.fast_attrs.borrow_mut().insert(func, (key, hash));
     }
 
     pub(crate) fn push_fnblock(&mut self, f: Rc<RFn>) -> Result<(), Error> {
@@ -1206,6 +1224,7 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
         catch_target_pos: Vec::new(),
         lines: irep.lines.clone(),
         send_cache: RefCell::new(Vec::new()),
+        attr_cache: RefCell::new(Vec::new()),
     };
     for sym in irep.syms.iter() {
         irep1
@@ -1256,6 +1275,7 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
 
     irep1.code = code;
     irep1.send_cache = RefCell::new(vec![None; irep1.code.len()]);
+    irep1.attr_cache = RefCell::new(vec![None; irep1.code.len()]);
     (irep1, pos + 1)
 }
 
@@ -1296,6 +1316,12 @@ pub struct IREP {
     /// reads and fills its slot at the instruction index; entries go stale
     /// when the global method version moves.
     pub send_cache: RefCell<Vec<Option<SendCacheEntry>>>,
+    /// Attribute inline cache, one slot per instruction, parallel to
+    /// `send_cache`. When a send site resolves to an attr_accessor getter or
+    /// setter, its slot is filled so `op_send` can execute the access as a
+    /// direct IvarMap read/write without entering `do_op_send`. Entries go
+    /// stale with the method version, exactly like `send_cache`.
+    pub attr_cache: RefCell<Vec<Option<AttrCacheEntry>>>,
 }
 
 /// One inline cache slot: the last method a bytecode send site resolved to
@@ -1306,6 +1332,19 @@ pub struct SendCacheEntry {
     pub klass: Rc<RClass>,
     pub owner: Rc<RModule>,
     pub method: RProc,
+}
+
+/// Attribute inline-cache slot: the ivar an attr_accessor send site maps to
+/// for a given receiver class, stamped with the method version at fill time.
+/// A hit means the previous resolution was the pristine accessor, so the same
+/// class and version cannot have redefined it.
+#[derive(Debug, Clone)]
+pub struct AttrCacheEntry {
+    pub version: u64,
+    pub klass: Rc<RClass>,
+    pub key: Rc<str>,
+    pub hash: u64,
+    pub is_set: bool,
 }
 
 impl IREP {

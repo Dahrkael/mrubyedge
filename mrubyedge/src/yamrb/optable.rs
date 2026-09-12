@@ -1160,6 +1160,50 @@ pub(crate) fn op_ssendb(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_send(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b, c) = operand.as_bbb()?;
+
+    // Attribute inline cache: when this site last resolved to an attr_accessor
+    // closure for this receiver class and the method version has not moved,
+    // the get/set runs directly on the receiver's IvarMap — no do_op_send, no
+    // dispatch machinery. A redefinition bumps the version, and a receiver with
+    // a singleton method resolves to a different class identity (same one the
+    // fill used), so the entry goes cold and the normal send re-resolves.
+    if (c & 0x0f) <= 1 && (c >> 4) == 0 {
+        let site = vm.pc.get() - 1;
+        let version = vm.method_version.get();
+        let recv = vm.current_regs()[a as usize].clone();
+        if let Some(recv) = recv {
+            // Clone the entry so the cache borrow ends before register writes.
+            let entry = vm
+                .current_irep
+                .attr_cache
+                .borrow()
+                .get(site)
+                .and_then(|slot| slot.as_ref())
+                .cloned();
+            if let Some(entry) = entry
+                && entry.version == version
+                && Rc::ptr_eq(&entry.klass, &recv.singleton_or_this_class(vm))
+            {
+                if entry.is_set {
+                    let value = vm.current_regs()[a as usize + 1].clone();
+                    if let Some(value) = value {
+                        recv.set_ivar_hashed(entry.key.clone(), entry.hash, value.clone());
+                        vm.current_regs()[a as usize].replace(value);
+                        vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
+                        vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
+                        return Ok(());
+                    }
+                } else {
+                    let val = recv.get_ivar_hashed(&entry.key, entry.hash);
+                    vm.current_regs()[a as usize].replace(val);
+                    vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
+                    vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
+                    return Ok(());
+                }
+            }
+        }
+    }
+
     do_op_send(vm, a as usize, None, a, b, c)
 }
 
@@ -1170,12 +1214,12 @@ pub(crate) fn op_sendb(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     do_op_send(vm, a as usize, Some(a as usize + n + k * 2 + 1), a, b, c)
 }
 
-/// Tries to execute a tagged numeric send inline, skipping the native-call
-/// machinery (arg Vec, fn-table lookup, frame bookkeeping). Eligible sends are
-/// those whose resolved method carries a [`FastOp`] tag (modulo, power,
-/// spaceship, `!=`) AND whose operands are numeric; any other operand type
-/// falls through to the real method so coercion and errors keep their native
-/// behavior. Returns `None` when not eligible.
+/// Tries to execute a tagged send inline, skipping the native-call machinery
+/// (arg Vec, fn-table lookup, frame bookkeeping). Attribute accessors are
+/// handled first as a direct IvarMap read/write; then numeric ops (modulo,
+/// power, spaceship, `!=`) run when their operands are numeric. Any other
+/// operand type falls through to the real method so coercion and errors keep
+/// their native behavior. Returns `None` when not eligible.
 ///
 /// The tag is bound to the method's `func` identity at registration and read
 /// back through a version-and-class-guarded dispatch cache hit, so a
@@ -1192,7 +1236,24 @@ fn try_fast_op(
     let func = method.func?;
     let op = *vm.fast_ops.borrow().get(&func)?;
 
-    // First operand: the receiver. Every tagged op expects a numeric one.
+    // attr_accessor closures: a direct IvarMap access on the receiver, no call
+    // frame. The receiver can be any object; the guard is the dispatch cache's
+    // receiver-class check, and redefinition replaces the method + tag.
+    if let FastOp::AttrGet | FastOp::AttrSet = op {
+        let (key, hash) = vm.fast_attrs.borrow().get(&func)?.clone();
+        let result = match op {
+            FastOp::AttrGet => Ok(recv.get_ivar_hashed(&key, hash)),
+            _ => {
+                let value = vm.current_regs()[a + 1].clone()?;
+                recv.set_ivar_hashed(key, hash, value.clone());
+                Ok(value)
+            }
+        };
+        vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
+        return Some(result);
+    }
+
+    // First operand: the receiver. Every tagged numeric op expects one.
     let (recv_i, recv_f) = match &recv.value {
         RValue::Integer(i) => (Some(*i), None),
         RValue::Float(f) => (None, Some(*f)),
@@ -1267,14 +1328,8 @@ fn try_fast_op(
                     Ok(RObject::integer_rc(rubylike_mod_i64(a, b)))
                 }
             } else {
-                let a = match recv_i.map(|i| i as f64).or(recv_f) {
-                    Some(v) => v,
-                    None => return None,
-                };
-                let b = match arg_i.map(|i| i as f64).or(arg_f) {
-                    Some(v) => v,
-                    None => return None,
-                };
+                let a = recv_i.map(|i| i as f64).or(recv_f)?;
+                let b = arg_i.map(|i| i as f64).or(arg_f)?;
                 if b == 0.0 {
                     Err(Error::ZeroDivisionError)
                 } else {
@@ -1315,6 +1370,8 @@ fn try_fast_op(
             (None, Some(a), None, Some(b)) => Ok(RObject::boolean_rc(a != b)),
             _ => return None,
         },
+        // Handled above; unreachable here.
+        FastOp::AttrGet | FastOp::AttrSet => return None,
     };
     // Count every inline handling (result or raised error) — fall-throughs
     // returned None above and did not reach here — so tests can prove the fast
@@ -1441,17 +1498,41 @@ pub(crate) fn do_op_send(
                         method: resolved.1.clone(),
                     });
                 }
+                // Mirror into the attr cache: when the resolved method is an
+                // attr_accessor closure, record the ivar so op_send can run the
+                // access without entering do_op_send at all.
+                let tag = resolved
+                    .1
+                    .func
+                    .and_then(|f| vm.fast_ops.borrow().get(&f).copied());
+                if let (Some(FastOp::AttrGet | FastOp::AttrSet), Some(func)) =
+                    (tag, resolved.1.func)
+                    && let Some((key, hash)) = vm.fast_attrs.borrow().get(&func).cloned()
+                {
+                    let is_set = matches!(tag, Some(FastOp::AttrSet));
+                    let mut attrs = vm.current_irep.attr_cache.borrow_mut();
+                    if let Some(slot) = attrs.get_mut(site) {
+                        *slot = Some(AttrCacheEntry {
+                            version,
+                            klass: klass.clone(),
+                            key,
+                            hash,
+                            is_set,
+                        });
+                    }
+                }
             }
             resolved
         }
     };
 
-    // inline numeric fast path. Runs when the send site's cache
-    // slot is populated with no kwargs or block; the resolved `method` comes
-    // from the version-and-class-guarded entry (or a fresh resolve when the
-    // slot is stale), so the tag always matches the method that would run.
-    // Errors mirror the native call: the result register is cleared before the
-    // exception propagates to the interpreter loop.
+    // inline numeric/attr fast path in do_op_send (the op_send
+    // attr inline cache handles the common attribute case before this). Runs
+    // when the send site's cache slot is populated with no kwargs or block;
+    // the resolved `method` comes from the version-and-class-guarded entry (or
+    // a fresh resolve when the slot is stale), so the tag always matches the
+    // method that would run. Errors mirror the native call: the result
+    // register is cleared before the exception propagates to the interpreter.
     if was_cache_hit && k == 0 && blk_index.is_none() {
         match try_fast_op(vm, &method, recv.clone(), a as usize, n) {
             Some(Ok(val)) => {

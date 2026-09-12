@@ -97,6 +97,11 @@ pub enum FastOp {
     NumSpaceship,
     /// Object#!= on same-kind numeric operands (value inequality).
     NumNe,
+    /// attr_accessor getter: direct IvarMap read on the receiver, no call.
+    /// The ivar key and its FNV hash live in the VM's fast_attrs registry.
+    AttrGet,
+    /// attr_accessor setter: direct IvarMap write, returns the assigned value.
+    AttrSet,
 }
 
 /// Ruby's floored modulo: the result carries the divisor's sign. Shared by the
