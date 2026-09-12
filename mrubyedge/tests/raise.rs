@@ -1,4 +1,3 @@
-extern crate mec_mrbc_sys;
 extern crate mrubyedge;
 
 mod helpers;
@@ -201,4 +200,25 @@ fn rescue_nest_nest_test() {
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescue: Intentional Error 4b");
+}
+
+// A bare `rescue => e` matches StandardError via is_a?, which is exactly
+// what op_rescue checks; NoMatchingPatternError must answer true to it.
+#[test]
+fn no_matching_pattern_error_is_a_standard_error_test() {
+    let code = "
+    def test_no_matching_pattern_error
+      NoMatchingPatternError.new(\"boom\").is_a?(StandardError)
+    end
+    ";
+    let binary = mrbc_compile("no_matching_pattern_error", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+
+    // Assert
+    let args = vec![];
+    let result = mrb_funcall(&mut vm, None, "test_no_matching_pattern_error", &args).unwrap();
+    let is_standard_error: bool = result.as_ref().try_into().unwrap();
+    assert!(is_standard_error);
 }

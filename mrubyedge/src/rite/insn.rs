@@ -309,29 +309,49 @@ pub enum OpCode {
     EXT3,
     STOP,
 
+    GETIDX0,
+    MATCHERR,
+    SSEND0,
+    SEND0,
+    BLKCALL,
+    RETSELF,
+    RETNIL,
+    RETTRUE,
+    RETFALSE,
+    ADDILV,
+    SUBILV,
+    TDEF,
+    SDEF,
+
     NumberOfOpcode, // for fetcher table
 }
 
 use self::OpCode::*;
+
+// LOADI8/LOADTRUE/LOADFALSE are 3.x's LOADI/LOADT/LOADF renamed, so they map onto the same
+// variants and a dump shows the 3.x names.
+#[rustfmt::skip]
 const ENUM_TABLE: [OpCode; OpCode::NumberOfOpcode as usize] = [
     NOP, MOVE, LOADL, LOADI, LOADINEG, LOADI__1, LOADI_0, LOADI_1, LOADI_2, LOADI_3, LOADI_4,
-    LOADI_5, LOADI_6, LOADI_7, LOADI16, LOADI32, LOADSYM, LOADNIL, LOADSELF, LOADT, LOADF, GETGV,
-    SETGV, GETSV, SETSV, GETIV, SETIV, GETCV, SETCV, GETCONST, SETCONST, GETMCNST, SETMCNST,
-    GETUPVAR, SETUPVAR, GETIDX, SETIDX, JMP, JMPIF, JMPNOT, JMPNIL, JMPUW, EXCEPT, RESCUE, RAISEIF,
-    SSEND, SSENDB, SEND, SENDB, CALL, SUPER, ARGARY, ENTER, KEY_P, KEYEND, KARG, RETURN,
-    RETURN_BLK, BREAK, BLKPUSH, ADD, ADDI, SUB, SUBI, MUL, DIV, EQ, LT, LE, GT, GE, ARRAY, ARRAY2,
-    ARYCAT, ARYPUSH, ARYSPLAT, AREF, ASET, APOST, INTERN, SYMBOL, STRING, STRCAT, HASH, HASHADD,
-    HASHCAT, LAMBDA, BLOCK, METHOD, RANGE_INC, RANGE_EXC, OCLASS, CLASS, MODULE, EXEC, DEF, ALIAS,
-    UNDEF, SCLASS, TCLASS, DEBUG, ERR, EXT1, EXT2, EXT3, STOP,
+    LOADI_5, LOADI_6, LOADI_7, LOADI16, LOADI32, LOADSYM, LOADNIL, LOADSELF, LOADT, LOADF,
+    GETGV, SETGV, GETSV, SETSV, GETIV, SETIV, GETCV, SETCV, GETCONST, SETCONST, GETMCNST,
+    SETMCNST, GETUPVAR, SETUPVAR, GETIDX, GETIDX0, SETIDX, JMP, JMPIF, JMPNOT, JMPNIL, JMPUW,
+    EXCEPT, RESCUE, RAISEIF, MATCHERR, SSEND, SSEND0, SSENDB, SEND, SEND0, SENDB, CALL, BLKCALL,
+    SUPER, ARGARY, ENTER, KEY_P, KEYEND, KARG, RETURN, RETURN_BLK, RETSELF, RETNIL, RETTRUE,
+    RETFALSE, BREAK, BLKPUSH, ADD, ADDI, SUB, SUBI, ADDILV, SUBILV, MUL, DIV, EQ, LT, LE, GT,
+    GE, ARRAY, ARRAY2, ARYCAT, ARYPUSH, ARYSPLAT, AREF, ASET, APOST, INTERN, SYMBOL, STRING,
+    STRCAT, HASH, HASHADD, HASHCAT, LAMBDA, BLOCK, METHOD, RANGE_INC, RANGE_EXC, OCLASS, CLASS,
+    MODULE, EXEC, DEF, TDEF, SDEF, ALIAS, UNDEF, SCLASS, TCLASS, DEBUG, ERR, EXT1, EXT2, EXT3,
+    STOP,
 ];
 
 impl TryFrom<u8> for OpCode {
     type Error = Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0..=105 => Ok(ENUM_TABLE[value as usize]),
-            _ => Err(Error::InvalidOpCode),
+        match ENUM_TABLE.get(value as usize) {
+            Some(opcode) => Ok(*opcode),
+            None => Err(Error::InvalidOpCode),
         }
     }
 }
@@ -445,6 +465,19 @@ impl Debug for OpCode {
             Self::EXT2 => write!(f, "EXT2"),
             Self::EXT3 => write!(f, "EXT3"),
             Self::STOP => write!(f, "STOP"),
+            Self::GETIDX0 => write!(f, "GETIDX0"),
+            Self::MATCHERR => write!(f, "MATCHERR"),
+            Self::SSEND0 => write!(f, "SSEND0"),
+            Self::SEND0 => write!(f, "SEND0"),
+            Self::BLKCALL => write!(f, "BLKCALL"),
+            Self::RETSELF => write!(f, "RETSELF"),
+            Self::RETNIL => write!(f, "RETNIL"),
+            Self::RETTRUE => write!(f, "RETTRUE"),
+            Self::RETFALSE => write!(f, "RETFALSE"),
+            Self::ADDILV => write!(f, "ADDILV"),
+            Self::SUBILV => write!(f, "SUBILV"),
+            Self::TDEF => write!(f, "TDEF"),
+            Self::SDEF => write!(f, "SDEF"),
             Self::NumberOfOpcode => write!(f, "[BUG] overflow opcode"),
         }
     }
@@ -545,10 +578,11 @@ const W: fn(&mut &[u8]) -> Result<Fetched, Error> = fetch_w;
 
 type FetchFn = fn(&mut &[u8]) -> Result<Fetched, Error>;
 
+#[rustfmt::skip]
 pub const FETCH_TABLE: [FetchFn; OpCode::NumberOfOpcode as usize] = [
-    Z, BB, BB, BB, BB, B, B, B, B, B, B, B, B, B, BS, BSS, BB, B, B, B, B, BB, BB, BB, BB, BB, BB,
-    BB, BB, BB, BB, BB, BB, BBB, BBB, B, B, S, BS, BS, BS, S, B, BB, B, BBB, BBB, BBB, BBB, Z, BB,
-    BS, W, BB, Z, BB, B, B, B, BS, B, BB, B, BB, B, B, B, B, B, B, B, BB, BBB, B, BB, B, BBB, BBB,
-    BBB, B, BB, BB, B, BB, BB, B, BB, BB, BB, B, B, B, BB, BB, BB, BB, BB, B, B, B, BBB, B, Z, Z,
-    Z, Z,
+    Z, BB, BB, BB, BB, B, B, B, B, B, B, B, B, B, BS, BSS, BB, B, B, B, B, BB, BB, BB, BB, BB,
+    BB, BB, BB, BB, BB, BB, BB, BBB, BBB, B, BB, B, S, BS, BS, BS, S, B, BB, B, B, BBB, BB, BBB,
+    BBB, BB, BBB, Z, BB, BB, BS, W, BB, Z, BB, B, B, Z, Z, Z, Z, B, BS, B, BB, B, BB, BBB, BBB,
+    B, B, B, B, B, B, B, BB, BBB, B, BB, B, BBB, BBB, BBB, B, BB, BB, B, BB, BB, B, BB, BB, BB,
+    B, B, B, BB, BB, BB, BB, BBB, BBB, BB, B, B, B, BBB, B, Z, Z, Z, Z,
 ];

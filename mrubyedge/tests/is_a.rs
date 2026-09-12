@@ -1,5 +1,4 @@
 #![allow(clippy::bool_assert_comparison)]
-extern crate mec_mrbc_sys;
 extern crate mrubyedge;
 
 mod helpers;

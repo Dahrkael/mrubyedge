@@ -77,7 +77,7 @@ fn main() {
         pool: Vec::new(),
         reps: Vec::new(),
         lv: None,
-        catch_target_pos: Vec::new(),
+        catch_handlers: Vec::new(),
     };
     let mut vm = vm::VM::new_by_raw_irep(irep);
     let ret = vm.run().unwrap();

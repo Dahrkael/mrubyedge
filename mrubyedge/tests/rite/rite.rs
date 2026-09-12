@@ -1,4 +1,3 @@
-extern crate mec_mrbc_sys;
 extern crate mrubyedge;
 
 use super::helpers::*;
@@ -13,7 +12,7 @@ fn test_rite_parse_hello_world() {
 
     // Check binary header
     assert_eq!(&rite.binary_header.ident, b"RITE");
-    assert_eq!(&rite.binary_header.major_version, b"03");
+    assert_eq!(&rite.binary_header.major_version, b"04");
     assert_eq!(&rite.binary_header.minor_version, b"00");
 
     // Check IREP section
@@ -93,4 +92,20 @@ fn test_rite_parse_pool_values() {
     assert!(has_string, "Should have string in pool");
     assert!(has_float, "Should have float in pool");
     assert!(has_int64, "Should have int64 in pool");
+}
+
+#[test]
+fn a_chunk_of_an_unknown_format_version_is_refused_test() {
+    let binary = mrbc_compile("compiled", "1 + 1");
+
+    // Bytes 4 and 5 of the header are the major version. mruby 3.x chunks are
+    // refused too: the opcode numbering is not the one this VM decodes.
+    for major in [b"02", b"03", b"05"] {
+        let mut chunk = binary.clone();
+        chunk[4..6].copy_from_slice(major);
+
+        // Assert
+        let err = mrubyedge::rite::load(&chunk).unwrap_err();
+        assert!(matches!(err, mrubyedge::rite::Error::UnsupportedVersion(m) if &m == major));
+    }
 }

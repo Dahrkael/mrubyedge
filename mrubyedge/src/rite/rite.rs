@@ -86,6 +86,10 @@ pub fn load<'a>(src: &'a [u8]) -> Result<Rite<'a>, Error> {
         return Err(Error::TooShort);
     }
     let binary_header = RiteBinaryHeader::from_bytes(&head[0..binheader_size])?;
+    // Only mruby 4.0 (RITE0400) chunks decode with this opcode table.
+    if &binary_header.major_version != b"04" {
+        return Err(Error::UnsupportedVersion(binary_header.major_version));
+    }
     rite.binary_header = binary_header;
     size -= binheader_size;
     head = &head[binheader_size..];

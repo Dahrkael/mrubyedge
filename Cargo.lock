@@ -135,7 +135,7 @@ dependencies = [
  "bitflags",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -155,7 +155,7 @@ dependencies = [
  "bitflags",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -305,7 +305,7 @@ dependencies = [
  "clap",
  "criterion-plot",
  "is-terminal",
- "itertools 0.10.5",
+ "itertools",
  "num-traits",
  "once_cell",
  "oorandom",
@@ -326,7 +326,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
 dependencies = [
  "cast",
- "itertools 0.10.5",
+ "itertools",
 ]
 
 [[package]]
@@ -490,15 +490,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -621,6 +612,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mruby-compiler2-sys"
+version = "0.4.0"
+source = "git+https://github.com/bash0C7/mruby-compiler2-sys?branch=rite0400-vendor#01b77b7f2d1718244f718f93925068cced8bbf81"
+dependencies = [
+ "bindgen 0.72.1",
+ "cc",
+ "glob",
+ "libc",
+]
+
+[[package]]
 name = "mrubyedge"
 version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -639,8 +641,7 @@ version = "1.1.12"
 dependencies = [
  "criterion",
  "fnv",
- "mec-mrbc-sys",
- "mruby-compiler2-sys",
+ "mruby-compiler2-sys 0.4.0",
  "once_cell",
  "plain",
  "rand_core 0.10.0",
@@ -656,7 +657,7 @@ dependencies = [
  "askama",
  "clap",
  "crossterm",
- "mruby-compiler2-sys",
+ "mruby-compiler2-sys 0.3.0",
  "mrubyedge 1.1.11",
  "mrubyedge-math 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "mrubyedge-time 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
