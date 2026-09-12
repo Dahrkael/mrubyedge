@@ -66,6 +66,91 @@ pub enum RValue {
     Nil,
 }
 
+/// Register-file value: the immediates (nil, bool, symbol, integer, float) are
+/// stored inline so arithmetic and ivar traffic never allocate or touch
+/// refcounts. Objects remain behind `Rc`, exactly as `RValue` holds them.
+/// The enum is 16 bytes; a register slot is `Option<Value>` so "unassigned"
+/// stays distinct from an assigned nil.
+#[derive(Debug, Clone)]
+pub enum Value {
+    Nil,
+    Bool(bool),
+    Symbol(Rc<RSym>),
+    Integer(i64),
+    Float(f64),
+    Object(Rc<RObject>),
+}
+
+impl Value {
+    /// Boxes the value back into a heap `RObject`, sharing the flyweight
+    /// instances (nil, booleans, small ints, symbols) where the VM has them.
+    pub fn to_rc(&self) -> Rc<RObject> {
+        match self {
+            Value::Nil => RObject::nil_rc(),
+            Value::Bool(b) => RObject::boolean_rc(*b),
+            Value::Symbol(s) => RObject::symbol_rc(s),
+            Value::Integer(i) => RObject::integer_rc(*i),
+            Value::Float(f) => Rc::new(RObject::float(*f)),
+            Value::Object(o) => o.clone(),
+        }
+    }
+
+    /// Unboxes a heap `RObject`: immediates are freed and stored inline, so a
+    /// register never keeps a numeric value boxed. Objects are kept by Rc.
+    pub fn from_rc(rc: Rc<RObject>) -> Self {
+        // Dispatch on the Copy `tt` so the object arm can move `rc` without a
+        // lingering borrow of its `value` field.
+        match rc.tt {
+            RType::Nil => Value::Nil,
+            RType::Bool => match &rc.value {
+                RValue::Bool(b) => Value::Bool(*b),
+                _ => unreachable!("Bool RObject without Bool value"),
+            },
+            RType::Symbol => match &rc.value {
+                RValue::Symbol(s) => Value::Symbol(Rc::new(s.clone())),
+                _ => unreachable!("Symbol RObject without Symbol value"),
+            },
+            RType::Integer => match &rc.value {
+                RValue::Integer(i) => Value::Integer(*i),
+                _ => unreachable!("Integer RObject without Integer value"),
+            },
+            RType::Float => match &rc.value {
+                RValue::Float(f) => Value::Float(*f),
+                _ => unreachable!("Float RObject without Float value"),
+            },
+            _ => Value::Object(rc),
+        }
+    }
+
+    pub fn is_nil(&self) -> bool {
+        matches!(self, Value::Nil)
+    }
+
+    /// Runtime class of the value, using the VM's cached builtin classes for
+    /// immediates so no box is created just to resolve the class.
+    pub fn get_class(&self, vm: &crate::yamrb::vm::VM) -> Rc<RClass> {
+        match self {
+            Value::Nil => vm.nil_class.clone(),
+            Value::Bool(true) => vm.true_class.clone(),
+            Value::Bool(false) => vm.false_class.clone(),
+            Value::Symbol(_) => vm.symbol_class.clone(),
+            Value::Integer(_) => vm.integer_class.clone(),
+            Value::Float(_) => vm.float_class.clone(),
+            Value::Object(o) => o.get_class(vm),
+        }
+    }
+
+    /// Class identity used by the dispatch caches: the singleton class when
+    /// one exists, otherwise the runtime class. Immediates never carry a
+    /// singleton, so they resolve directly to their builtin class.
+    pub fn singleton_or_this_class(&self, vm: &mut crate::yamrb::vm::VM) -> Rc<RClass> {
+        match self {
+            Value::Object(o) => o.singleton_or_this_class(vm),
+            _ => self.get_class(vm),
+        }
+    }
+}
+
 /// Numeric operations that the send dispatch can execute inline, skipping the
 /// native-call machinery. One variant per concrete closure registered through
 /// the fast path, so the inline code replicates that closure's exact semantics
