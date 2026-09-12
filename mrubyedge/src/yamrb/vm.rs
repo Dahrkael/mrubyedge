@@ -511,7 +511,7 @@ impl VM {
     pub(crate) fn check_frame_window(&self, extra: usize, nregs: usize) -> Result<(), Error> {
         if self.current_regs_offset + extra + nregs > MAX_REGS_SIZE {
             return Err(Error::TaggedError(
-                "SystemStackError",
+                "SystemStackError".to_string(),
                 "stack level too deep".to_string(),
             ));
         }

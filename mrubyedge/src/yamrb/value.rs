@@ -1309,7 +1309,7 @@ impl RClass {
             Error::ZeroDivisionError => vm.get_class_by_name("ZeroDivisionError"),
 
             Error::TaggedError(tag, _) => vm
-                .get_const_by_name(tag)
+                .get_const_by_name(&tag)
                 .and_then(|obj| {
                     if let RValue::Class(c) = &obj.value {
                         Some(c.clone())
