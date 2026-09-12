@@ -5,20 +5,8 @@ use crate::{Error, yamrb::vm::Breadcrumb};
 use super::{
     optable::push_callinfo,
     value::{RClass, RFn, RModule, RObject, RProc, RSym, RValue, resolve_method},
-    vm::VM,
+    vm::{CallerLabel, CallerReceiver, VM},
 };
-
-/// backtrace-friendly label for a call frame, e.g.
-/// "Scene#update" for instance calls or "SceneManager#run" for class calls.
-/// Falls back to the bare method name when the receiver class is unknown.
-pub(crate) fn frame_label(vm: &VM, recv: &Rc<RObject>, meth: &str) -> String {
-    let class_name = match &recv.value {
-        RValue::Class(c) => c.full_name(),
-        RValue::Module(m) => m.sym_id.name.clone(),
-        _ => recv.get_class(vm).full_name(),
-    };
-    format!("{class_name}#{meth}")
-}
 
 fn call_block(
     vm: &mut VM,
@@ -212,11 +200,20 @@ pub fn mrb_funcall(
     };
 
     let upper = vm.current_breadcrumb.take();
+    // lazy frame label; the receiver class is cloned (no
+    // allocation) and only formatted when the error stack is captured.
+    let receiver = match &recv.value {
+        RValue::Class(c) => CallerReceiver::Class(c.clone()),
+        RValue::Module(m) => CallerReceiver::Module(m.clone()),
+        _ => CallerReceiver::Instance(recv.get_class(vm)),
+    };
     let new_breadcrumb = Rc::new(Breadcrumb {
         upper,
         event: "funcall",
-        // qualify with receiver class for backtraces.
-        caller: Some(frame_label(vm, &recv, name)),
+        caller: Some(CallerLabel::Named {
+            receiver,
+            method: name.to_string(),
+        }),
         return_reg: None,
         irep: Some(vm.current_irep.clone()),
         pc: Some(vm.pc.get().saturating_sub(1)),

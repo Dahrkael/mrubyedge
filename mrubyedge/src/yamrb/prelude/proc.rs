@@ -5,7 +5,7 @@ use crate::{
     yamrb::{
         helpers::{mrb_call_block, mrb_define_class_cmethod, mrb_define_cmethod},
         value::*,
-        vm::{Breadcrumb, VM},
+        vm::{Breadcrumb, CallerLabel, VM},
     },
 };
 
@@ -30,7 +30,7 @@ pub fn mrb_proc_call(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
         .expect("empty breadcrumb on call");
     let new_breadcrumb = Rc::new(Breadcrumb {
         upper: cur.upper.clone(),
-        caller: Some("Proc#call".to_string()),
+        caller: Some(CallerLabel::Static("Proc#call")),
         event: "_proc_call_via_method",
         return_reg: cur.return_reg,
         irep: Some(vm.current_irep.clone()),

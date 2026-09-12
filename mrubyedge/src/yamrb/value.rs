@@ -126,6 +126,18 @@ pub struct RObject {
 
 const UNSET_OBJECT_ID: u64 = u64::MAX;
 
+// Shared instances for MRI immediates: nil, true, false and small integers.
+// Their object_id is value-derived (4, 20, 0, n*2+1), so sharing never
+// changes identity semantics, and F3A guards prevent per-instance writes.
+// Per-thread because Rc<RObject> is !Sync.
+thread_local! {
+    static NIL: Rc<RObject> = Rc::new(RObject::nil());
+    static TRUE: Rc<RObject> = Rc::new(RObject::boolean(true));
+    static FALSE: Rc<RObject> = Rc::new(RObject::boolean(false));
+    static SMALL_INTS: Vec<Rc<RObject>> =
+        (0..=255).map(|n| Rc::new(RObject::integer(n))).collect();
+}
+
 impl RObject {
     pub fn nil() -> Self {
         RObject {
@@ -325,6 +337,30 @@ impl RObject {
         rc
     }
 
+    /// Shared instance for nil (object_id 4).
+    pub fn nil_rc() -> Rc<Self> {
+        NIL.with(|n| n.clone())
+    }
+
+    /// Shared instance for true (object_id 20) or false (object_id 0).
+    pub fn boolean_rc(b: bool) -> Rc<Self> {
+        if b {
+            TRUE.with(|t| t.clone())
+        } else {
+            FALSE.with(|f| f.clone())
+        }
+    }
+
+    /// Shared instance for small integers 0..=255 (object_id n*2+1); larger
+    /// values allocate a fresh instance as before.
+    pub fn integer_rc(n: i64) -> Rc<Self> {
+        if (0..=255).contains(&n) {
+            SMALL_INTS.with(|v| v[n as usize].clone())
+        } else {
+            Rc::new(RObject::integer(n))
+        }
+    }
+
     pub fn is_falsy(&self) -> bool {
         match self.tt {
             RType::Nil => true,
@@ -344,6 +380,24 @@ impl RObject {
         matches!(self.tt, RType::Nil)
     }
 
+    /// MRI immediates share one instance across the process, so they must
+    /// never carry per-instance state (ivars, singleton class).
+    pub fn is_immediate(&self) -> bool {
+        matches!(
+            self.tt,
+            RType::Integer | RType::Float | RType::Bool | RType::Nil | RType::Symbol
+        )
+    }
+
+    /// error for writing per-instance state to an immediate,
+    /// which MRI rejects with FrozenError.
+    pub fn frozen_immediate_error(&self, vm: &VM) -> Error {
+        Error::TaggedError(
+            "FrozenError".to_string(),
+            format!("can't modify frozen {}", self.get_class(vm).full_name()),
+        )
+    }
+
     pub fn is_main(&self) -> bool {
         self.object_id.get() == 0
     }
@@ -357,7 +411,7 @@ impl RObject {
             .borrow()
             .get(key)
             .cloned()
-            .or_else(|| Some(RObject::nil().to_refcount_assigned()))
+            .or_else(|| Some(RObject::nil_rc()))
             .unwrap()
     }
 
@@ -406,28 +460,28 @@ impl RObject {
 
     pub fn get_class(&self, vm: &VM) -> Rc<RClass> {
         match &self.value {
-            RValue::Class(_) => vm.get_class_by_name("Class"),
-            RValue::Module(_) => vm.get_class_by_name("Module"),
+            RValue::Class(_) => vm.class_class.clone(),
+            RValue::Module(_) => vm.module_class.clone(),
             RValue::Instance(i) => i.class.clone(),
             RValue::Bool(b) => {
                 if *b {
-                    vm.get_class_by_name("TrueClass")
+                    vm.true_class.clone()
                 } else {
-                    vm.get_class_by_name("FalseClass")
+                    vm.false_class.clone()
                 }
             }
-            RValue::Symbol(_) => vm.get_class_by_name("Symbol"),
-            RValue::Integer(_) => vm.get_class_by_name("Integer"),
-            RValue::Float(_) => vm.get_class_by_name("Float"),
-            RValue::Proc(_) => vm.get_class_by_name("Proc"),
-            RValue::Array(_) => vm.get_class_by_name("Array"),
-            RValue::Hash(_) => vm.get_class_by_name("Hash"),
-            RValue::String(_, _) => vm.get_class_by_name("String"),
-            RValue::Range(_, _, _) => vm.get_class_by_name("Range"),
-            RValue::SharedMemory(_) => vm.get_class_by_name("SharedMemory"),
+            RValue::Symbol(_) => vm.symbol_class.clone(),
+            RValue::Integer(_) => vm.integer_class.clone(),
+            RValue::Float(_) => vm.float_class.clone(),
+            RValue::Proc(_) => vm.proc_class.clone(),
+            RValue::Array(_) => vm.array_class.clone(),
+            RValue::Hash(_) => vm.hash_class.clone(),
+            RValue::String(_, _) => vm.string_class.clone(),
+            RValue::Range(_, _, _) => vm.range_class.clone(),
+            RValue::SharedMemory(_) => vm.shared_memory_class.clone(),
             RValue::Data(d) => d.class.clone(),
             RValue::Exception(e) => e.class.clone(),
-            RValue::Nil => vm.get_class_by_name("NilClass"),
+            RValue::Nil => vm.nil_class.clone(),
         }
     }
 
@@ -457,10 +511,22 @@ impl RObject {
     }
 
     pub(crate) fn initialize_or_get_singleton_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
+        // immediates are shared flyweights; caching a singleton
+        // class on one would leak to every instance of that value. Build a
+        // throwaway class instead (callers mutating it only affect that
+        // transient class, never the value's own cell).
+        if self.is_immediate() {
+            return self.build_singleton_class(vm);
+        }
         if let Some(sclass) = self.get_singleton_class() {
             return sclass;
         }
+        let sclass = self.build_singleton_class(vm);
+        self.set_singleton_class(Some(sclass.clone()));
+        sclass
+    }
 
+    fn build_singleton_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
         let class_name = {
             let inspect = mrb_call_inspect(vm, self.clone());
             match inspect {
@@ -479,8 +545,6 @@ impl RObject {
             parent_module.clone(),
         ));
         sclass.update_module_weakref();
-
-        self.set_singleton_class(Some(sclass.clone()));
         sclass
     }
 
@@ -522,6 +586,9 @@ impl RObject {
         };
 
         let parent_module = self.get_class(vm).parent.borrow().clone();
+        // Note: get_class returns placeholder cache fields during prelude
+        // (before the VM class cache is filled); both Object and Class have
+        // no parent module, so singleton wiring is identical either way.
         let sclass = Rc::new(RClass::new_singleton(
             &class_name,
             Some(super_class),

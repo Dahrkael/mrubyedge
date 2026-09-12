@@ -40,10 +40,107 @@ impl TargetContext {
     }
 }
 
+/// Receiver identity for a lazy call-frame label. Kept as Rc clones (no
+/// allocation); the class/module name is only formatted when the error
+/// stack is captured.
+#[derive(Clone)]
+pub enum CallerReceiver {
+    Class(Rc<RClass>),
+    Module(Rc<RModule>),
+    Instance(Rc<RClass>),
+}
+
+impl std::fmt::Debug for CallerReceiver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Class(_) => write!(f, "CallerReceiver::Class"),
+            Self::Module(_) => write!(f, "CallerReceiver::Module"),
+            Self::Instance(_) => write!(f, "CallerReceiver::Instance"),
+        }
+    }
+}
+
+/// Lazy call-frame label. Built per send without allocating; the backtrace
+/// formatter turns it into "ClassName#method" only when reporting errors.
+#[derive(Clone)]
+pub enum CallerLabel {
+    /// Fixed label, no receiver qualification ("<tailcall>", "<exec>").
+    Static(&'static str),
+    /// Owned label, no receiver qualification ("super(method)").
+    Owned(String),
+    /// Rust-known method name on a receiver (mrb_funcall).
+    Named {
+        receiver: CallerReceiver,
+        method: String,
+    },
+    /// Method resolved through a send: the name comes from the frame irep's
+    /// sym table (or "method_missing" when the call went through a Ruby
+    /// method_missing), so no per-send string allocation is needed.
+    Send {
+        receiver: CallerReceiver,
+        sym_index: usize,
+        use_method_missing: bool,
+    },
+}
+
+impl std::fmt::Debug for CallerLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Static(s) => write!(f, "Static({})", s),
+            Self::Owned(s) => write!(f, "Owned({})", s),
+            Self::Named { receiver, method } => {
+                write!(f, "Named({:?}, {})", receiver, method)
+            }
+            Self::Send {
+                sym_index,
+                use_method_missing,
+                ..
+            } => write!(
+                f,
+                "Send(sym={}, method_missing={})",
+                sym_index, use_method_missing
+            ),
+        }
+    }
+}
+
+fn qualify(receiver: &CallerReceiver, method: &str) -> String {
+    let class = match receiver {
+        CallerReceiver::Class(c) => c.full_name(),
+        CallerReceiver::Module(m) => m.sym_id.name.clone(),
+        CallerReceiver::Instance(c) => c.full_name(),
+    };
+    format!("{class}#{method}")
+}
+
+/// Formats a call-frame label for backtraces. Send method names are resolved
+/// through the crumb's frame irep here, at error time.
+fn caller_label(label: &CallerLabel, irep: Option<&Rc<IREP>>) -> String {
+    match label {
+        CallerLabel::Static(s) => (*s).to_string(),
+        CallerLabel::Owned(s) => s.clone(),
+        CallerLabel::Named { receiver, method } => qualify(receiver, method.as_str()),
+        CallerLabel::Send {
+            receiver,
+            sym_index,
+            use_method_missing,
+        } => {
+            let method = if *use_method_missing {
+                "method_missing"
+            } else {
+                irep.and_then(|i| i.syms.get(*sym_index))
+                    .map(|s| s.name.as_str())
+                    .unwrap_or("?")
+            };
+            qualify(receiver, method)
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Breadcrumb {
     pub event: &'static str, // TODO: be enum
-    pub caller: Option<String>,
+    pub caller: Option<CallerLabel>,
     pub return_reg: Option<usize>,
     // caller's irep and pc at push time, for mapping a stack
     // frame to its source line via the irep's debug info.
@@ -69,7 +166,10 @@ impl Breadcrumb {
             "{}- Breadcrumb: event='{}', caller={}, return_reg={:?}",
             "  ".repeat(level),
             self.event,
-            self.caller.as_deref().unwrap_or("(none)"),
+            self.caller
+                .as_ref()
+                .map(|c| caller_label(c, self.irep.as_ref()))
+                .unwrap_or_else(|| "(none)".to_string()),
             self.return_reg
         );
         if let Some(upper) = &self.upper {
@@ -118,6 +218,22 @@ pub struct VM {
     // common class
     pub object_class: Rc<RClass>,
     pub builtin_class_table: RHashMap<&'static str, Rc<RClass>>,
+    // hot-path class cache for RObject::get_class, avoiding a
+    // builtin_class_table lookup per send. Filled from the prelude classes.
+    pub class_class: Rc<RClass>,
+    pub module_class: Rc<RClass>,
+    pub integer_class: Rc<RClass>,
+    pub float_class: Rc<RClass>,
+    pub string_class: Rc<RClass>,
+    pub array_class: Rc<RClass>,
+    pub hash_class: Rc<RClass>,
+    pub symbol_class: Rc<RClass>,
+    pub proc_class: Rc<RClass>,
+    pub range_class: Rc<RClass>,
+    pub true_class: Rc<RClass>,
+    pub false_class: Rc<RClass>,
+    pub nil_class: Rc<RClass>,
+    pub shared_memory_class: Rc<RClass>,
     pub class_object_table: RHashMap<String, Rc<RObject>>,
 
     pub globals: RHashMap<String, Rc<RObject>>,
@@ -350,9 +466,24 @@ impl VM {
             insn_count,
             #[cfg(feature = "insn-limit")]
             insn_limit,
-            object_class,
             builtin_class_table,
             class_object_table,
+            // Placeholders; filled from the prelude classes below.
+            class_class: object_class.clone(),
+            module_class: object_class.clone(),
+            integer_class: object_class.clone(),
+            float_class: object_class.clone(),
+            string_class: object_class.clone(),
+            array_class: object_class.clone(),
+            hash_class: object_class.clone(),
+            symbol_class: object_class.clone(),
+            proc_class: object_class.clone(),
+            range_class: object_class.clone(),
+            true_class: object_class.clone(),
+            false_class: object_class.clone(),
+            nil_class: object_class.clone(),
+            shared_memory_class: object_class.clone(),
+            object_class,
             globals,
             consts,
             upper,
@@ -363,6 +494,21 @@ impl VM {
         };
 
         prelude(&mut vm);
+
+        vm.class_class = vm.get_class_by_name("Class");
+        vm.module_class = vm.get_class_by_name("Module");
+        vm.integer_class = vm.get_class_by_name("Integer");
+        vm.float_class = vm.get_class_by_name("Float");
+        vm.string_class = vm.get_class_by_name("String");
+        vm.array_class = vm.get_class_by_name("Array");
+        vm.hash_class = vm.get_class_by_name("Hash");
+        vm.symbol_class = vm.get_class_by_name("Symbol");
+        vm.proc_class = vm.get_class_by_name("Proc");
+        vm.range_class = vm.get_class_by_name("Range");
+        vm.true_class = vm.get_class_by_name("TrueClass");
+        vm.false_class = vm.get_class_by_name("FalseClass");
+        vm.nil_class = vm.get_class_by_name("NilClass");
+        vm.shared_memory_class = vm.get_class_by_name("SharedMemory");
 
         vm
     }
@@ -458,12 +604,12 @@ impl VM {
         let mut crumbs: Vec<(String, Option<u32>)> = Vec::new();
         let mut bc = self.current_breadcrumb.clone();
         while let Some(b) = bc.as_ref() {
-            if let Some(caller) = &b.caller {
+            if let Some(label) = &b.caller {
                 let line = b
                     .irep
                     .as_ref()
                     .and_then(|i| b.pc.and_then(|p| i.line_at_op(p)));
-                crumbs.push((caller.clone(), line));
+                crumbs.push((caller_label(label, b.irep.as_ref()), line));
             }
             bc = b.upper.clone();
         }
@@ -660,7 +806,7 @@ impl VM {
 
         let retval = match self.current_regs()[0].take() {
             Some(v) => Ok(v),
-            None => Ok(Rc::new(RObject::nil())),
+            None => Ok(RObject::nil_rc()),
         };
         self.current_regs()[0].replace(top_self.clone());
 

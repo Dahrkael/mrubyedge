@@ -536,8 +536,7 @@ pub(crate) fn op_nop(_vm: &mut VM, _operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_loadi_n(vm: &mut VM, n: i32, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    let val = RObject::integer(n as i64);
-    vm.current_regs()[a].replace(Rc::new(val));
+    vm.current_regs()[a].replace(RObject::integer_rc(n as i64));
     Ok(())
 }
 
@@ -546,7 +545,7 @@ pub(crate) fn op_loadl(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let pool_val = vm.current_irep.pool[b as usize].clone();
     let val = match pool_val {
         RPool::Str(s) => Rc::new(RObject::string(s)),
-        RPool::Int(i) => Rc::new(RObject::integer(i)),
+        RPool::Int(i) => RObject::integer_rc(i),
         RPool::Float(f) => Rc::new(RObject::float(f)),
         RPool::Data(_) => {
             return Err(Error::Internal(
@@ -560,29 +559,25 @@ pub(crate) fn op_loadl(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_loadi16(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bs()?;
-    let val = RObject::integer(b as i64);
-    vm.current_regs()[a as usize].replace(Rc::new(val));
+    vm.current_regs()[a as usize].replace(RObject::integer_rc(b as i64));
     Ok(())
 }
 
 pub(crate) fn op_loadi32(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b, c) = operand.as_bss()?;
-    let val = RObject::integer((b as i64) << 16 | c as i64);
-    vm.current_regs()[a as usize].replace(Rc::new(val));
+    vm.current_regs()[a as usize].replace(RObject::integer_rc((b as i64) << 16 | c as i64));
     Ok(())
 }
 
 pub(crate) fn op_loadi(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let val = RObject::integer(b as i64);
-    vm.current_regs()[a as usize].replace(Rc::new(val));
+    vm.current_regs()[a as usize].replace(RObject::integer_rc(b as i64));
     Ok(())
 }
 
 pub(crate) fn op_loadineg(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let val = RObject::integer(-(b as i64));
-    vm.current_regs()[a as usize].replace(Rc::new(val));
+    vm.current_regs()[a as usize].replace(RObject::integer_rc(-(b as i64)));
     Ok(())
 }
 
@@ -595,8 +590,7 @@ pub(crate) fn op_loadsym(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_loadnil(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    let val = RObject::nil();
-    vm.current_regs()[a].replace(Rc::new(val));
+    vm.current_regs()[a].replace(RObject::nil_rc());
     Ok(())
 }
 
@@ -609,15 +603,13 @@ pub(crate) fn op_loadself(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_loadt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    let val = RObject::boolean(true);
-    vm.current_regs()[a].replace(Rc::new(val));
+    vm.current_regs()[a].replace(RObject::boolean_rc(true));
     Ok(())
 }
 
 pub(crate) fn op_loadf(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    let val = RObject::boolean(false);
-    vm.current_regs()[a].replace(Rc::new(val));
+    vm.current_regs()[a].replace(RObject::boolean_rc(false));
     Ok(())
 }
 
@@ -644,17 +636,25 @@ pub(crate) fn op_setgv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_getiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let this = vm.getself()?;
-    let key = vm.current_irep.syms[b as usize].name.clone();
-    vm.current_regs()[a as usize].replace(this.get_ivar(&key));
+    // Borrow the sym name instead of cloning it; get_ivar hashes it
+    // transiently and never stores the key by value.
+    let value = this.get_ivar(&vm.current_irep.syms[b as usize].name);
+    vm.current_regs()[a as usize].replace(value);
     Ok(())
 }
 
 pub(crate) fn op_setiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let this = vm.getself()?;
+    // immediates are shared, so writing an ivar on one would
+    // leak to every instance; MRI forbids it with FrozenError.
+    if this.is_immediate() {
+        return Err(this.frozen_immediate_error(vm));
+    }
     let val = vm.get_current_regs_cloned(a as usize)?;
-    let key = vm.current_irep.syms[b as usize].name.clone();
-    this.set_ivar(&key, val.clone());
+    // Borrow the sym name instead of cloning it; the ivar map hashes it
+    // transiently and never stores the key by value.
+    this.set_ivar(&vm.current_irep.syms[b as usize].name, val.clone());
     Ok(())
 }
 
@@ -1037,7 +1037,7 @@ pub(crate) fn op_except(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         .exception
         .take()
         .map(|e| RObject::exception(e).to_refcount_assigned())
-        .unwrap_or_else(|| RObject::nil().to_refcount_assigned());
+        .unwrap_or_else(|| RObject::nil_rc());
     vm.current_regs()[a as usize].replace(val);
     Ok(())
 }
@@ -1050,8 +1050,8 @@ pub(crate) fn op_rescue(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         (RValue::Exception(exc), RValue::Class(klass)) => {
             let etype = exc.error_type.borrow();
             let is_rescued = etype.is_a(vm, klass);
-            let val = RObject::boolean(is_rescued);
-            vm.current_regs()[b as usize].replace(val.to_refcount_assigned());
+            let val = RObject::boolean_rc(is_rescued);
+            vm.current_regs()[b as usize].replace(val);
         }
         _ => unreachable!("rescue must be called on exception"),
     };
@@ -1112,11 +1112,12 @@ pub(crate) fn do_op_send(
     let mut n: usize = (c & 0x0f) as usize;
     let k: usize = (c >> 4) as usize;
 
-    let method_id = vm.current_irep.syms[b as usize].clone();
-    if &method_id.name == "__debug__vm_info" {
+    let irep = vm.current_irep.clone();
+    let method_id = &irep.syms[b as usize];
+    if method_id.name == "__debug__vm_info" {
         // Special debug method to dump VM info
         vm.debug_dump_to_stdout(32);
-        vm.current_regs()[a as usize].replace(Rc::new(RObject::nil()));
+        vm.current_regs()[a as usize].replace(RObject::nil_rc());
         return Ok(());
     }
 
@@ -1134,17 +1135,24 @@ pub(crate) fn do_op_send(
         })
         .collect::<Vec<_>>();
 
-    let mut map = RHashMap::default();
-    for i in 0..k {
-        let key = vm
-            .get_current_regs_cloned(a as usize + n + i * 2 + 1)?
-            .intern()?;
-        let val = vm
-            .get_current_regs_cloned(a as usize + n + i * 2 + 2)?
-            .clone();
-        map.insert(key, val);
+    if k > 0 {
+        let mut map = RHashMap::default();
+        for i in 0..k {
+            let key = vm
+                .get_current_regs_cloned(a as usize + n + i * 2 + 1)?
+                .intern()?;
+            let val = vm
+                .get_current_regs_cloned(a as usize + n + i * 2 + 2)?
+                .clone();
+            map.insert(key, val);
+        }
+        vm.kargs.borrow_mut().replace(map);
+    } else {
+        // Reset the slot so a k>0 send that failed before its callee ran
+        // cannot leak a stale kwargs map into the next call; an empty map
+        // keeps op_enter's KArgs upper-chain intact.
+        vm.kargs.borrow_mut().replace(RHashMap::default());
     }
-    vm.kargs.borrow_mut().replace(map);
 
     if let Some(blk_index) = blk_index {
         let blk_val = vm.get_current_regs_cloned(blk_index)?;
@@ -1156,7 +1164,7 @@ pub(crate) fn do_op_send(
         }
     } else {
         // When no block is provided, do not push a nil placeholder
-        vm.current_regs()[block_index].replace(Rc::new(RObject::nil()));
+        vm.current_regs()[block_index].replace(RObject::nil_rc());
     }
 
     let klass = recv.get_class(vm);
@@ -1168,7 +1176,7 @@ pub(crate) fn do_op_send(
     let mut via_method_missing = false;
     let (owner_module, method) = resolve_method(&klass, &method_id.name)
         .or_else(|| {
-            unshift_method_name(vm, &mut args, &method_id, a as usize, n + k * 2 + 1);
+            unshift_method_name(vm, &mut args, method_id, a as usize, n + k * 2 + 1);
             n += 1;
             via_method_missing = true;
             resolve_method(&klass, "method_missing")
@@ -1181,34 +1189,42 @@ pub(crate) fn do_op_send(
             ))
         })?;
 
-    // a send resolved to a Ruby method_missing is reported as
-    // such, since its failing line belongs to that body; the native default
-    // keeps the requested name, matching MRI's NoMethodError backtrace.
-    let send_label = if via_method_missing && method.is_rb_func {
-        "method_missing"
-    } else {
-        method_id.name.as_str()
-    };
     // guard the callee's register window before pushing its
     // frame; unbounded recursion must raise SystemStackError, not panic.
     if let Some(irep) = method.irep.as_ref() {
         vm.check_frame_window(a as usize, irep.nregs)?;
     }
     let upper = vm.current_breadcrumb.take();
+    // lazy frame label; the receiver class is cloned (no
+    // allocation) and the name is resolved from the frame irep at error time.
+    let receiver = match &recv.value {
+        RValue::Class(c) => CallerReceiver::Class(c.clone()),
+        RValue::Module(m) => CallerReceiver::Module(m.clone()),
+        _ => CallerReceiver::Instance(recv.get_class(vm)),
+    };
     let new_breadcrumb = Rc::new(Breadcrumb {
         upper,
         event: "do_op_send",
-        // qualify with receiver class for backtraces.
-        caller: Some(crate::yamrb::helpers::frame_label(vm, &recv, send_label)),
+        caller: Some(CallerLabel::Send {
+            receiver,
+            sym_index: b as usize,
+            use_method_missing: via_method_missing && method.is_rb_func,
+        }),
         return_reg: Some(a as usize),
-        irep: Some(vm.current_irep.clone()),
+        irep: Some(irep.clone()),
         pc: Some(vm.pc.get().saturating_sub(1)),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
 
     vm.current_regs()[a as usize].replace(recv.clone());
     if !method.is_rb_func {
-        kwarg_op_enter(vm, 0);
+        // no keyword arguments means no KArgs frame. Note
+        // that a native method inside a Ruby method with live kwargs then
+        // reads the outer KArgs via get_kwargs() instead of an empty one;
+        // no engine native method inspects kwargs today.
+        if k > 0 {
+            kwarg_op_enter(vm, 0);
+        }
 
         let func = vm
             .get_fn(method.func.unwrap())
@@ -1217,7 +1233,9 @@ pub(crate) fn do_op_send(
 
         let res = func(vm, &args);
 
-        kwarg_op_return(vm);
+        if k > 0 {
+            kwarg_op_return(vm);
+        }
 
         vm.current_regs_offset -= a as usize;
         for i in (a as usize + 1)..block_index {
@@ -1236,7 +1254,7 @@ pub(crate) fn do_op_send(
                     .replace(upper.expect("should have upper breadcrumb"));
             }
             Err(e) => {
-                vm.current_regs()[a as usize].replace(Rc::new(RObject::nil()));
+                vm.current_regs()[a as usize].replace(RObject::nil_rc());
                 // capture the backtrace at this send before
                 // popping its breadcrumb (deepest frame wins), mark the
                 // exception as pending so outer conversions skip their own
@@ -1259,7 +1277,7 @@ pub(crate) fn do_op_send(
         return Ok(());
     }
 
-    push_callinfo(vm, method_id, n, Some(owner_module), a as usize);
+    push_callinfo(vm, method_id.clone(), n, Some(owner_module), a as usize);
 
     // Set has_block flag based on whether a block was provided
     if let Some(ci) = vm.current_callinfo.as_ref() {
@@ -1283,7 +1301,7 @@ fn unshift_method_name(
     for i in (a + 1..=a + total_args).rev() {
         let val = vm.current_regs().get(i).and_then(|r| r.as_ref().cloned());
         val.as_ref().cloned().map(|v| mrb_call_inspect(vm, v));
-        vm.current_regs()[i + 1].replace(val.unwrap_or_else(|| Rc::new(RObject::nil())));
+        vm.current_regs()[i + 1].replace(val.unwrap_or_else(|| RObject::nil_rc()));
     }
     args.insert(0, method_name.clone());
     vm.current_regs()[a + 1].replace(method_name);
@@ -1320,7 +1338,7 @@ pub(crate) fn op_call(vm: &mut VM, _operand: &Fetched) -> Result<(), Error> {
     let new_breadcrumb = Rc::new(Breadcrumb {
         upper,
         event: "op_call",
-        caller: Some("<tailcall>".into()),
+        caller: Some(CallerLabel::Static("<tailcall>")),
         return_reg: None,
         irep: Some(vm.current_irep.clone()),
         pc: Some(vm.pc.get().saturating_sub(1)),
@@ -1386,7 +1404,7 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
                 vm.current_regs()[a as usize].replace(val);
             }
             Err(e) => {
-                vm.current_regs()[a as usize].replace(Rc::new(RObject::nil()));
+                vm.current_regs()[a as usize].replace(RObject::nil_rc());
                 return Err(e);
             }
         }
@@ -1403,7 +1421,7 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let new_breadcrumb = Rc::new(Breadcrumb {
         upper,
         event: "super",
-        caller: Some(format!("super({})", sym_id)),
+        caller: Some(CallerLabel::Owned(format!("super({})", sym_id))),
         return_reg: None,
         irep: Some(vm.current_irep.clone()),
         pc: Some(vm.pc.get().saturating_sub(1)),
@@ -1541,7 +1559,7 @@ pub(crate) fn op_key_p(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         let kwrest_pos = kargs.kwrest_reg.get();
 
         (
-            RObject::boolean(kargs.args.borrow().contains_key(&key)),
+            RObject::boolean_rc(kargs.args.borrow().contains_key(&key)),
             kwrest_pos,
         )
     };
@@ -1551,7 +1569,7 @@ pub(crate) fn op_key_p(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         mrb_hash_delete(kwrest, key_robj)?;
     }
 
-    vm.current_regs()[a as usize].replace(val.to_refcount_assigned());
+    vm.current_regs()[a as usize].replace(val);
     Ok(())
 }
 
@@ -1600,16 +1618,16 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     // THIS env; keeping that reference inside captured forms an immortal
     // Rc cycle (env->proc->env). Null out such self-references so the env
     // is kept alive by the proc alone, not by a cycle.
-    let regs0_cloned: Vec<_> = vm.current_regs()[0..nregs].to_vec();
-    if let Some(environ) = vm.cur_env.get(&vm.current_irep.__id) {
+    if let Some(environ) = vm.cur_env.get(&vm.current_irep.__id).cloned() {
         if environ.__irep_id == vm.current_irep.__id {
+            let regs0_cloned: Vec<_> = vm.current_regs()[0..nregs].to_vec();
             environ.capture_no_clone(regs0_cloned);
             if let Some(ref mut captured) = *environ.captured.borrow_mut() {
                 for slot in captured.iter_mut() {
                     if let Some(obj) = slot {
                         if let RValue::Proc(p) = &obj.value
                             && let Some(pe) = &p.environ
-                            && Rc::ptr_eq(environ, pe)
+                            && Rc::ptr_eq(&environ, pe)
                         {
                             *slot = None;
                         }
@@ -1713,7 +1731,7 @@ pub(crate) fn op_add(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val1 = vm.take_current_regs(a)?;
     let val2 = vm.get_current_regs_cloned(b)?;
     let result = match (&val1.value, &val2.value) {
-        (RValue::Integer(n1), RValue::Integer(n2)) => Rc::new(RObject::integer(n1 + n2)),
+        (RValue::Integer(n1), RValue::Integer(n2)) => RObject::integer_rc(n1 + n2),
         (RValue::Float(n1), RValue::Float(n2)) => Rc::new(RObject::float(n1 + n2)),
         (RValue::Integer(n1), RValue::Float(n2)) => Rc::new(RObject::float(*n1 as f64 + n2)),
         (RValue::Float(n1), RValue::Integer(n2)) => Rc::new(RObject::float(n1 + *n2 as f64)),
@@ -1835,7 +1853,7 @@ fn compare_via_spaceship(
     val1: Rc<RObject>,
     val2: Rc<RObject>,
     op: &str,
-) -> Result<RObject, Error> {
+) -> Result<Rc<RObject>, Error> {
     let r = mrb_funcall(vm, Some(val1.clone()), "<=>", &[val2.clone()])?;
     match r.value {
         RValue::Nil => Err(Error::ArgumentError("comparison failed".into())),
@@ -1848,7 +1866,7 @@ fn compare_via_spaceship(
                 ">" => ord > 0,
                 _ => ord >= 0,
             };
-            Ok(RObject::boolean(hit))
+            Ok(RObject::boolean_rc(hit))
         }
     }
 }
@@ -1859,13 +1877,13 @@ pub(crate) fn op_lt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val1 = vm.get_current_regs_cloned(a)?;
     let val2 = vm.get_current_regs_cloned(b)?;
     let result = match (&val1.value, &val2.value) {
-        (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean(n1 < n2),
-        (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean(n1 < n2),
-        (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean((*n1 as f64) < *n2),
-        (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean(*n1 < (*n2 as f64)),
+        (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean_rc(n1 < n2),
+        (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean_rc(n1 < n2),
+        (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean_rc((*n1 as f64) < *n2),
+        (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean_rc(*n1 < (*n2 as f64)),
         _ => compare_via_spaceship(vm, val1.clone(), val2.clone(), "<")?,
     };
-    vm.current_regs()[a].replace(Rc::new(result));
+    vm.current_regs()[a].replace(result);
     Ok(())
 }
 
@@ -1875,13 +1893,13 @@ pub(crate) fn op_le(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val1 = vm.get_current_regs_cloned(a)?;
     let val2 = vm.get_current_regs_cloned(b)?;
     let result = match (&val1.value, &val2.value) {
-        (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean(n1 <= n2),
-        (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean(n1 <= n2),
-        (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean((*n1 as f64) <= *n2),
-        (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean(*n1 <= (*n2 as f64)),
+        (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean_rc(n1 <= n2),
+        (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean_rc(n1 <= n2),
+        (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean_rc((*n1 as f64) <= *n2),
+        (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean_rc(*n1 <= (*n2 as f64)),
         _ => compare_via_spaceship(vm, val1.clone(), val2.clone(), "<=")?,
     };
-    vm.current_regs()[a].replace(Rc::new(result));
+    vm.current_regs()[a].replace(result);
     Ok(())
 }
 
@@ -1901,13 +1919,13 @@ pub(crate) fn op_gt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val1 = vm.get_current_regs_cloned(a)?;
     let val2 = vm.get_current_regs_cloned(b)?;
     let result = match (&val1.value, &val2.value) {
-        (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean(n1 > n2),
-        (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean(n1 > n2),
-        (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean((*n1 as f64) > *n2),
-        (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean(*n1 > (*n2 as f64)),
+        (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean_rc(n1 > n2),
+        (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean_rc(n1 > n2),
+        (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean_rc((*n1 as f64) > *n2),
+        (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean_rc(*n1 > (*n2 as f64)),
         _ => compare_via_spaceship(vm, val1.clone(), val2.clone(), ">")?,
     };
-    vm.current_regs()[a].replace(Rc::new(result));
+    vm.current_regs()[a].replace(result);
     Ok(())
 }
 
@@ -1917,13 +1935,13 @@ pub(crate) fn op_ge(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val1 = vm.get_current_regs_cloned(a)?;
     let val2 = vm.get_current_regs_cloned(b)?;
     let result = match (&val1.value, &val2.value) {
-        (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean(n1 >= n2),
-        (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean(n1 >= n2),
-        (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean((*n1 as f64) >= *n2),
-        (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean(*n1 >= (*n2 as f64)),
+        (RValue::Integer(n1), RValue::Integer(n2)) => RObject::boolean_rc(n1 >= n2),
+        (RValue::Float(n1), RValue::Float(n2)) => RObject::boolean_rc(n1 >= n2),
+        (RValue::Integer(n1), RValue::Float(n2)) => RObject::boolean_rc((*n1 as f64) >= *n2),
+        (RValue::Float(n1), RValue::Integer(n2)) => RObject::boolean_rc(*n1 >= (*n2 as f64)),
         _ => compare_via_spaceship(vm, val1.clone(), val2.clone(), ">=")?,
     };
-    vm.current_regs()[a].replace(Rc::new(result));
+    vm.current_regs()[a].replace(result);
     Ok(())
 }
 
@@ -2033,7 +2051,7 @@ pub(crate) fn op_aref(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             let val = ary
                 .get(index)
                 .cloned()
-                .unwrap_or_else(|| Rc::new(RObject::nil()));
+                .unwrap_or_else(|| RObject::nil_rc());
             vm.current_regs()[a as usize].replace(val);
         }
         _ => {
@@ -2447,7 +2465,7 @@ pub(crate) fn op_exec(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let new_breadcrumb = Rc::new(Breadcrumb {
         upper,
         event: "exec",
-        caller: Some("<exec>".into()),
+        caller: Some(CallerLabel::Static("<exec>")),
         return_reg: None,
         irep: Some(vm.current_irep.clone()),
         pc: Some(vm.pc.get().saturating_sub(1)),
