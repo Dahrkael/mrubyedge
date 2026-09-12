@@ -410,7 +410,7 @@ fn mrb_object_nil_p(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Erro
 
 fn mrb_object_block_given(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     // CALLINFO の has_block フラグをチェック
-    let has_block = if let Some(ci) = vm.current_callinfo.as_ref() {
+    let has_block = if let Some(ci) = vm.callinfo_stack.last() {
         ci.has_block.get()
     } else {
         false

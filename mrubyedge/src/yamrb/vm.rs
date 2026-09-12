@@ -252,7 +252,10 @@ pub struct VM {
     pub pc: Cell<usize>,
     pub regs: [Option<Value>; MAX_REGS_SIZE],
     pub current_regs_offset: usize,
-    pub current_callinfo: Option<Rc<CALLINFO>>,
+    /// Preallocated call-frame stack. Frame depth is bounded by `MAX_REGS_SIZE`
+    /// (each frame consumes at least one register slot), so this never grows
+    /// after the first overflow check, and pushes/pops never allocate.
+    pub callinfo_stack: Vec<CALLINFO>,
     // n_args of the running frame; call_block hides the
     // callinfo, and op_enter needs the count for optional arguments.
     pub current_n_args: Cell<usize>,
@@ -501,7 +504,7 @@ impl VM {
         let pc = Cell::new(0);
         let regs: [Option<Value>; MAX_REGS_SIZE] = [const { None }; MAX_REGS_SIZE];
         let current_regs_offset = 0;
-        let current_callinfo = None;
+        let callinfo_stack = Vec::with_capacity(MAX_REGS_SIZE);
         let current_n_args = Cell::new(0);
         let last_error_stack = RefCell::new(Vec::new());
         let break_landing = RefCell::new(None);
@@ -544,7 +547,7 @@ impl VM {
             pc,
             regs,
             current_regs_offset,
-            current_callinfo,
+            callinfo_stack,
             current_n_args,
             last_error_stack,
             break_landing,
@@ -1052,6 +1055,12 @@ impl VM {
             .ok_or_else(|| Error::internal("register 0 is not assigned"))
     }
 
+    /// Innermost call frame, if any. Replaces the old `current_callinfo` field
+    /// now that frames live on a pooled stack.
+    pub fn current_callinfo(&self) -> Option<&CALLINFO> {
+        self.callinfo_stack.last()
+    }
+
     /// Retrieves `self` without error handling, panicking if register 0 is
     /// empty. Prefer [`VM::getself`] when the value may be absent.
     pub fn must_getself(&mut self) -> Value {
@@ -1466,7 +1475,6 @@ impl IREP {
 
 #[derive(Debug, Clone)]
 pub struct CALLINFO {
-    pub prev: Option<Rc<CALLINFO>>,
     /// Interned method id; resolving the name is only needed for `super` or a
     /// backtrace, so no per-call name string is retained.
     pub method_id: u32,

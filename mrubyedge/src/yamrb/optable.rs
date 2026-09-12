@@ -487,8 +487,7 @@ pub(crate) fn push_callinfo(
     is_funcall: bool,
 ) {
     vm.current_n_args.set(n_args);
-    let callinfo = CALLINFO {
-        prev: vm.current_callinfo.clone(),
+    vm.callinfo_stack.push(CALLINFO {
         method_id,
         pc_irep: vm.current_irep.clone(),
         pc: vm.pc.get(),
@@ -500,25 +499,7 @@ pub(crate) fn push_callinfo(
         has_block: Cell::new(false),
         kargs_pushed: Cell::new(false),
         is_funcall,
-    };
-    vm.current_callinfo = Some(Rc::new(callinfo));
-}
-
-#[allow(dead_code)]
-pub(crate) fn pop_callinfo(vm: &mut VM) {
-    let ci = vm.current_callinfo.take();
-    if ci.is_none() {
-        unreachable!("callinfo underflow");
-    }
-
-    let ci = ci.unwrap();
-    if let Some(prev) = &ci.prev {
-        vm.current_callinfo.replace(prev.clone());
-    }
-    vm.current_irep = ci.pc_irep.clone();
-    vm.pc.set(ci.pc);
-    vm.current_regs_offset = ci.current_regs_offset;
-    vm.target_class = ci.target_class.clone();
+    });
 }
 
 fn calcurate_pc(irep: &IREP, pc: usize, original_pc: usize) -> usize {
@@ -1771,7 +1752,7 @@ pub(crate) fn do_op_send(
     push_callinfo(vm, method_id.id, n, Some(owner_module), a as usize, false);
 
     // Set has_block flag based on whether a block was provided
-    if let Some(ci) = vm.current_callinfo.as_ref() {
+    if let Some(ci) = vm.callinfo_stack.last() {
         ci.has_block.set(blk_index.is_some());
     }
 
@@ -1854,16 +1835,20 @@ const CALL_MAXARGS: usize = 15;
 pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let splat = b as usize == CALL_MAXARGS;
-    let callinfo = vm
-        .current_callinfo
-        .as_ref()
-        .ok_or_else(|| Error::internal("no current callinfo"))?;
-    let sym_id = symbol_name(callinfo.method_id);
-    let super_method_id = callinfo.method_id;
-    let owner_module = callinfo
-        .method_owner
-        .clone()
-        .ok_or_else(|| Error::RuntimeError("super called outside of method".to_string()))?;
+    let (sym_id, super_method_id, owner_module) = {
+        let callinfo = vm
+            .callinfo_stack
+            .last()
+            .ok_or_else(|| Error::internal("no current callinfo"))?;
+        (
+            symbol_name(callinfo.method_id),
+            callinfo.method_id,
+            callinfo
+                .method_owner
+                .clone()
+                .ok_or_else(|| Error::RuntimeError("super called outside of method".to_string()))?,
+        )
+    };
     let recv = vm.getself()?;
 
     let mut buf = arg_buf();
@@ -2116,7 +2101,7 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     // through mrb_funcall); revisit with the callinfo machinery.
     if arg_info.k > 0 || kwrest_arg == 1 {
         kwarg_op_enter(vm, kwrest_pos);
-        if let Some(ci) = vm.current_callinfo.as_ref() {
+        if let Some(ci) = vm.callinfo_stack.last() {
             ci.kargs_pushed.set(true);
         }
     }
@@ -2254,7 +2239,7 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     //     });
     // }
 
-    let ci = vm.current_callinfo.take();
+    let ci = vm.callinfo_stack.pop();
     if ci.is_none() || ci.as_ref().is_some_and(|c| c.is_funcall) {
         vm.pop_breadcrumb();
         // When called from mrb_funcall, return error if there's an exception
@@ -2268,9 +2253,6 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     }
 
     let ci = ci.unwrap();
-    if let Some(prev) = &ci.prev {
-        vm.current_callinfo.replace(prev.clone());
-    }
     vm.current_irep = ci.pc_irep.clone();
     vm.pc.set(ci.pc);
     vm.current_regs_offset = ci.current_regs_offset;
@@ -2295,7 +2277,10 @@ pub(crate) fn op_return_blk(vm: &mut VM, operand: &Fetched) -> Result<(), Error>
     // carries no block environment; OP_RETURN_BLK is then just a local return.
     // Blocks/lambdas run with an is_funcall callinfo (call_block), methods
     // entered through a send do not.
-    let is_funcall = vm.current_callinfo.as_ref().is_some_and(|c| c.is_funcall);
+    let is_funcall = vm
+        .callinfo_stack
+        .last()
+        .is_some_and(|c| c.is_funcall);
     if !is_funcall {
         return op_return(vm, operand);
     }
@@ -2344,7 +2329,7 @@ pub(crate) fn op_break(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_blkpush(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, _s) = operand.as_bs()?;
-    let n = vm.current_callinfo.as_ref().unwrap().n_args;
+    let n = vm.callinfo_stack.last().unwrap().n_args;
     let block = vm.get_current_regs_cloned(n + 1)?;
     vm.set_reg(a as usize, block);
     Ok(())

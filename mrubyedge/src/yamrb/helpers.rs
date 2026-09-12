@@ -37,9 +37,13 @@ fn call_block(
 
     // The funcall frame keeps its callinfo live while the callee runs so
     // super and op_enter can read the method name/owner; the is_funcall flag
-    // makes op_return preempt back to this native caller. Restore from the
-    // snapshot the callinfo captured at push.
-    let caller_ci = vm.current_callinfo.clone();
+    // makes op_return preempt back to this native caller. The caller's frame
+    // state is snapshotted here (and the stack truncated) instead of holding
+    // an Rc, since frames now live on the pooled callinfo stack.
+    let saved_depth = vm.callinfo_stack.len();
+    let caller_irep = vm.current_irep.clone();
+    let caller_pc = vm.pc.get();
+    let caller_target = vm.target_class.clone();
     push_callinfo(
         vm,
         method_id,
@@ -48,7 +52,6 @@ fn call_block(
         return_register,
         true,
     );
-    let funcall_ci = vm.current_callinfo.clone().expect("callinfo just pushed");
 
     // Keep the state before the call inside the new window.
     let prev_self = vm.swap_reg_value(0, recv);
@@ -86,11 +89,11 @@ fn call_block(
         vm.current_regs()[i + 1] = prev_arg;
     }
 
-    vm.current_callinfo = caller_ci;
-    vm.current_irep = funcall_ci.pc_irep.clone();
-    vm.pc.set(funcall_ci.pc);
+    vm.callinfo_stack.truncate(saved_depth);
+    vm.current_irep = caller_irep;
+    vm.pc.set(caller_pc);
     vm.current_regs_offset = saved_offset;
-    vm.target_class = funcall_ci.target_class.clone();
+    vm.target_class = caller_target;
     vm.upper = prev_upper;
 
     match res {

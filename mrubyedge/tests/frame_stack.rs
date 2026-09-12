@@ -54,7 +54,7 @@ end
     // Frame bookkeeping must be balanced after the unwind: the register
     // offset, the callinfo chain and the breadcrumb stack all back to empty.
     assert_eq!(vm.current_regs_offset, 0);
-    assert!(vm.current_callinfo.is_none());
+    assert!(vm.current_callinfo().is_none());
     assert_eq!(vm.breadcrumbs.borrow().len(), 0);
 
     // Consume the pending exception (the host's job) and the VM is usable.
@@ -64,7 +64,7 @@ end
     let err2 = mrb_funcall(&mut vm, None, "recurse", &[Value::Integer(0)]).expect_err("again");
     assert!(matches!(&err2, Error::TaggedError(class, _) if class == "SystemStackError"));
     assert_eq!(vm.current_regs_offset, 0);
-    assert!(vm.current_callinfo.is_none());
+    assert!(vm.current_callinfo().is_none());
     vm.exception.take();
     assert_eq!(call_i64(&mut vm, "ok", &[]), 4242);
 }
