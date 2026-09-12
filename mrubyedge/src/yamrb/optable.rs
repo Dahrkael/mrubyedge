@@ -1469,9 +1469,28 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let nregs = old_irep.nregs;
     // let no_return = vm.current_callinfo.is_some();
 
+    // Capture the caller's register window for closure locals. The window
+    // includes the block proc stored by op_block/op_lambda whose environ is
+    // THIS env; keeping that reference inside captured forms an immortal
+    // Rc cycle (env->proc->env). Null out such self-references so the env
+    // is kept alive by the proc alone, not by a cycle.
     let regs0_cloned: Vec<_> = vm.current_regs()[0..nregs].to_vec();
     if let Some(environ) = vm.cur_env.get(&vm.current_irep.__id) {
-        environ.capture_no_clone(regs0_cloned);
+        if environ.__irep_id == vm.current_irep.__id {
+            environ.capture_no_clone(regs0_cloned);
+            if let Some(ref mut captured) = *environ.captured.borrow_mut() {
+                for slot in captured.iter_mut() {
+                    if let Some(obj) = slot {
+                        if let RValue::Proc(p) = &obj.value
+                            && let Some(pe) = &p.environ
+                            && Rc::ptr_eq(environ, pe)
+                        {
+                            *slot = None;
+                        }
+                    }
+                }
+            }
+        }
         environ.as_ref().expire();
         vm.has_env_ref.remove(&vm.current_irep.__id);
     }
