@@ -135,12 +135,12 @@ impl std::fmt::Debug for CallerReceiver {
 pub enum CallerLabel {
     /// Fixed label, no receiver qualification ("<tailcall>", "<exec>").
     Static(&'static str),
-    /// Owned label, no receiver qualification ("super(method)").
-    Owned(String),
-    /// Rust-known method name on a receiver (mrb_funcall).
+    /// Rust-known method name on a receiver (mrb_funcall). The name is kept
+    /// as an interned symbol id; `mrb_funcall` resolved that method by name,
+    /// so the id is already live and no per-call string is allocated.
     Named {
         receiver: CallerReceiver,
-        method: String,
+        method_id: u32,
     },
     /// Method resolved through a send: the name comes from the frame irep's
     /// sym table (or "method_missing" when the call went through a Ruby
@@ -150,15 +150,19 @@ pub enum CallerLabel {
         sym_index: usize,
         use_method_missing: bool,
     },
+    /// `super`: the name is an interned symbol id, resolved at format time.
+    Super { method_id: u32 },
 }
 
 impl std::fmt::Debug for CallerLabel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Static(s) => write!(f, "Static({})", s),
-            Self::Owned(s) => write!(f, "Owned({})", s),
-            Self::Named { receiver, method } => {
-                write!(f, "Named({:?}, {})", receiver, method)
+            Self::Named {
+                receiver,
+                method_id,
+            } => {
+                write!(f, "Named({:?}, {})", receiver, symbol_name(*method_id))
             }
             Self::Send {
                 sym_index,
@@ -169,6 +173,7 @@ impl std::fmt::Debug for CallerLabel {
                 "Send(sym={}, method_missing={})",
                 sym_index, use_method_missing
             ),
+            Self::Super { method_id } => write!(f, "Super({})", symbol_name(*method_id)),
         }
     }
 }
@@ -187,8 +192,10 @@ fn qualify(receiver: &CallerReceiver, method: &str) -> String {
 fn caller_label(label: &CallerLabel, irep: Option<&Rc<IREP>>) -> String {
     match label {
         CallerLabel::Static(s) => (*s).to_string(),
-        CallerLabel::Owned(s) => s.clone(),
-        CallerLabel::Named { receiver, method } => qualify(receiver, method.as_str()),
+        CallerLabel::Named {
+            receiver,
+            method_id,
+        } => qualify(receiver, &symbol_name(*method_id)),
         CallerLabel::Send {
             receiver,
             sym_index,
@@ -203,6 +210,7 @@ fn caller_label(label: &CallerLabel, irep: Option<&Rc<IREP>>) -> String {
             };
             qualify(receiver, method)
         }
+        CallerLabel::Super { method_id } => format!("super({})", symbol_name(*method_id)),
     }
 }
 

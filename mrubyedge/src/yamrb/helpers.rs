@@ -209,11 +209,18 @@ pub fn mrb_funcall(
         Some(RValue::Module(m)) => CallerReceiver::Module(m.clone()),
         _ => CallerReceiver::Instance(recv.get_class(vm)),
     };
+    // Resolve the frame name to an interned id now; the string is only
+    // materialized if this frame ever appears in a backtrace.
+    let label_method = method
+        .sym_id
+        .as_ref()
+        .map(|s| s.id)
+        .unwrap_or_else(|| intern_symbol(name));
     vm.push_breadcrumb(
         "funcall",
         Some(CallerLabel::Named {
             receiver,
-            method: name.to_string(),
+            method_id: label_method,
         }),
         None,
         Some(vm.current_irep.clone()),

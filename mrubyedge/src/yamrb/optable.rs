@@ -1871,6 +1871,7 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         .as_ref()
         .ok_or_else(|| Error::internal("no current callinfo"))?;
     let sym_id = callinfo.method_id.name.clone();
+    let super_method_id = callinfo.method_id.id;
     let owner_module = callinfo
         .method_owner
         .clone()
@@ -1961,7 +1962,9 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
     vm.push_breadcrumb(
         "super",
-        Some(CallerLabel::Owned(format!("super({})", sym_id))),
+        Some(CallerLabel::Super {
+            method_id: super_method_id,
+        }),
         None,
         Some(vm.current_irep.clone()),
         Some(vm.pc.get().saturating_sub(1)),
