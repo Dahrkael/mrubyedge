@@ -275,6 +275,9 @@ pub struct VM {
     // do_op_send crumb's id and its return register. The unwinder delivers
     // the break value once that crumb is gone from the live stack.
     pub break_landing: RefCell<Option<(u64, usize)>>,
+    // irep id of the script currently being evaluated. A block
+    // return targeting it means there is no enclosing method (LocalJumpError).
+    pub root_irep_id: Cell<Option<usize>>,
     pub kargs: RefCell<Option<RHashMap<RSym, Rc<RObject>>>>,
     pub current_kargs: RefCell<Option<Rc<KArgs>>>,
     pub target_class: TargetContext,
@@ -510,6 +513,7 @@ impl VM {
         let current_n_args = Cell::new(0);
         let last_error_stack = RefCell::new(Vec::new());
         let break_landing = RefCell::new(None);
+        let root_irep_id = Cell::new(None);
         let breadcrumbs = RefCell::new(Vec::new());
         let crumb_seq = Cell::new(0);
         let kargs = RefCell::new(None);
@@ -548,6 +552,7 @@ impl VM {
             current_n_args,
             last_error_stack,
             break_landing,
+            root_irep_id,
             breadcrumbs,
             crumb_seq,
             kargs,
@@ -727,6 +732,9 @@ impl VM {
         let irep = rite_to_irep(rite);
         self.pc.set(0);
         self.current_irep = Rc::new(irep);
+        // the evaluated script is the outermost frame; a block
+        // return unwinding to it has no enclosing method (LocalJumpError).
+        self.root_irep_id.set(Some(self.current_irep.__id));
 
         // Each script evaluates against a fresh top-level self. A leftover
         // Class/Module in regs[0] from the previous file would otherwise make
@@ -1461,6 +1469,10 @@ pub struct ENV {
     pub captured: RefCell<Option<Vec<Option<Rc<RObject>>>>>,
     pub current_regs_offset: usize,
     pub is_expired: Cell<bool>,
+    // lambda closures return locally (CRuby semantics); the
+    // flag and the closure's own irep id are set by op_lambda/op_block.
+    pub is_lambda: Cell<bool>,
+    pub closure_irep_id: usize,
 }
 
 impl ENV {

@@ -1751,6 +1751,8 @@ impl RClass {
                 })
                 .unwrap_or_else(|| vm.get_class_by_name("Exception")),
 
+            Error::LocalJumpError(_) => vm.get_class_by_name("LocalJumpError"),
+
             Error::Break(_) => vm.get_class_by_name("_Break"),
             Error::BlockReturn(_, _) => vm.get_class_by_name("_BlockReturn"),
         }

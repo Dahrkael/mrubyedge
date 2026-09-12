@@ -2248,12 +2248,32 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_return_blk(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let val = vm.get_current_regs_cloned(a)?;
-    let target_irep_id = vm
-        .get_outermost_env()
-        .expect("not found outermost env")
-        .__irep_id;
 
-    Err(Error::BlockReturn(target_irep_id, val))
+    // a plain method frame (return inside a while/until body)
+    // carries no block environment; OP_RETURN_BLK is then just a local return.
+    // Blocks/lambdas run with an is_funcall callinfo (call_block), methods
+    // entered through a send do not.
+    let is_funcall = vm.current_callinfo.as_ref().is_some_and(|c| c.is_funcall);
+    if !is_funcall {
+        return op_return(vm, &operand);
+    }
+
+    // Block/lambda frame: unwind to the nearest enclosing lambda (its return
+    // is local to the lambda), else to the defining method.
+    let mut env = vm.upper.clone();
+    while let Some(e) = env.clone() {
+        if e.is_lambda.get() {
+            return Err(Error::BlockReturn(e.closure_irep_id, val));
+        }
+        env = e.upper.clone();
+    }
+    let outer = vm
+        .get_outermost_env()
+        .ok_or_else(|| Error::internal("block return without environment"))?;
+    if vm.root_irep_id.get() == Some(outer.__irep_id) {
+        return Err(Error::LocalJumpError("unexpected return".to_string()));
+    }
+    Err(Error::BlockReturn(outer.__irep_id, val))
 }
 
 pub(crate) fn op_break(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
@@ -2269,6 +2289,12 @@ pub(crate) fn op_break(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             landing = Some((bc.id, bc.return_reg.unwrap_or(0)));
             break;
         }
+    }
+    // break outside any iterator (e.g. a Proc called outside
+    // its loop) has no landing pad; raise LocalJumpError instead of unwinding
+    // into a bogus target and unbalancing the crumb stack.
+    if landing.is_none() {
+        return Err(Error::LocalJumpError("unexpected break".to_string()));
     }
     vm.break_landing.replace(landing);
     Err(Error::Break(val))
@@ -2823,6 +2849,8 @@ pub(crate) fn op_lambda(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         current_regs_offset: vm.current_regs_offset,
         is_expired: Cell::new(false),
         captured: RefCell::new(None),
+        is_lambda: Cell::new(true),
+        closure_irep_id: irep.as_ref().unwrap().__id,
     };
     //let nregs = vm.current_irep.nregs;
     //environ.capture(&vm.current_regs()[0..nregs]);
@@ -2859,6 +2887,8 @@ pub(crate) fn op_block(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         current_regs_offset: vm.current_regs_offset,
         is_expired: Cell::new(false),
         captured: RefCell::new(None),
+        is_lambda: Cell::new(false),
+        closure_irep_id: irep.as_ref().unwrap().__id,
     };
     let environ = Rc::new(environ);
     vm.cur_env.insert(vm.current_irep.__id, environ.clone());

@@ -30,6 +30,7 @@ pub(crate) fn initialize_exception(vm: &mut VM) {
     let _ = vm.define_standard_class_with_superclass("SystemCallError", std_exp_class.clone());
     let _ = vm.define_standard_class_with_superclass("NoMethodError", std_exp_class.clone());
     let _ = vm.define_standard_class_with_superclass("NameError", std_exp_class.clone());
+    let _ = vm.define_standard_class_with_superclass("LocalJumpError", std_exp_class.clone());
 
     // Dummy class for 'break' control flow
     let _ = vm.define_standard_class("_Break");
