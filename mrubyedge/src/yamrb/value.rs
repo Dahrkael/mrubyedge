@@ -75,7 +75,7 @@ pub enum RValue {
 pub enum Value {
     Nil,
     Bool(bool),
-    Symbol(Rc<RSym>),
+    Symbol(u32),
     Integer(i64),
     Float(f64),
     Object(Rc<RObject>),
@@ -88,7 +88,7 @@ impl Value {
         match self {
             Value::Nil => RObject::nil_rc(),
             Value::Bool(b) => RObject::boolean_rc(*b),
-            Value::Symbol(s) => RObject::symbol_rc(s),
+            Value::Symbol(id) => symbol_object(*id),
             Value::Integer(i) => RObject::integer_rc(*i),
             Value::Float(f) => Rc::new(RObject::float(*f)),
             Value::Object(o) => o.clone(),
@@ -107,7 +107,7 @@ impl Value {
                 _ => unreachable!("Bool RObject without Bool value"),
             },
             RType::Symbol => match &rc.value {
-                RValue::Symbol(s) => Value::Symbol(Rc::new(s.clone())),
+                RValue::Symbol(s) => Value::Symbol(s.id),
                 _ => unreachable!("Symbol RObject without Symbol value"),
             },
             RType::Integer => match &rc.value {
@@ -230,7 +230,7 @@ pub enum ValueHasher {
     Bool(bool),
     Integer(i64),
     Float(Vec<u8>),
-    Symbol(String),
+    Symbol(u32),
     String(Vec<u8>),
     Class(String),
 }
@@ -241,7 +241,7 @@ pub enum ValueEquality {
     Bool(bool),
     Integer(i64),
     Float(f64),
-    Symbol(String),
+    Symbol(u32),
     String(Vec<u8>),
     Class(String),
     Range(Box<ValueEquality>, Box<ValueEquality>, bool),
@@ -275,8 +275,13 @@ impl PartialEq for ValueEqualityForKeyValue {
 /// (the attr accessors compute each key's hash once).
 #[derive(Debug, Clone)]
 pub struct IvarMap {
-    slots: Vec<Option<(Rc<str>, u64, Value)>>,
+    slots: Vec<Option<(u32, Value)>>,
     len: usize,
+}
+
+/// Spreads sequential symbol ids across the power-of-two probe table.
+fn mix_ivar_key(key: u32) -> usize {
+    (key as u64).wrapping_mul(0x9E3779B97F4A7C15) as usize
 }
 
 impl IvarMap {
@@ -287,11 +292,7 @@ impl IvarMap {
         }
     }
 
-    pub fn get(&self, key: &str) -> Option<&Value> {
-        self.get_hashed(key, crate::yamrb::vm::fnv_hash(key))
-    }
-
-    pub fn get_hashed(&self, key: &str, hash: u64) -> Option<&Value> {
+    pub fn get(&self, key: u32) -> Option<&Value> {
         let cap = self.slots.len();
         if cap == 0 {
             return None;
@@ -299,14 +300,15 @@ impl IvarMap {
         // Capacity is always a power of two (grow starts at 4 and doubles), so
         // the mask replaces a runtime division in the probe loop.
         let mask = cap - 1;
-        let mut i = (hash as usize) & mask;
+        let start = mix_ivar_key(key) & mask;
+        let mut i = start;
         loop {
             match &self.slots[i] {
-                Some((k, h, v)) if *h == hash && **k == *key => return Some(v),
+                Some((k, v)) if *k == key => return Some(v),
                 None => return None,
                 Some(_) => {
                     i = (i + 1) & mask;
-                    if i == (hash as usize) & mask {
+                    if i == start {
                         return None;
                     }
                 }
@@ -314,35 +316,31 @@ impl IvarMap {
         }
     }
 
-    pub fn contains_key(&self, key: &str) -> bool {
+    pub fn contains_key(&self, key: u32) -> bool {
         self.get(key).is_some()
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = &Rc<str>> {
+    pub fn keys(&self) -> impl Iterator<Item = u32> {
         self.slots
             .iter()
-            .filter_map(|s| s.as_ref().map(|(k, _, _)| k))
+            .filter_map(|s| s.as_ref().map(|(k, _)| *k))
     }
 
-    pub fn insert(&mut self, key: Rc<str>, value: Value) {
-        let hash = crate::yamrb::vm::fnv_hash(&key);
-        self.insert_hashed(key, hash, value);
-    }
-
-    pub fn insert_hashed(&mut self, key: Rc<str>, hash: u64, value: Value) {
+    pub fn insert(&mut self, key: u32, value: Value) {
         if self.slots.is_empty() || (self.len + 1) * 10 >= self.slots.len() * 7 {
             self.grow();
         }
         let cap = self.slots.len();
-        let mut i = (hash as usize) % cap;
+        let start = mix_ivar_key(key) % cap;
+        let mut i = start;
         loop {
             match &self.slots[i] {
-                Some((k, h, _)) if *h == hash && *k == key => {
-                    self.slots[i] = Some((key, hash, value));
+                Some((k, _)) if *k == key => {
+                    self.slots[i] = Some((key, value));
                     return;
                 }
                 None => {
-                    self.slots[i] = Some((key, hash, value));
+                    self.slots[i] = Some((key, value));
                     self.len += 1;
                     return;
                 }
@@ -362,8 +360,8 @@ impl IvarMap {
         let old = std::mem::replace(&mut self.slots, (0..new_cap).map(|_| None).collect());
         self.len = 0;
         for slot in old.into_iter().flatten() {
-            let (k, h, v) = slot;
-            self.insert_hashed(k, h, v);
+            let (k, v) = slot;
+            self.insert(k, v);
         }
     }
 }
@@ -402,6 +400,51 @@ thread_local! {
     // literal does not allocate a new object per occurrence.
     static SYMBOL_OBJECTS: RefCell<RHashMap<String, Rc<RObject>>> =
         RefCell::new(RHashMap::default());
+    // Symbol interning: every distinct name gets a stable u32 id carried by
+    // Value::Symbol and the method-dispatch key, so registers and caches
+    // hold integers instead of Rc<RSym>. One flyweight RObject per id.
+    static SYMBOL_IDS: RefCell<RHashMap<String, u32>> = RefCell::new(RHashMap::default());
+    static SYMBOL_BY_ID: RefCell<Vec<Rc<RObject>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Interns `name`, returning its stable symbol id (created on first use).
+pub fn intern_symbol(name: &str) -> u32 {
+    SYMBOL_IDS.with(|ids| {
+        let mut ids = ids.borrow_mut();
+        if let Some(id) = ids.get(name) {
+            return *id;
+        }
+        let id = SYMBOL_BY_ID.with(|by_id| by_id.borrow().len()) as u32;
+        let sym = RSym {
+            name: name.to_string(),
+            id,
+        };
+        let obj = Rc::new(RObject::symbol(sym));
+        SYMBOL_BY_ID.with(|by_id| by_id.borrow_mut().push(obj));
+        ids.insert(name.to_string(), id);
+        id
+    })
+}
+
+/// Shared flyweight RObject for a symbol id stored in `Value::Symbol`.
+pub fn symbol_object(id: u32) -> Rc<RObject> {
+    SYMBOL_BY_ID.with(|by_id| by_id.borrow()[id as usize].clone())
+}
+
+/// RSym (name + id) for a symbol id.
+pub fn symbol_rsym(id: u32) -> Rc<RSym> {
+    match &symbol_object(id).value {
+        RValue::Symbol(s) => Rc::new(s.clone()),
+        _ => unreachable!("symbol object"),
+    }
+}
+
+/// Name of a symbol id.
+pub fn symbol_name(id: u32) -> String {
+    match &symbol_object(id).value {
+        RValue::Symbol(s) => s.name.clone(),
+        _ => unreachable!("symbol object"),
+    }
 }
 
 impl RObject {
@@ -683,30 +726,29 @@ impl RObject {
         self.object_id.get() == 0
     }
 
-    /// Stores an ivar. `key` may be an already-shared `Rc<str>` (zero copy,
-    /// used by the attr_accessor hot path) or a plain `&str` (copied once).
-    pub fn set_ivar(&self, key: impl Into<Rc<str>>, value: Value) {
-        self.ivar.borrow_mut().insert(key.into(), value);
+    /// Stores an ivar. `key` is interned; the attr hot path uses the by-id
+    /// variants to skip the interning lookup.
+    pub fn set_ivar(&self, key: &str, value: Value) {
+        self.ivar.borrow_mut().insert(intern_symbol(key), value);
     }
 
     pub fn get_ivar(&self, key: &str) -> Value {
-        self.ivar.borrow().get(key).cloned().unwrap_or(Value::Nil)
-    }
-
-    /// Ivar read with a caller-supplied FNV-1a hash of `key`, so the attr
-    /// accessors hash once per definition instead of once per read.
-    pub fn get_ivar_hashed(&self, key: &str, hash: u64) -> Value {
         self.ivar
             .borrow()
-            .get_hashed(key, hash)
+            .get(intern_symbol(key))
             .cloned()
             .unwrap_or(Value::Nil)
     }
 
-    /// Ivar write with a caller-supplied FNV-1a hash of `key`; see
-    /// [`Self::get_ivar_hashed`].
-    pub fn set_ivar_hashed(&self, key: Rc<str>, hash: u64, value: Value) {
-        self.ivar.borrow_mut().insert_hashed(key, hash, value);
+    /// Ivar read keyed by symbol id, so the attr accessors never touch a
+    /// string key or an interning lookup per read.
+    pub fn get_ivar_by_id(&self, key: u32) -> Value {
+        self.ivar.borrow().get(key).cloned().unwrap_or(Value::Nil)
+    }
+
+    /// Ivar write keyed by symbol id; see [`Self::get_ivar_by_id`].
+    pub fn set_ivar_by_id(&self, key: u32, value: Value) {
+        self.ivar.borrow_mut().insert(key, value);
     }
 
     // TODO: implment Object#hash
@@ -715,7 +757,7 @@ impl RObject {
             RValue::Bool(b) => Ok(ValueHasher::Bool(*b)),
             RValue::Integer(i) => Ok(ValueHasher::Integer(*i)),
             RValue::Float(f) => Ok(ValueHasher::Float(f.to_be_bytes().to_vec())),
-            RValue::Symbol(s) => Ok(ValueHasher::Symbol(s.name.clone())),
+            RValue::Symbol(s) => Ok(ValueHasher::Symbol(s.id)),
             RValue::String(s, _) => Ok(ValueHasher::String(s.borrow().clone())),
             RValue::Class(c) => Ok(ValueHasher::Class(c.sym_id.name.clone())),
             _ => Err(Error::TypeMismatch),
@@ -727,7 +769,7 @@ impl RObject {
             RValue::Bool(b) => ValueEquality::Bool(*b),
             RValue::Integer(i) => ValueEquality::Integer(*i),
             RValue::Float(f) => ValueEquality::Float(*f),
-            RValue::Symbol(s) => ValueEquality::Symbol(s.name.clone()),
+            RValue::Symbol(s) => ValueEquality::Symbol(s.id),
             RValue::String(s, _) => ValueEquality::String(s.borrow().clone()),
             RValue::Class(c) => ValueEquality::Class(c.sym_id.name.clone()),
             RValue::Range(s, e, ex) => {
@@ -1377,7 +1419,7 @@ impl PartialEq for RObject {
 #[derive(Debug, Clone)]
 pub struct RModule {
     pub sym_id: RSym,
-    pub procs: RefCell<RHashMap<String, RProc>>,
+    pub procs: RefCell<RHashMap<u32, RProc>>,
     pub consts: RefCell<RHashMap<String, Rc<RObject>>>,
     pub mixed_in_modules: RefCell<Vec<Rc<RModule>>>,
     pub parent: RefCell<Option<Rc<RModule>>>,
@@ -1414,8 +1456,9 @@ impl RModule {
 
     pub fn find_method(&self, name: &str) -> Option<RProc> {
         // First check this module's methods
+        let id = intern_symbol(name);
         let procs = self.procs.borrow();
-        if let Some(p) = procs.get(name) {
+        if let Some(p) = procs.get(&id) {
             return Some(p.clone());
         }
         drop(procs);
@@ -1607,8 +1650,21 @@ pub(crate) fn build_module_lookup_chain(module: &Rc<RModule>) -> Vec<Rc<RModule>
 }
 
 pub(crate) fn resolve_method(self_class: &Rc<RClass>, name: &str) -> Option<(Rc<RModule>, RProc)> {
+    let id = intern_symbol(name);
     for module in build_lookup_chain(self_class) {
-        if let Some(proc) = module.procs.borrow().get(name) {
+        if let Some(proc) = module.procs.borrow().get(&id) {
+            return Some((module.clone(), proc.clone()));
+        }
+    }
+    None
+}
+
+pub(crate) fn resolve_method_by_id(
+    self_class: &Rc<RClass>,
+    id: u32,
+) -> Option<(Rc<RModule>, RProc)> {
+    for module in build_lookup_chain(self_class) {
+        if let Some(proc) = module.procs.borrow().get(&id) {
             return Some((module.clone(), proc.clone()));
         }
     }
@@ -1621,6 +1677,7 @@ pub(crate) fn resolve_next_method(
     current_owner: &Rc<RModule>,
 ) -> Option<(Rc<RModule>, RProc)> {
     let mut passed = false;
+    let id = intern_symbol(name);
     for module in build_lookup_chain(self_class) {
         if !passed {
             if Rc::ptr_eq(&module, current_owner) {
@@ -1628,7 +1685,7 @@ pub(crate) fn resolve_next_method(
             }
             continue;
         }
-        if let Some(proc) = module.procs.borrow().get(name) {
+        if let Some(proc) = module.procs.borrow().get(&id) {
             return Some((module.clone(), proc.clone()));
         }
     }
@@ -1679,21 +1736,26 @@ pub struct RProc {
 /// arguments it needs as `RObject` via [`Value::to_rc`].
 pub type RFn = Box<dyn Fn(&mut VM, &[Option<Value>]) -> Result<Value, Error>>;
 /// Interned symbol name used across the VM to identify methods and constants.
+/// The `id` is a stable per-name integer from the global interning table.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RSym {
     pub name: String,
+    pub id: u32,
 }
 
 impl RSym {
     pub fn new(name: String) -> Self {
-        Self { name }
+        let id = intern_symbol(&name);
+        Self { name, id }
     }
 }
 
 impl From<&'static str> for RSym {
     fn from(value: &'static str) -> Self {
+        let id = intern_symbol(value);
         Self {
             name: value.to_string(),
+            id,
         }
     }
 }

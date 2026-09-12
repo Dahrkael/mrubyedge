@@ -340,7 +340,7 @@ pub struct VM {
     pub fast_ops: RefCell<std::collections::HashMap<usize, FastOp>>,
     /// Ivar identity for attr_accessor fast-path closures, keyed by func index:
     /// the `@name` key shared with the closure and its precomputed FNV hash.
-    pub fast_attrs: RefCell<std::collections::HashMap<usize, (Rc<str>, u64)>>,
+    pub fast_attrs: RefCell<std::collections::HashMap<usize, u32>>,
     /// Count of inline numeric/attr fast-path handlings (results and raised
     /// errors). Tests assert it moves to prove the fast path actually runs,
     /// and stays still after a redefinition replaced the tagged method.
@@ -910,11 +910,15 @@ impl VM {
             rescued = false;
 
             let pc = self.pc.get();
-            if pc >= self.current_irep.code.len() {
+            if self.current_irep.code.len() <= pc {
                 // reached end of the IREP
                 break;
             }
-            let op = self.current_irep.code[pc];
+            let op = *self
+                .current_irep
+                .code
+                .get(pc)
+                .ok_or_else(|| Error::internal("end of opcode reached"))?;
             let operand = op.operand;
             self.pc.set(pc + 1);
 
@@ -1061,8 +1065,8 @@ impl VM {
 
     /// Records the ivar identity backing an attr_accessor fast-path closure;
     /// see [`Self::register_fast_native`] for the lifetime guarantee.
-    pub fn register_fast_attr(&self, func: usize, key: Rc<str>, hash: u64) {
-        self.fast_attrs.borrow_mut().insert(func, (key, hash));
+    pub fn register_fast_attr(&self, func: usize, key: u32) {
+        self.fast_attrs.borrow_mut().insert(func, key);
     }
 
     pub(crate) fn push_fnblock(&mut self, f: Rc<RFn>) -> Result<(), Error> {
@@ -1423,8 +1427,7 @@ pub struct SendCacheEntry {
 pub struct AttrCacheEntry {
     pub version: u64,
     pub klass: Rc<RClass>,
-    pub key: Rc<str>,
-    pub hash: u64,
+    pub key: u32,
     pub is_set: bool,
 }
 

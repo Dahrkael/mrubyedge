@@ -5,7 +5,10 @@ use crate::Error;
 
 use super::{
     optable::push_callinfo,
-    value::{FastOp, RClass, RFn, RHashMap, RModule, RObject, RProc, RSym, RValue, resolve_method},
+    value::{
+        FastOp, RClass, RFn, RHashMap, RModule, RObject, RProc, RSym, RValue, intern_symbol,
+        resolve_method,
+    },
     vm::{CallerLabel, CallerReceiver, VM, arg_buf, rc_args},
 };
 
@@ -301,18 +304,18 @@ pub fn mrb_call_p(vm: &mut VM, recv: Rc<RObject>) {
 /// `attr` carries the ivar identity for an attr_accessor fast-path closure.
 fn register_cmethod(
     vm: &mut VM,
-    procs: &RefCell<RHashMap<String, RProc>>,
+    procs: &RefCell<RHashMap<u32, RProc>>,
     name: &str,
     tag: Option<FastOp>,
-    attr: Option<(Rc<str>, u64)>,
+    attr: Option<u32>,
     cmethod: RFn,
 ) {
     let index = vm.register_fn(cmethod);
     if let Some(op) = tag {
         vm.register_fast_native(index, op);
     }
-    if let Some((key, hash)) = attr {
-        vm.register_fast_attr(index, key, hash);
+    if let Some(key) = attr {
+        vm.register_fast_attr(index, key);
     }
     let method = RProc {
         is_rb_func: false,
@@ -324,7 +327,7 @@ fn register_cmethod(
         environ: None,
         block_self: None,
     };
-    procs.borrow_mut().insert(name.to_string(), method);
+    procs.borrow_mut().insert(intern_symbol(name), method);
     vm.bump_method_version();
 }
 
@@ -363,11 +366,10 @@ pub fn mrb_define_cmethod_attr(
     klass: Rc<RClass>,
     name: &str,
     op: FastOp,
-    key: Rc<str>,
-    hash: u64,
+    key: u32,
     cmethod: RFn,
 ) {
-    register_cmethod(vm, &klass.procs, name, Some(op), Some((key, hash)), cmethod);
+    register_cmethod(vm, &klass.procs, name, Some(op), Some(key), cmethod);
 }
 
 /// Defines a Ruby method (RProc) on a Ruby class.
@@ -380,7 +382,7 @@ pub fn mrb_define_cmethod_attr(
 /// * `method` - The Ruby proc to bind as a method
 pub fn mrb_define_method(vm: &mut VM, klass: Rc<RClass>, name: &str, method: RProc) {
     let mut procs = klass.procs.borrow_mut();
-    procs.insert(name.to_string(), method);
+    procs.insert(intern_symbol(name), method);
     vm.bump_method_version();
 }
 
@@ -417,7 +419,7 @@ pub fn mrb_define_singleton_cmethod(vm: &mut VM, dest: Rc<RObject>, name: &str, 
 pub fn mrb_define_singleton_method(vm: &mut VM, dest: Rc<RObject>, name: &str, method: RProc) {
     let klass = dest.initialize_or_get_singleton_class(vm);
     let mut procs = klass.procs.borrow_mut();
-    procs.insert(name.to_string(), method);
+    procs.insert(intern_symbol(name), method);
     vm.bump_method_version();
 }
 
@@ -443,7 +445,7 @@ pub fn mrb_define_module_cmethod(vm: &mut VM, module: Rc<RModule>, name: &str, c
 /// * `method` - The Ruby proc to bind as a method
 pub fn mrb_define_module_method(vm: &mut VM, module: Rc<RModule>, name: &str, method: RProc) {
     let mut procs = module.procs.borrow_mut();
-    procs.insert(name.to_string(), method);
+    procs.insert(intern_symbol(name), method);
     vm.bump_method_version();
 }
 

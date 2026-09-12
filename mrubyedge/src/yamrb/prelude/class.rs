@@ -82,17 +82,15 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, E
     };
     for arg in args.iter() {
         match arg.as_ref().unwrap() {
-            Value::Symbol(sym) => {
-                let sym_id: &'static str = sym.name.clone().leak();
-                // Build the ivar key and its FNV hash once; property reads
-                // reuse the hash so they never re-hash the key.
-                let key: Rc<str> = format!("@{}", sym_id).into();
-                let hash = crate::yamrb::vm::fnv_hash(&key);
+            Value::Symbol(id) => {
+                let sym_id: &'static str = symbol_name(*id).leak();
+                // Build the ivar key once; reads reuse the symbol id so they
+                // never touch a string key or an interning lookup.
+                let key = intern_symbol(&format!("@{}", sym_id));
                 let method = {
-                    let key = key.clone();
                     move |vm: &mut VM, _args: &[Option<Value>]| {
                         let this = vm.getself()?;
-                        Ok(this.get_ivar_hashed(&key, hash))
+                        Ok(this.get_ivar_by_id(key))
                     }
                 };
                 mrb_define_cmethod_attr(
@@ -101,7 +99,6 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, E
                     sym_id,
                     FastOp::AttrGet,
                     key,
-                    hash,
                     Box::new(method),
                 );
             }
@@ -130,18 +127,16 @@ fn mrb_class_attr_writer(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, E
     };
     for arg in args.iter() {
         match arg.as_ref().unwrap() {
-            Value::Symbol(sym) => {
-                let sym_id: &'static str = sym.name.clone().leak();
-                // Shared Rc<str> key and its FNV hash built once; writes use
-                // the precomputed hash so they never re-hash the key.
-                let key: Rc<str> = format!("@{}", sym_id).into();
-                let hash = crate::yamrb::vm::fnv_hash(&key);
+            Value::Symbol(id) => {
+                let sym_id: &'static str = symbol_name(*id).leak();
+                // Build the ivar key once; writes reuse the symbol id so they
+                // never touch a string key or an interning lookup.
+                let key = intern_symbol(&format!("@{}", sym_id));
                 let method = {
-                    let key = key.clone();
                     move |vm: &mut VM, args: &[Option<Value>]| {
                         let this = vm.getself()?;
                         let value = args[0].as_ref().unwrap().clone();
-                        this.set_ivar_hashed(key.clone(), hash, value.clone());
+                        this.set_ivar_by_id(key, value.clone());
                         Ok(value)
                     }
                 };
@@ -152,7 +147,6 @@ fn mrb_class_attr_writer(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, E
                     &method_name,
                     FastOp::AttrSet,
                     key,
-                    hash,
                     Box::new(method),
                 );
             }

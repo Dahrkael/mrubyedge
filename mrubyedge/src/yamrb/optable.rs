@@ -143,7 +143,6 @@ const ENTER_K_MASK: u32 = 0b11111 << 2;
 const ENTER_D_MASK: u32 = 0b1 << 1;
 const ENTER_B_MASK: u32 = 0b1 << 0;
 
-#[inline(always)]
 pub(crate) fn consume_expr(
     vm: &mut VM,
     code: OpCode,
@@ -588,7 +587,7 @@ pub(crate) fn op_loadineg(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_loadsym(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let sym = vm.current_irep.syms[b as usize].clone();
-    vm.current_regs()[a as usize].replace(Value::Symbol(Rc::new(sym)));
+    vm.current_regs()[a as usize].replace(Value::Symbol(sym.id));
     Ok(())
 }
 
@@ -646,9 +645,8 @@ pub(crate) fn op_setgv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_getiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let this = vm.getself()?;
-    // Borrow the sym name instead of cloning it; get_ivar hashes it
-    // transiently and never stores the key by value.
-    let value = this.get_ivar(&vm.current_irep.syms[b as usize].name);
+    // The irep symbol for an ivar read already carries the interned id.
+    let value = this.get_ivar_by_id(vm.current_irep.syms[b as usize].id);
     vm.current_regs()[a as usize].replace(value);
     Ok(())
 }
@@ -666,7 +664,7 @@ pub(crate) fn op_setiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         .ok_or_else(|| Error::internal(format!("register {} is not assigned", a)))?;
     // Borrow the sym name instead of cloning it; the ivar map hashes it
     // transiently and never stores the key by value.
-    this.set_ivar(vm.current_irep.syms[b as usize].name.as_str(), val);
+    this.set_ivar_by_id(vm.current_irep.syms[b as usize].id, val);
     Ok(())
 }
 
@@ -715,7 +713,7 @@ fn cvar_lookup(vm: &mut VM, name: &str) -> Result<Rc<RObject>, Error> {
     let mut current: Option<Rc<RClass>> = Some(class_context(vm)?);
     while let Some(klass) = current.clone() {
         let wrapper = RObject::class(klass.clone(), vm);
-        if let Some(val) = wrapper.ivar.borrow().get(name).cloned() {
+        if let Some(val) = wrapper.ivar.borrow().get(intern_symbol(name)).cloned() {
             return Ok(val.to_rc());
         }
         current = klass.super_class.clone();
@@ -733,11 +731,9 @@ fn cvar_set(vm: &mut VM, name: &str, value: Rc<RObject>) {
     let mut current = Some(cls.clone());
     while let Some(klass) = current.clone() {
         let wrapper = RObject::class(klass.clone(), vm);
-        if wrapper.ivar.borrow().contains_key(name) {
-            wrapper
-                .ivar
-                .borrow_mut()
-                .insert(Rc::from(name), Value::from_rc(value));
+        let key = intern_symbol(name);
+        if wrapper.ivar.borrow().contains_key(key) {
+            wrapper.ivar.borrow_mut().insert(key, Value::from_rc(value));
             return;
         }
         current = klass.super_class.clone();
@@ -746,7 +742,7 @@ fn cvar_set(vm: &mut VM, name: &str, value: Rc<RObject>) {
     wrapper
         .ivar
         .borrow_mut()
-        .insert(Rc::from(name), Value::from_rc(value));
+        .insert(intern_symbol(name), Value::from_rc(value));
 }
 
 pub(crate) fn op_getconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
@@ -1230,14 +1226,14 @@ pub(crate) fn op_send(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
                 if entry.is_set {
                     let value = vm.current_regs()[a as usize + 1].clone();
                     if let Some(value) = value {
-                        recv.set_ivar_hashed(entry.key.clone(), entry.hash, value.clone());
+                        recv.set_ivar_by_id(entry.key, value.clone());
                         vm.current_regs()[a as usize].replace(value);
                         vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
                         vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
                         return Ok(());
                     }
                 } else {
-                    let val = recv.get_ivar_hashed(&entry.key, entry.hash);
+                    let val = recv.get_ivar_by_id(entry.key);
                     vm.current_regs()[a as usize].replace(val);
                     vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
                     vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
@@ -1283,16 +1279,16 @@ fn try_fast_op(
     // frame. The receiver can be any object; the guard is the dispatch cache's
     // receiver-class check, and redefinition replaces the method + tag.
     if let FastOp::AttrGet | FastOp::AttrSet = op {
-        let (key, hash) = vm.fast_attrs.borrow().get(&func)?.clone();
+        let key = *vm.fast_attrs.borrow().get(&func)?;
         let recv_rc = match recv {
             Value::Object(o) => o.clone(),
             _ => return None,
         };
         let result = match op {
-            FastOp::AttrGet => Ok(recv_rc.get_ivar_hashed(&key, hash)),
+            FastOp::AttrGet => Ok(recv_rc.get_ivar_by_id(key)),
             _ => {
                 let value = vm.current_regs()[a + 1].clone()?;
-                recv_rc.set_ivar_hashed(key, hash, value.clone());
+                recv_rc.set_ivar_by_id(key, value.clone());
                 Ok(value)
             }
         };
@@ -1527,12 +1523,12 @@ pub(crate) fn do_op_send(
     let (owner_module, method) = match cached {
         Some(hit) => hit,
         None => {
-            let resolved = resolve_method(&klass, &method_id.name)
+            let resolved = resolve_method_by_id(&klass, method_id.id)
                 .or_else(|| {
                     unshift_method_name(vm, method_id, a as usize, n + k * 2 + 1);
                     n += 1;
                     via_method_missing = true;
-                    resolve_method(&klass, "method_missing")
+                    resolve_method_by_id(&klass, intern_symbol("method_missing"))
                 })
                 .ok_or_else(|| {
                     Error::Internal(format!(
@@ -1561,7 +1557,7 @@ pub(crate) fn do_op_send(
                     .and_then(|f| vm.fast_ops.borrow().get(&f).copied());
                 if let (Some(FastOp::AttrGet | FastOp::AttrSet), Some(func)) =
                     (tag, resolved.1.func)
-                    && let Some((key, hash)) = vm.fast_attrs.borrow().get(&func).cloned()
+                    && let Some(key) = vm.fast_attrs.borrow().get(&func).copied()
                 {
                     let is_set = matches!(tag, Some(FastOp::AttrSet));
                     let mut attrs = vm.current_irep.attr_cache.borrow_mut();
@@ -1570,7 +1566,6 @@ pub(crate) fn do_op_send(
                             version,
                             klass: klass.clone(),
                             key,
-                            hash,
                             is_set,
                         });
                     }
@@ -2524,7 +2519,7 @@ pub(crate) fn op_eq(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         (Some(Value::Float(n1)), Some(Value::Float(n2))) => Some(n1 == n2),
         (Some(Value::Bool(x)), Some(Value::Bool(y))) => Some(x == y),
         (Some(Value::Nil), Some(Value::Nil)) => Some(true),
-        (Some(Value::Symbol(x)), Some(Value::Symbol(y))) => Some(x.name == y.name),
+        (Some(Value::Symbol(x)), Some(Value::Symbol(y))) => Some(x == y),
         _ => None,
     };
     if let Some(equal) = fast {
@@ -2726,8 +2721,7 @@ pub(crate) fn op_apost(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_symbol(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let symstr = vm.current_irep.pool[b as usize].as_str().to_string();
-    let sym = RSym::new(symstr);
-    vm.current_regs()[a as usize].replace(Value::Symbol(Rc::new(sym)));
+    vm.current_regs()[a as usize].replace(Value::Symbol(intern_symbol(&symstr)));
     Ok(())
 }
 
@@ -3143,11 +3137,11 @@ pub(crate) fn op_def(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     match &target_ref.value {
         RValue::Class(klass) => {
             let mut procs = klass.procs.borrow_mut();
-            procs.insert(sym.name.clone(), method);
+            procs.insert(sym.id, method);
         }
         RValue::Module(module) => {
             let mut procs = module.procs.borrow_mut();
-            procs.insert(sym.name.clone(), method);
+            procs.insert(sym.id, method);
         }
         _ => {
             let robject = target.clone();
@@ -3158,7 +3152,7 @@ pub(crate) fn op_def(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
                 robject.initialize_or_get_singleton_class(vm)
             };
             let mut procs = sclass.procs.borrow_mut();
-            procs.insert(sym.name.clone(), method);
+            procs.insert(sym.id, method);
         }
     }
     vm.bump_method_version();
@@ -3182,7 +3176,7 @@ pub(crate) fn op_alias(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             let method = module
                 .procs
                 .borrow()
-                .get(&old_name.name)
+                .get(&old_name.id)
                 .cloned()
                 .ok_or_else(|| Error::NoMethodError(old_name.name.clone()))?;
             (module.clone(), method)
@@ -3193,7 +3187,7 @@ pub(crate) fn op_alias(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     new_method.sym_id = Some(new_name.clone());
 
     let mut procs = owner_module.procs.borrow_mut();
-    procs.insert(new_name.name.clone(), new_method);
+    procs.insert(new_name.id, new_method);
     vm.bump_method_version();
 
     Ok(())
@@ -3207,11 +3201,11 @@ pub(crate) fn op_undef(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     match &owner {
         TargetContext::Class(klass) => {
             let mut procs = klass.procs.borrow_mut();
-            procs.remove(&sym.name);
+            procs.remove(&sym.id);
         }
         TargetContext::Module(module) => {
             let mut procs = module.procs.borrow_mut();
-            procs.remove(&sym.name);
+            procs.remove(&sym.id);
         }
     };
     vm.bump_method_version();
