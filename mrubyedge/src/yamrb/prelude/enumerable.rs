@@ -406,7 +406,14 @@ fn mrb_enumerable_each_with_index(vm: &mut VM, args: &[Rc<RObject>]) -> Result<R
         let block = original_block.clone();
         let idx = index_ref.get();
         let index_obj = Rc::new(RObject::integer(idx));
-        let block_args = vec![args[0].clone(), index_obj];
+        // Ruby semantics: multi-arg yields (e.g. Hash#each -> key, value) are
+        // seen by the block as a single array element.
+        let element = if args.len() == 1 {
+            args[0].clone()
+        } else {
+            Rc::new(RObject::array(args.to_vec()))
+        };
+        let block_args = vec![element, index_obj];
         let result = record_and_reraise_break(vm, block, &block_args, &broken_ref)?;
         index_ref.set(idx + 1);
         Ok(result)
