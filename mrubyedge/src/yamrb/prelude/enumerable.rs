@@ -1,4 +1,4 @@
-use std::{cell::Cell, rc::Rc};
+use std::{cell::Cell, cell::RefCell, rc::Rc};
 
 use crate::{
     Error,
@@ -137,6 +137,27 @@ fn rproc_from_rust_block(vm: &mut VM, rfn: RFn) -> Result<Rc<RObject>, Error> {
     Ok(RObject::proc(block).to_refcount_assigned())
 }
 
+// shared recipe for Enumerable methods that delegate to a
+// receiver's each. When the user block breaks, the wrapper records the
+// value, re-raises so each aborts (its iterator boundary consumes the
+// pending exception), and the method returns the recorded value once each
+// completes — discarding any partial accumulation, like Ruby.
+fn record_and_reraise_break(
+    vm: &mut VM,
+    block: Rc<RObject>,
+    args: &[Rc<RObject>],
+    broken: &Rc<RefCell<Option<Rc<RObject>>>>,
+) -> Result<Rc<RObject>, Error> {
+    match mrb_call_block(vm, block, None, args, 0) {
+        Err(Error::Break(v)) => {
+            *broken.borrow_mut() = Some(v.clone());
+            vm.exception.take();
+            Err(Error::Break(v))
+        }
+        other => other,
+    }
+}
+
 // Enumerable#to_a: Returns an array containing all elements
 fn mrb_enumerable_to_a(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
     let results: Rc<RObject> = RObject::array(vec![]).to_refcount_assigned();
@@ -167,9 +188,11 @@ fn mrb_enumerable_map(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
         .ok_or_else(|| Error::ArgumentError("block should be specified".to_string()))?;
     let results: Rc<RObject> = RObject::array(vec![]).to_refcount_assigned();
     let results_ref = results.clone();
+    let broken: Rc<RefCell<Option<Rc<RObject>>>> = Rc::new(RefCell::new(None));
+    let broken_ref = broken.clone();
     let wrapping_block: RFn = Box::new(move |vm: &mut VM, args: &[Rc<RObject>]| {
         let block = original_block.clone();
-        let result = mrb_call_block(vm, block, None, args, 0)?;
+        let result = record_and_reraise_break(vm, block, args, &broken_ref)?;
         mrb_funcall(
             vm,
             Some(results_ref.clone()),
@@ -184,6 +207,9 @@ fn mrb_enumerable_map(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
     mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
     vm.pop_fnblock()?;
 
+    if let Some(v) = broken.borrow_mut().take() {
+        return Ok(v);
+    }
     Ok(results)
 }
 
@@ -196,13 +222,15 @@ fn mrb_enumerable_find(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>,
     let found = Cell::new(false);
     let result_box: Rc<RObject> = RObject::array(vec![]).to_refcount_assigned();
     let result_box_ref = result_box.clone();
+    let broken: Rc<RefCell<Option<Rc<RObject>>>> = Rc::new(RefCell::new(None));
+    let broken_ref = broken.clone();
     let wrapping_block: RFn = Box::new(move |vm: &mut VM, args: &[Rc<RObject>]| {
         if found.get() {
             return Ok(Rc::new(RObject::nil()));
         }
 
         let block = original_block.clone();
-        let result = mrb_call_block(vm, block, None, args, 0)?;
+        let result = record_and_reraise_break(vm, block, args, &broken_ref)?;
         if result.is_truthy() {
             mrb_funcall(
                 vm,
@@ -219,6 +247,9 @@ fn mrb_enumerable_find(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>,
     mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
     vm.pop_fnblock()?;
 
+    if let Some(v) = broken.borrow_mut().take() {
+        return Ok(v);
+    }
     let found = mrb_funcall(vm, result_box.into(), "pop", &[])?;
     Ok(found)
 }
@@ -231,9 +262,11 @@ fn mrb_enumerable_select(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
         .ok_or_else(|| Error::ArgumentError("block should be specified".to_string()))?;
     let results: Rc<RObject> = RObject::array(vec![]).to_refcount_assigned();
     let results_ref = results.clone();
+    let broken: Rc<RefCell<Option<Rc<RObject>>>> = Rc::new(RefCell::new(None));
+    let broken_ref = broken.clone();
     let wrapping_block: RFn = Box::new(move |vm: &mut VM, args: &[Rc<RObject>]| {
         let block = original_block.clone();
-        let result = mrb_call_block(vm, block, None, args, 0)?;
+        let result = record_and_reraise_break(vm, block, args, &broken_ref)?;
         if result.is_truthy() {
             mrb_funcall(
                 vm,
@@ -250,6 +283,9 @@ fn mrb_enumerable_select(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
     mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
     vm.pop_fnblock()?;
 
+    if let Some(v) = broken.borrow_mut().take() {
+        return Ok(v);
+    }
     Ok(results)
 }
 
@@ -261,13 +297,15 @@ fn mrb_enumerable_all(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
         .ok_or_else(|| Error::ArgumentError("block should be specified".to_string()))?;
     let all_true = Rc::new(Cell::new(true));
     let all_true_ref = all_true.clone();
+    let broken: Rc<RefCell<Option<Rc<RObject>>>> = Rc::new(RefCell::new(None));
+    let broken_ref = broken.clone();
     let wrapping_block: RFn = Box::new(move |vm: &mut VM, args: &[Rc<RObject>]| {
         if !all_true_ref.get() {
             return Ok(Rc::new(RObject::nil()));
         }
 
         let block = original_block.clone();
-        let result = mrb_call_block(vm, block, None, args, 0)?;
+        let result = record_and_reraise_break(vm, block, args, &broken_ref)?;
         if !result.is_truthy() {
             all_true_ref.set(false);
         }
@@ -279,6 +317,9 @@ fn mrb_enumerable_all(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
     mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
     vm.pop_fnblock()?;
 
+    if let Some(v) = broken.borrow_mut().take() {
+        return Ok(v);
+    }
     Ok(Rc::new(RObject::boolean(all_true.get())))
 }
 
@@ -290,13 +331,15 @@ fn mrb_enumerable_any(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
         .ok_or_else(|| Error::ArgumentError("block should be specified".to_string()))?;
     let found_true = Rc::new(Cell::new(false));
     let found_true_ref = found_true.clone();
+    let broken: Rc<RefCell<Option<Rc<RObject>>>> = Rc::new(RefCell::new(None));
+    let broken_ref = broken.clone();
     let wrapping_block: RFn = Box::new(move |vm: &mut VM, args: &[Rc<RObject>]| {
         if found_true_ref.get() {
             return Ok(Rc::new(RObject::nil()));
         }
 
         let block = original_block.clone();
-        let result = mrb_call_block(vm, block, None, args, 0)?;
+        let result = record_and_reraise_break(vm, block, args, &broken_ref)?;
         if result.is_truthy() {
             found_true_ref.set(true);
         }
@@ -308,6 +351,9 @@ fn mrb_enumerable_any(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
     mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
     vm.pop_fnblock()?;
 
+    if let Some(v) = broken.borrow_mut().take() {
+        return Ok(v);
+    }
     Ok(Rc::new(RObject::boolean(found_true.get())))
 }
 
@@ -319,9 +365,11 @@ fn mrb_enumerable_delete_if(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObj
         .ok_or_else(|| Error::ArgumentError("block should be specified".to_string()))?;
     let results: Rc<RObject> = RObject::array(vec![]).to_refcount_assigned();
     let results_ref = results.clone();
+    let broken: Rc<RefCell<Option<Rc<RObject>>>> = Rc::new(RefCell::new(None));
+    let broken_ref = broken.clone();
     let wrapping_block: RFn = Box::new(move |vm: &mut VM, args: &[Rc<RObject>]| {
         let block = original_block.clone();
-        let result = mrb_call_block(vm, block, None, args, 0)?;
+        let result = record_and_reraise_break(vm, block, args, &broken_ref)?;
         if !result.is_truthy() {
             mrb_funcall(
                 vm,
@@ -338,6 +386,9 @@ fn mrb_enumerable_delete_if(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObj
     mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
     vm.pop_fnblock()?;
 
+    if let Some(v) = broken.borrow_mut().take() {
+        return Ok(v);
+    }
     Ok(results)
 }
 
@@ -349,12 +400,14 @@ fn mrb_enumerable_each_with_index(vm: &mut VM, args: &[Rc<RObject>]) -> Result<R
         .ok_or_else(|| Error::ArgumentError("block should be specified".to_string()))?;
     let index = Rc::new(Cell::new(0i64));
     let index_ref = index.clone();
+    let broken: Rc<RefCell<Option<Rc<RObject>>>> = Rc::new(RefCell::new(None));
+    let broken_ref = broken.clone();
     let wrapping_block: RFn = Box::new(move |vm: &mut VM, args: &[Rc<RObject>]| {
         let block = original_block.clone();
         let idx = index_ref.get();
         let index_obj = Rc::new(RObject::integer(idx));
         let block_args = vec![args[0].clone(), index_obj];
-        let result = mrb_call_block(vm, block, None, &block_args, 0)?;
+        let result = record_and_reraise_break(vm, block, &block_args, &broken_ref)?;
         index_ref.set(idx + 1);
         Ok(result)
     });
@@ -364,6 +417,9 @@ fn mrb_enumerable_each_with_index(vm: &mut VM, args: &[Rc<RObject>]) -> Result<R
     mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
     vm.pop_fnblock()?;
 
+    if let Some(v) = broken.borrow_mut().take() {
+        return Ok(v);
+    }
     Ok(this)
 }
 
@@ -406,13 +462,22 @@ fn mrb_enumerable_sort_by(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObjec
     // Collect keys by calling the block on each element
     let mut sort_keys: Vec<Rc<RObject>> = Vec::new();
     for elem in &elements {
-        let key = mrb_call_block(
+        // a break here discards the sort and its value
+        // becomes the method result (Ruby semantics).
+        let key = match mrb_call_block(
             vm,
             original_block.clone(),
             None,
             std::slice::from_ref(elem),
             0,
-        )?;
+        ) {
+            Ok(k) => k,
+            Err(Error::Break(v)) => {
+                vm.exception.take();
+                return Ok(v);
+            }
+            Err(e) => return Err(e),
+        };
         sort_keys.push(key);
     }
 
@@ -568,9 +633,11 @@ fn mrb_enumerable_count(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>
         // Count elements matching the block condition
         let count_ref = count.clone();
         let original_block = args.last().cloned().unwrap();
+        let broken: Rc<RefCell<Option<Rc<RObject>>>> = Rc::new(RefCell::new(None));
+        let broken_ref = broken.clone();
         let wrapping_block: RFn = Box::new(move |vm: &mut VM, args: &[Rc<RObject>]| {
             let block = original_block.clone();
-            let result = mrb_call_block(vm, block, None, args, 0)?;
+            let result = record_and_reraise_break(vm, block, args, &broken_ref)?;
             if result.is_truthy() {
                 count_ref.set(count_ref.get() + 1);
             }
@@ -581,6 +648,10 @@ fn mrb_enumerable_count(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>
         let block = rproc_from_rust_block(vm, wrapping_block)?;
         mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
         vm.pop_fnblock()?;
+
+        if let Some(v) = broken.borrow_mut().take() {
+            return Ok(v);
+        }
     }
 
     Ok(Rc::new(RObject::integer(count.get())))
@@ -627,6 +698,8 @@ fn mrb_enumerable_reduce(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
     };
 
     let acc_ref = accumulator.clone();
+    let broken: Rc<RefCell<Option<Rc<RObject>>>> = Rc::new(RefCell::new(None));
+    let broken_ref = broken.clone();
     let wrapping_block: RFn = Box::new(move |vm: &mut VM, args: &[Rc<RObject>]| {
         let current_elem = args[0].clone();
         let acc_array: Vec<Rc<RObject>> = acc_ref.as_ref().try_into()?;
@@ -643,7 +716,7 @@ fn mrb_enumerable_reduce(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
             // Call block with (accumulator, element)
             let current_acc = acc_array[0].clone();
             let block = original_block.clone();
-            let result = mrb_call_block(vm, block, None, &[current_acc, current_elem], 0)?;
+            let result = record_and_reraise_break(vm, block, &[current_acc, current_elem], &broken_ref)?;
 
             // Update accumulator
             mrb_funcall(vm, Some(acc_ref.clone()), "pop", &[])?;
@@ -662,6 +735,9 @@ fn mrb_enumerable_reduce(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
     mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
     vm.pop_fnblock()?;
 
+    if let Some(v) = broken.borrow_mut().take() {
+        return Ok(v);
+    }
     // Return the final accumulator value
     let result = mrb_funcall(vm, Some(accumulator), "first", &[])?;
     Ok(result)
