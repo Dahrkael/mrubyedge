@@ -214,15 +214,23 @@ pub fn mrb_array_get_index(this: Rc<RObject>, args: &[Rc<RObject>]) -> Result<Rc
         RValue::Array(a) => a.clone(),
         _ => {
             return Err(Error::RuntimeError(
-                "Array#push must be called on an Array".to_string(),
+                "Array#[] must be called on an Array".to_string(),
             ));
         }
     };
-    let index: i32 = args[0].as_ref().try_into()?;
-    let value = if index < 0 {
-        array.borrow()[(array.borrow().len() as i32 + index) as usize].clone()
-    } else {
-        array.borrow()[index as usize].clone()
+    let index: i64 = args
+        .first()
+        .ok_or_else(|| Error::ArgumentError("wrong number of arguments (given 0, expected 1)".to_string()))?
+        .as_ref()
+        .try_into()?;
+    let elems = array.borrow();
+    let len = elems.len() as i64;
+    let idx = if index < 0 { index + len } else { index };
+    // out-of-range reads return nil (CRuby) instead of
+    // panicking on the Vec index.
+    let value = match elems.get(idx as usize) {
+        Some(v) => v.clone(),
+        None => Rc::new(RObject::nil()),
     };
     Ok(value)
 }
