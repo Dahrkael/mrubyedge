@@ -38,6 +38,7 @@
 //!         reps: Vec::new(),
 //!         lv: None,
 //!         catch_target_pos: Vec::new(),
+//!         lines: Vec::new(),
 //!     };
 //!
 //!     let mut vm = vm::VM::new_by_raw_irep(irep);

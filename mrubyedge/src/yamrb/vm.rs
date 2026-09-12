@@ -1216,6 +1216,11 @@ pub struct CALLINFO {
     // whether op_enter pushed a KArgs frame for this call, so
     // op_return only pops one when it was actually pushed.
     pub kargs_pushed: Cell<bool>,
+    // true for frames entered through call_block (funcalls
+    // from native code, blocks). Their return preempts back to the native
+    // caller instead of restoring a Ruby caller, but the callinfo stays live
+    // while the callee runs so super/op_enter can read it.
+    pub is_funcall: bool,
 }
 
 #[derive(Debug, Clone)]

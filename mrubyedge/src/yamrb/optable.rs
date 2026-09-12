@@ -483,6 +483,7 @@ pub(crate) fn push_callinfo(
     n_args: usize,
     method_owner: Option<Rc<RModule>>,
     return_reg: usize,
+    is_funcall: bool,
 ) {
     vm.current_n_args.set(n_args);
     let callinfo = CALLINFO {
@@ -497,6 +498,7 @@ pub(crate) fn push_callinfo(
         method_owner,
         has_block: Cell::new(false),
         kargs_pushed: Cell::new(false),
+        is_funcall,
     };
     vm.current_callinfo = Some(Rc::new(callinfo));
 }
@@ -1309,7 +1311,14 @@ pub(crate) fn do_op_send(
         return Ok(());
     }
 
-    push_callinfo(vm, method_id.clone(), n, Some(owner_module), a as usize);
+    push_callinfo(
+        vm,
+        method_id.clone(),
+        n,
+        Some(owner_module),
+        a as usize,
+        false,
+    );
 
     // Set has_block flag based on whether a block was provided
     if let Some(ci) = vm.current_callinfo.as_ref() {
@@ -1369,7 +1378,7 @@ pub(crate) fn op_call(vm: &mut VM, _operand: &Fetched) -> Result<(), Error> {
         pc: Some(vm.pc.get().saturating_sub(1)),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
-    push_callinfo(vm, "<tailcall>".into(), 0, None, 0);
+    push_callinfo(vm, "<tailcall>".into(), 0, None, 0, false);
 
     vm.pc.set(0);
     let proc = vm.current_regs()[0]
@@ -1460,6 +1469,7 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         b as usize,
         Some(next_owner),
         a as usize,
+        false,
     );
 
     vm.pc.set(0);
@@ -1688,7 +1698,7 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     // }
 
     let ci = vm.current_callinfo.take();
-    if ci.is_none() {
+    if ci.is_none() || ci.as_ref().is_some_and(|c| c.is_funcall) {
         let cur = vm.current_breadcrumb.take().expect("not found breadcrumb");
         if let Some(upper) = &cur.as_ref().upper {
             vm.current_breadcrumb.replace(upper.clone());
@@ -2510,7 +2520,7 @@ pub(crate) fn op_exec(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         pc: Some(vm.pc.get().saturating_sub(1)),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
-    push_callinfo(vm, "<exec>".into(), 0, None, a as usize);
+    push_callinfo(vm, "<exec>".into(), 0, None, a as usize, false);
 
     vm.pc.set(0);
     vm.current_irep = irep;

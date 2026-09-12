@@ -31,9 +31,20 @@ fn call_block(
     vm.check_frame_window(caller_frame_size, 32)?;
     vm.current_regs_offset = saved_offset + caller_frame_size;
 
-    push_callinfo(vm, method_id, args.len(), method_owner, return_register);
-
-    let old_callinfo = vm.current_callinfo.take();
+    // The funcall frame keeps its callinfo live while the callee runs so
+    // super and op_enter can read the method name/owner; the is_funcall flag
+    // makes op_return preempt back to this native caller. Restore from the
+    // snapshot the callinfo captured at push.
+    let caller_ci = vm.current_callinfo.clone();
+    push_callinfo(
+        vm,
+        method_id,
+        args.len(),
+        method_owner,
+        return_register,
+        true,
+    );
+    let funcall_ci = vm.current_callinfo.clone().expect("callinfo just pushed");
 
     // Keep the state before the call inside the new window.
     let prev_self = vm.current_regs()[0].replace(recv);
@@ -43,6 +54,12 @@ fn call_block(
         let old = vm.current_regs()[i + 1].replace(arg.clone());
         prev_args.push(old);
     }
+
+    // The callee's block local must be nil when no block is passed
+    // (do_op_send does the same on the send path). Without it, methods that
+    // read their block local — e.g. super forwarding the block — hit an
+    // unassigned register.
+    vm.current_regs()[args.len() + 1].replace(RObject::nil_rc());
 
     vm.pc.set(0);
     vm.current_irep = block
@@ -73,15 +90,11 @@ fn call_block(
         }
     }
 
-    if let Some(ci) = old_callinfo {
-        if let Some(prev) = &ci.prev {
-            vm.current_callinfo.replace(prev.clone());
-        }
-        vm.current_irep = ci.pc_irep.clone();
-        vm.pc.set(ci.pc);
-        vm.current_regs_offset = saved_offset;
-        vm.target_class = ci.target_class.clone();
-    }
+    vm.current_callinfo = caller_ci;
+    vm.current_irep = funcall_ci.pc_irep.clone();
+    vm.pc.set(funcall_ci.pc);
+    vm.current_regs_offset = saved_offset;
+    vm.target_class = funcall_ci.target_class.clone();
     vm.upper = prev_upper;
 
     match &res {
