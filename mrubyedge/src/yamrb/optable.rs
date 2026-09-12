@@ -586,35 +586,36 @@ pub(crate) fn op_loadineg(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_loadsym(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    // Shared symbol instance: no RSym clone, no object allocation per literal.
-    let sym = &vm.current_irep.syms[b as usize];
-    let val = RObject::symbol_rc(sym);
-    vm.set_reg(a as usize, val);
+    let sym = vm.current_irep.syms[b as usize].clone();
+    vm.current_regs()[a as usize].replace(Value::Symbol(Rc::new(sym)));
     Ok(())
 }
 
 pub(crate) fn op_loadnil(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    vm.set_reg(a, RObject::nil_rc());
+    vm.current_regs()[a].replace(Value::Nil);
     Ok(())
 }
 
 pub(crate) fn op_loadself(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    let val: Rc<RObject> = vm.getself()?;
-    vm.set_reg(a, val);
+    let regs = vm.current_regs();
+    let val = regs[0]
+        .clone()
+        .ok_or_else(|| Error::internal("self is not assigned"))?;
+    regs[a].replace(val);
     Ok(())
 }
 
 pub(crate) fn op_loadt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    vm.set_reg(a, RObject::boolean_rc(true));
+    vm.current_regs()[a].replace(Value::Bool(true));
     Ok(())
 }
 
 pub(crate) fn op_loadf(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    vm.set_reg(a, RObject::boolean_rc(false));
+    vm.current_regs()[a].replace(Value::Bool(false));
     Ok(())
 }
 
@@ -895,18 +896,20 @@ pub(crate) fn op_setupvar(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let environ = environ.clone();
     let current_regs_offset = environ.current_regs_offset;
 
-    let val = vm.get_current_regs_cloned(a as usize)?;
+    let val = vm.current_regs()[a as usize]
+        .clone()
+        .ok_or_else(|| Error::internal(format!("register {} is not assigned", a)))?;
     if !environ.expired() {
         let up_regs = &mut vm.regs[current_regs_offset..];
         let target = &mut up_regs[b as usize];
-        target.replace(Value::from_rc(val));
+        target.replace(val);
     } else {
         let mut captured = environ.captured.borrow_mut();
         let captured = captured
             .as_mut()
             .ok_or_else(|| Error::internal("captured environment not found"))?;
         let target = &mut captured[b as usize];
-        target.replace(val);
+        target.replace(val.to_rc());
     }
     Ok(())
 }
@@ -915,7 +918,7 @@ pub(crate) fn op_setupvar(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 /// a plain Array (not a subclass) whose `[]` still resolves to the pristine
 /// builtin. The verdict is cached and reset on every method-version bump, so
 /// a redefined Array#[] immediately falls back to dispatch.
-fn array_index_fast(vm: &VM, recv: &Rc<RObject>) -> bool {
+fn array_index_fast(vm: &VM, recv: &Value) -> bool {
     if !Rc::ptr_eq(&recv.get_class(vm), &vm.array_class) {
         return false;
     }
@@ -934,12 +937,18 @@ fn array_index_fast(vm: &VM, recv: &Rc<RObject>) -> bool {
 
 pub(crate) fn op_getidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    let recv = vm.get_current_regs_cloned(a)?;
-    let idx = vm.get_current_regs_cloned(a + 1)?;
+    let recv = vm.current_regs()[a]
+        .clone()
+        .ok_or_else(|| Error::internal(format!("register {} is not assigned", a)))?;
+    let idx = vm.current_regs()[a + 1]
+        .clone()
+        .ok_or_else(|| Error::internal(format!("register {} is not assigned", a + 1)))?;
     // Fast path: single-integer index into a pristine Array, preserving the
     // native semantics (negative indices, out-of-range reads return nil).
     if array_index_fast(vm, &recv)
-        && let (RValue::Array(arr), RValue::Integer(i)) = (&recv.value, &idx.value)
+        && let Value::Object(recv_obj) = &recv
+        && let RValue::Array(arr) = &recv_obj.value
+        && let Value::Integer(i) = &idx
     {
         let val = {
             let borrow = arr.borrow();
@@ -954,25 +963,33 @@ pub(crate) fn op_getidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
                 RObject::nil_rc()
             }
         };
-        vm.set_reg(a, val);
+        vm.current_regs()[a].replace(Value::from_rc(val));
         return Ok(());
     }
-    let args = vec![idx];
-    let val = mrb_funcall(vm, Some(recv), "[]", &args)?;
-    vm.set_reg(a, val);
+    let args = vec![idx.to_rc()];
+    let val = mrb_funcall(vm, Some(recv.to_rc()), "[]", &args)?;
+    vm.current_regs()[a].replace(Value::from_rc(val));
     Ok(())
 }
 
 pub(crate) fn op_setidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    let recv = vm.get_current_regs_cloned(a)?;
-    let idx = vm.get_current_regs_cloned(a + 1)?;
-    let val = vm.get_current_regs_cloned(a + 2)?;
+    let recv = vm.current_regs()[a]
+        .clone()
+        .ok_or_else(|| Error::internal(format!("register {} is not assigned", a)))?;
+    let idx = vm.current_regs()[a + 1]
+        .clone()
+        .ok_or_else(|| Error::internal(format!("register {} is not assigned", a + 1)))?;
+    let val = vm.current_regs()[a + 2]
+        .clone()
+        .ok_or_else(|| Error::internal(format!("register {} is not assigned", a + 2)))?;
     // Fast path only for in-bounds integer writes; anything else (appending,
     // out-of-range, non-integer) falls back to the native [] = which may
     // extend the array.
     if array_index_fast(vm, &recv)
-        && let (RValue::Array(arr), RValue::Integer(i)) = (&recv.value, &idx.value)
+        && let Value::Object(recv_obj) = &recv
+        && let RValue::Array(arr) = &recv_obj.value
+        && let Value::Integer(i) = &idx
     {
         let mut borrow = arr.borrow_mut();
         let len = borrow.len() as i64;
@@ -981,13 +998,13 @@ pub(crate) fn op_setidx(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             i += len;
         }
         if i >= 0 && i < len {
-            borrow[i as usize] = val;
+            borrow[i as usize] = val.to_rc();
             return Ok(());
         }
         drop(borrow);
     }
-    let args = vec![idx, val];
-    mrb_funcall(vm, Some(recv), "[]=", &args)?;
+    let args = vec![idx.to_rc(), val.to_rc()];
+    mrb_funcall(vm, Some(recv.to_rc()), "[]=", &args)?;
     Ok(())
 }
 
@@ -1005,7 +1022,9 @@ pub(crate) fn op_jmp(vm: &mut VM, operand: &Fetched, end_pos: usize) -> Result<(
 
 pub(crate) fn op_jmpif(vm: &mut VM, operand: &Fetched, end_pos: usize) -> Result<(), Error> {
     let (a, b) = operand.as_bs()?;
-    let val = vm.get_current_regs_cloned(a as usize)?;
+    let val = vm.current_regs()[a as usize]
+        .clone()
+        .ok_or_else(|| Error::internal(format!("register {} is not assigned", a)))?;
     if val.is_truthy() {
         let offset = b as i16;
         let next_pc = calcurate_pc(
@@ -1020,7 +1039,9 @@ pub(crate) fn op_jmpif(vm: &mut VM, operand: &Fetched, end_pos: usize) -> Result
 
 pub(crate) fn op_jmpnot(vm: &mut VM, operand: &Fetched, end_pos: usize) -> Result<(), Error> {
     let (a, b) = operand.as_bs()?;
-    let val = vm.get_current_regs_cloned(a as usize)?;
+    let val = vm.current_regs()[a as usize]
+        .clone()
+        .ok_or_else(|| Error::internal(format!("register {} is not assigned", a)))?;
     if val.is_falsy() {
         let offset = b as i16;
         let next_pc = calcurate_pc(
@@ -1035,7 +1056,9 @@ pub(crate) fn op_jmpnot(vm: &mut VM, operand: &Fetched, end_pos: usize) -> Resul
 
 pub(crate) fn op_jmpnil(vm: &mut VM, operand: &Fetched, end_pos: usize) -> Result<(), Error> {
     let (a, b) = operand.as_bs()?;
-    let val = vm.get_current_regs_cloned(a as usize)?;
+    let val = vm.current_regs()[a as usize]
+        .clone()
+        .ok_or_else(|| Error::internal(format!("register {} is not assigned", a)))?;
     if val.is_nil() {
         let offset = b as i16;
         let next_pc = calcurate_pc(
@@ -1112,12 +1135,11 @@ fn consume_ensure_block(vm: &mut VM) -> Result<(), Error> {
 
 pub(crate) fn op_except(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()?;
-    let val = vm
-        .exception
-        .take()
-        .map(|e| RObject::exception(e).to_refcount_assigned())
-        .unwrap_or_else(RObject::nil_rc);
-    vm.set_reg(a as usize, val);
+    let val = match vm.exception.take() {
+        Some(e) => Value::from_rc(RObject::exception(e).to_refcount_assigned()),
+        None => Value::Nil,
+    };
+    vm.current_regs()[a as usize].replace(val);
     Ok(())
 }
 
@@ -1148,12 +1170,15 @@ pub(crate) fn op_raiseif(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     Ok(())
 }
 
+#[inline]
 pub(crate) fn op_move(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let val = vm.current_regs()[b as usize]
-        .clone()
-        .ok_or_else(|| Error::internal(format!("register {} is not assigned", b)))?;
-    vm.current_regs()[a as usize].replace(val);
+    let regs = vm.current_regs();
+    let val = match regs[b as usize].clone() {
+        Some(v) => v,
+        None => return Err(Error::internal(format!("register {} is not assigned", b))),
+    };
+    regs[a as usize].replace(val);
     Ok(())
 }
 
@@ -1414,7 +1439,7 @@ pub(crate) fn do_op_send(
     if method_id.name == "__debug__vm_info" {
         // Special debug method to dump VM info
         vm.debug_dump_to_stdout(32);
-        vm.set_reg(a as usize, RObject::nil_rc());
+        vm.current_regs()[a as usize].replace(Value::Nil);
         return Ok(());
     }
 
@@ -1445,10 +1470,11 @@ pub(crate) fn do_op_send(
             map.insert(key, val);
         }
         vm.kargs.borrow_mut().replace(map);
-    } else {
+    } else if vm.kargs.borrow().as_ref().is_some_and(|m| !m.is_empty()) {
         // Reset the slot so a k>0 send that failed before its callee ran
         // cannot leak a stale kwargs map into the next call; an empty map
-        // keeps op_enter's KArgs upper-chain intact.
+        // keeps op_enter's KArgs upper-chain intact. The common no-kwargs
+        // path is already empty, so only clear after a real map.
         vm.kargs.borrow_mut().replace(RHashMap::default());
     }
 
@@ -1467,7 +1493,7 @@ pub(crate) fn do_op_send(
         }
     } else {
         // When no block is provided, do not push a nil placeholder
-        vm.set_reg(block_index, RObject::nil_rc());
+        vm.current_regs()[block_index].replace(Value::Nil);
     }
 
     let klass = recv_value.get_class(vm);
@@ -1574,21 +1600,21 @@ pub(crate) fn do_op_send(
         }
     }
 
-    // Box the receiver only for the non-fast path (dispatch, native call,
-    // error breadcrumb).
-    let recv = recv_value.to_rc();
-
     // guard the callee's register window before pushing its
     // frame; unbounded recursion must raise SystemStackError, not panic.
     if let Some(irep) = method.irep.as_ref() {
         vm.check_frame_window(a as usize, irep.nregs)?;
     }
-    // lazy frame label; the receiver class is cloned (no
-    // allocation) and the name is resolved from the frame irep at error time.
-    let receiver = match &recv.value {
-        RValue::Class(c) => CallerReceiver::Class(c.clone()),
-        RValue::Module(m) => CallerReceiver::Module(m.clone()),
-        _ => CallerReceiver::Instance(recv.get_class(vm)),
+    // lazy frame label built from the unboxed receiver; the
+    // receiver class is cloned (no allocation) and the name is resolved from
+    // the frame irep at error time.
+    let receiver = match &recv_value {
+        Value::Object(o) => match &o.value {
+            RValue::Class(c) => CallerReceiver::Class(c.clone()),
+            RValue::Module(m) => CallerReceiver::Module(m.clone()),
+            _ => CallerReceiver::Instance(o.get_class(vm)),
+        },
+        _ => CallerReceiver::Instance(recv_value.get_class(vm)),
     };
     vm.push_breadcrumb(
         "do_op_send",
@@ -1602,7 +1628,14 @@ pub(crate) fn do_op_send(
         Some(vm.pc.get().saturating_sub(1)),
     );
 
-    vm.set_reg(a as usize, recv.clone());
+    // The receiver is already at reg[a] for op_send (recv_index == a), so the
+    // common path needs no write. Super sends (op_ssend: receiver lives in
+    // reg 0, result in reg[a]) place it at reg[a] so the callee reads it as
+    // self after the register-window shift.
+    if recv_index != a as usize {
+        vm.set_reg(a as usize, recv_value.to_rc());
+    }
+
     if !method.is_rb_func {
         // Build the argument slice only for native calls (Ruby callees read
         // the registers directly). After method_missing the name sits at
@@ -2667,8 +2700,7 @@ pub(crate) fn op_symbol(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let symstr = vm.current_irep.pool[b as usize].as_str().to_string();
     let sym = RSym::new(symstr);
-    let val = RObject::symbol_rc(&sym);
-    vm.set_reg(a as usize, val);
+    vm.current_regs()[a as usize].replace(Value::Symbol(Rc::new(sym)));
     Ok(())
 }
 
