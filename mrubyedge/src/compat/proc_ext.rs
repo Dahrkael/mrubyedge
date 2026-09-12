@@ -1,7 +1,7 @@
 // Proc methods missing from the mrubyedge prelude.
 
-use crate::compat::util::mrb_funcall;
 use crate::Error;
+use crate::compat::util::mrb_funcall;
 use crate::yamrb::helpers::mrb_define_cmethod;
 use crate::yamrb::value::{RValue, Value};
 use crate::yamrb::vm::VM;

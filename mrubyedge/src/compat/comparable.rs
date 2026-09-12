@@ -1,7 +1,7 @@
 // The Comparable module: derives the comparison family from <=>.
 
-use crate::compat::util::mrb_funcall;
 use crate::Error;
+use crate::compat::util::mrb_funcall;
 use crate::yamrb::prelude::module::mrb_include_module;
 use crate::yamrb::value::Value;
 use crate::yamrb::vm::VM;

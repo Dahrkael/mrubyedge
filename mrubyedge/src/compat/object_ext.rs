@@ -3,8 +3,8 @@
 
 use std::rc::Rc;
 
-use crate::compat::util::mrb_funcall;
 use crate::Error;
+use crate::compat::util::mrb_funcall;
 use crate::yamrb::helpers::mrb_define_cmethod;
 use crate::yamrb::value::{RClass, RObject, RSym, RValue, Value, intern_symbol, symbol_name};
 use crate::yamrb::vm::VM;
