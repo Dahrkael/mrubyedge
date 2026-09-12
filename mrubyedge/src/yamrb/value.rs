@@ -852,8 +852,33 @@ impl TryFrom<&RObject> for String {
         match &value.value {
             RValue::String(s, _) => Ok(String::from_utf8_lossy(&s.borrow()).to_string()),
             RValue::Symbol(sym) => Ok(sym.name.clone()),
-            v => Ok(format!("{:?}", v)),
+            // the old catch-all was format!("{:?}"), which
+            // walks the cyclic class -> module -> procs -> proc graph and
+            // overflows the stack. Render flat representations instead.
+            RValue::Exception(e) => Ok(e.message.clone()),
+            RValue::Integer(n) => Ok(n.to_string()),
+            RValue::Float(f) => Ok(f.to_string()),
+            RValue::Bool(b) => Ok(b.to_string()),
+            RValue::Nil => Ok(String::new()),
+            other => Ok(format!("#<{}>", flat_type_name(other))),
         }
+    }
+}
+
+/// Cycle-free label for values whose Ruby inspect needs the interpreter.
+fn flat_type_name(v: &RValue) -> &'static str {
+    match v {
+        RValue::Array(_) => "Array",
+        RValue::Hash(_) => "Hash",
+        RValue::Range(..) => "Range",
+        RValue::Proc(_) => "Proc",
+        RValue::Instance(_) => "Instance",
+        RValue::Class(_) => "Class",
+        RValue::Module(_) => "Module",
+        RValue::Exception(_) => "Exception",
+        RValue::SharedMemory(_) => "SharedMemory",
+        RValue::Data(_) => "Data",
+        _ => "Object",
     }
 }
 

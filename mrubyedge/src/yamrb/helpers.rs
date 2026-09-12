@@ -101,8 +101,10 @@ fn call_block(
             let err = if let Some(e) = e.downcast_ref::<Error>() {
                 e.clone()
             } else {
-                // TODO: Rust level error
-                Error::RuntimeError(format!("{:?}", e.as_ref()))
+                // {:?} on foreign errors can walk cyclic VM
+                // graphs (class -> module -> procs -> proc) and overflow.
+                let _ = e;
+                Error::RuntimeError("non-mrubyedge error escaped a block".to_string())
             };
             Err(err)
         }
