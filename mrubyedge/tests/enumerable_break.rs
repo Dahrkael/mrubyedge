@@ -99,7 +99,10 @@ fn enum_each_with_index_break_returns_index() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let v: i64 = result.as_ref().try_into().expect("each_with_index break index");
+    let v: i64 = result
+        .as_ref()
+        .try_into()
+        .expect("each_with_index break index");
     assert_eq!(v, 1);
 }
 

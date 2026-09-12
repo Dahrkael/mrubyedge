@@ -387,11 +387,7 @@ pub fn line_at(map: &[(u32, u32)], pos: u32) -> Option<u32> {
             hi = mid;
         }
     }
-    if lo == 0 {
-        None
-    } else {
-        Some(map[lo - 1].1)
-    }
+    if lo == 0 { None } else { Some(map[lo - 1].1) }
 }
 
 fn u16_at(head: &[u8], cur: usize) -> Result<u16, Error> {
@@ -405,7 +401,12 @@ fn u32_at(head: &[u8], cur: usize) -> Result<u32, Error> {
     if cur + 4 > head.len() {
         return Err(Error::TooShort);
     }
-    Ok(be32_to_u32([head[cur], head[cur + 1], head[cur + 2], head[cur + 3]]))
+    Ok(be32_to_u32([
+        head[cur],
+        head[cur + 1],
+        head[cur + 2],
+        head[cur + 3],
+    ]))
 }
 
 /// Parses the debug section. File names are consumed but not kept: only the
@@ -467,7 +468,11 @@ fn read_debug_record(
         cur += 2;
         let entry_count = u32_at(head, cur)? as usize;
         cur += 4;
-        let line_type = if cur < head.len() { head[cur] } else { return Err(Error::TooShort) };
+        let line_type = if cur < head.len() {
+            head[cur]
+        } else {
+            return Err(Error::TooShort);
+        };
         cur += 1;
 
         match line_type {
@@ -548,10 +553,10 @@ fn decode_packed_int(head: &[u8], cur: usize) -> Result<(u32, usize), Error> {
 }
 
 fn push_line(lines: &mut Vec<(u32, u32)>, pos: u32, line: u32) {
-    if let Some((_, last)) = lines.last() {
-        if *last == line {
-            return;
-        }
+    if let Some((_, last)) = lines.last()
+        && *last == line
+    {
+        return;
     }
     lines.push((pos, line));
 }

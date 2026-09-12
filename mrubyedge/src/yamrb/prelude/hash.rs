@@ -162,7 +162,7 @@ fn mrb_hash_each(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error
     match &this.value {
         RValue::Hash(hash) => {
             let hash = hash.borrow();
-            for (_, (key, value)) in hash.iter() {
+            for (key, value) in hash.values() {
                 let args = vec![key.clone(), value.clone()];
                 match mrb_call_block(vm, block.clone(), None, &args, 0) {
                     Ok(_) => {}
@@ -198,7 +198,7 @@ fn mrb_hash_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
     };
     let hash = hash.borrow();
     let mut parts: Vec<String> = Vec::new();
-    for (_, (key, value)) in hash.iter() {
+    for (key, value) in hash.values() {
         let key_inspect: String = mrb_call_inspect(vm, key.clone())?.as_ref().try_into()?;
         let value_inspect: String = mrb_call_inspect(vm, value.clone())?.as_ref().try_into()?;
         parts.push(format!("{}=>{}", key_inspect, value_inspect));
@@ -344,7 +344,7 @@ fn mrb_hash_has_value(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
     };
 
     let search_eq = search_value.as_eq_value();
-    for (_, (_, value)) in hash.borrow().iter() {
+    for (_, value) in hash.borrow().values() {
         if value.as_eq_value() == search_eq {
             return Ok(RObject::boolean_rc(true));
         }
@@ -366,7 +366,7 @@ fn mrb_hash_key(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error>
     };
 
     let search_eq = search_value.as_eq_value();
-    for (_, (key, value)) in hash.borrow().iter() {
+    for (key, value) in hash.borrow().values() {
         if value.as_eq_value() == search_eq {
             return Ok(key.clone());
         }
@@ -475,7 +475,7 @@ fn mrb_hash_flatten(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
     };
 
     let mut result = Vec::new();
-    for (_, (key, value)) in hash.borrow().iter() {
+    for (key, value) in hash.borrow().values() {
         result.push(key.clone());
         result.push(value.clone());
     }

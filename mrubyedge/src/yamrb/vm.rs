@@ -156,7 +156,9 @@ pub struct Breadcrumb {
     // frame to its source line via the irep's debug info.
     pub irep: Option<Rc<IREP>>,
     pub pc: Option<usize>,
-    pub upper: Option<Rc<Breadcrumb>>,
+    /// Monotonic id, unique per crumb, so a stale break anchor (whose frame
+    /// was already popped) can be detected even without pointer identity.
+    pub id: u64,
 }
 
 #[derive(Debug)]
@@ -168,24 +170,15 @@ pub struct KArgs {
 
 impl Breadcrumb {
     #[cfg(feature = "mrubyedge-debug")]
-    pub fn display_breadcrumb_for_debug(&self, level: usize, max_level: usize) -> bool {
-        if level > max_level {
-            return false;
-        }
+    pub fn display_breadcrumb_for_debug(&self) {
         eprintln!(
-            "{}- Breadcrumb: event='{}', caller={}, return_reg={:?}",
-            "  ".repeat(level),
+            "- Breadcrumb: event='{}', caller={}",
             self.event,
             self.caller
                 .as_ref()
                 .map(|c| caller_label(c, self.irep.as_ref()))
                 .unwrap_or_else(|| "(none)".to_string()),
-            self.return_reg
         );
-        if let Some(upper) = &self.upper {
-            upper.display_breadcrumb_for_debug(level + 1, max_level);
-        }
-        true
     }
 }
 
@@ -206,17 +199,21 @@ pub struct VM {
     // n_args of the running frame; call_block hides the
     // callinfo, and op_enter needs the count for optional arguments.
     pub current_n_args: Cell<usize>,
-    pub current_breadcrumb: Option<Rc<Breadcrumb>>,
+    // live call-frame stack (innermost last). One crumb per
+    // call, pushed and popped like a stack; a Vec so steady-state pushes and
+    // pops never allocate after the max call depth is reached.
+    pub breadcrumbs: RefCell<Vec<Breadcrumb>>,
+    // Monotonic crumb id source; ids are unique so stale break anchors can be
+    // detected after their frame was popped.
+    pub crumb_seq: Cell<u64>,
     // call stack of the last raised exception, captured at
-    // raise time from the breadcrumb chain before unwinding destroys it.
+    // raise time from the breadcrumb stack before unwinding destroys it.
     // Outermost frame first; only frames with a name are kept.
     pub last_error_stack: RefCell<Vec<String>>,
     // landing pad captured at OP_BREAK time — the nearest
-    // do_op_send breadcrumb and its return register. Breadcrumbs popped by
-    // intermediate error paths cannot invalidate it (the Rc keeps it alive);
-    // the unwinder delivers the break value once this crumb is gone from
-    // the live chain.
-    pub break_landing: RefCell<Option<(Rc<Breadcrumb>, usize)>>,
+    // do_op_send crumb's id and its return register. The unwinder delivers
+    // the break value once that crumb is gone from the live stack.
+    pub break_landing: RefCell<Option<(u64, usize)>>,
     pub kargs: RefCell<Option<RHashMap<RSym, Rc<RObject>>>>,
     pub current_kargs: RefCell<Option<Rc<KArgs>>>,
     pub target_class: TargetContext,
@@ -370,17 +367,11 @@ impl RFnStack {
     }
 }
 
-// Break unwinding anchors on a do_op_send breadcrumb; this
-// reports whether that crumb is still alive in the current chain.
-fn breadcrumb_chain_contains(head: &Option<Rc<Breadcrumb>>, target: &Rc<Breadcrumb>) -> bool {
-    let mut cursor = head.clone();
-    while let Some(bc) = cursor {
-        if Rc::ptr_eq(&bc, target) {
-            return true;
-        }
-        cursor = bc.upper.clone();
-    }
-    false
+// Break unwinding anchors on a do_op_send breadcrumb; a
+// landing pad keeps that crumb's id, and this reports whether it is still
+// alive in the live stack (popped frames are gone from the Vec).
+fn breadcrumb_stack_contains(stack: &[Breadcrumb], target_id: u64) -> bool {
+    stack.iter().any(|b| b.id == target_id)
 }
 
 impl VM {
@@ -440,14 +431,8 @@ impl VM {
         let current_n_args = Cell::new(0);
         let last_error_stack = RefCell::new(Vec::new());
         let break_landing = RefCell::new(None);
-        let current_breadcrumb = Some(Rc::new(Breadcrumb {
-            upper: None,
-            event: "root",
-            caller: None,
-            return_reg: None,
-            irep: Some(current_irep.clone()),
-            pc: Some(0),
-        }));
+        let breadcrumbs = RefCell::new(Vec::new());
+        let crumb_seq = Cell::new(0);
         let kargs = RefCell::new(None);
         let current_kargs = RefCell::new(None);
         let target_class = TargetContext::Class(object_class.clone());
@@ -484,7 +469,8 @@ impl VM {
             current_n_args,
             last_error_stack,
             break_landing,
-            current_breadcrumb,
+            breadcrumbs,
+            crumb_seq,
             kargs,
             current_kargs,
             target_class,
@@ -598,31 +584,56 @@ impl VM {
         self.current_irep = self.irep.clone();
         self.pc.set(0);
 
-        let upper = self.current_breadcrumb.take();
-        let new_breadcrumb = Rc::new(Breadcrumb {
-            upper,
-            event: "run",
-            caller: None,
-            return_reg: None,
-            irep: Some(self.current_irep.clone()),
-            pc: Some(self.pc.get()),
-        });
-        self.current_breadcrumb.replace(new_breadcrumb);
+        self.push_breadcrumb(
+            "run",
+            None,
+            None,
+            Some(self.current_irep.clone()),
+            Some(self.pc.get()),
+        );
         self.__run()
+    }
+
+    /// Pushes a call-frame crumb with a fresh monotonic id. The Vec holds the
+    /// crumbs by value, so steady-state pushes/pops never allocate.
+    pub fn push_breadcrumb(
+        &mut self,
+        event: &'static str,
+        caller: Option<CallerLabel>,
+        return_reg: Option<usize>,
+        irep: Option<Rc<IREP>>,
+        pc: Option<usize>,
+    ) {
+        let id = self.crumb_seq.get().wrapping_add(1);
+        self.crumb_seq.set(id);
+        self.breadcrumbs.borrow_mut().push(Breadcrumb {
+            event,
+            caller,
+            return_reg,
+            irep,
+            pc,
+            id,
+        });
+    }
+
+    /// Pops the innermost call-frame crumb.
+    pub fn pop_breadcrumb(&mut self) {
+        debug_assert!(
+            !self.breadcrumbs.borrow().is_empty(),
+            "crumb stack underflow"
+        );
+        self.breadcrumbs.borrow_mut().pop();
     }
 
     /// Internal run method that manages breadcrumb stack for internal calls.
     pub fn run_internal(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
-        let upper = self.current_breadcrumb.take();
-        let new_breadcrumb = Rc::new(Breadcrumb {
-            upper,
-            event: "run_internal",
-            caller: None,
-            return_reg: None,
-            irep: Some(self.current_irep.clone()),
-            pc: Some(self.pc.get()),
-        });
-        self.current_breadcrumb.replace(new_breadcrumb);
+        self.push_breadcrumb(
+            "run_internal",
+            None,
+            None,
+            Some(self.current_irep.clone()),
+            Some(self.pc.get()),
+        );
         self.__run()
     }
 
@@ -640,16 +651,13 @@ impl VM {
         // namespace instead of the global table.
         self.current_regs()[0] = None;
 
-        let upper = self.current_breadcrumb.take();
-        let new_breadcrumb = Rc::new(Breadcrumb {
-            upper,
-            event: "eval",
-            caller: None,
-            return_reg: None,
-            irep: Some(self.current_irep.clone()),
-            pc: Some(self.pc.get()),
-        });
-        self.current_breadcrumb.replace(new_breadcrumb);
+        self.push_breadcrumb(
+            "eval",
+            None,
+            None,
+            Some(self.current_irep.clone()),
+            Some(self.pc.get()),
+        );
         self.__run()
     }
 
@@ -657,7 +665,8 @@ impl VM {
     /// irep carries debug info. The dispatch loop advances `pc` before an
     /// opcode runs, so the failing opcode sits at `pc - 1`.
     pub fn current_frame_line(&self) -> Option<u32> {
-        self.current_irep.line_at_op(self.pc.get().saturating_sub(1))
+        self.current_irep
+            .line_at_op(self.pc.get().saturating_sub(1))
     }
 
     /// call stack of the current exception, MRI-style. Each frame
@@ -667,19 +676,23 @@ impl VM {
     /// (the usual native-send/method_missing case). A synthetic <main> frame
     /// tops the stack at the top-level call site.
     pub fn capture_error_stack(&self) -> Vec<String> {
-        let mut crumbs: Vec<(String, Option<u32>)> = Vec::new();
-        let mut bc = self.current_breadcrumb.clone();
-        while let Some(b) = bc.as_ref() {
-            if let Some(label) = &b.caller {
-                let line = b
-                    .irep
-                    .as_ref()
-                    .and_then(|i| b.pc.and_then(|p| i.line_at_op(p)));
-                crumbs.push((caller_label(label, b.irep.as_ref()), line));
-            }
-            bc = b.upper.clone();
-        }
-        // crumbs is innermost -> outermost.
+        // Innermost crumb first (the Vec grows outward); crumbs without a
+        // caller label (top-level run/eval frames) are skipped.
+        let crumbs: Vec<(String, Option<u32>)> = self
+            .breadcrumbs
+            .borrow()
+            .iter()
+            .rev()
+            .filter_map(|b| {
+                b.caller.as_ref().map(|label| {
+                    let line = b
+                        .irep
+                        .as_ref()
+                        .and_then(|i| b.pc.and_then(|p| i.line_at_op(p)));
+                    (caller_label(label, b.irep.as_ref()), line)
+                })
+            })
+            .collect();
 
         let mut frames: Vec<String> = Vec::new();
         let n = crumbs.len();
@@ -756,9 +769,9 @@ impl VM {
                 // (see break_landing). The unwinder pops frames until that
                 // send's breadcrumb is gone, then delivers the value there.
                 // Without a landing pad it unwinds like any other error.
-                let break_landing: Option<(Rc<Breadcrumb>, usize)> =
+                let break_landing: Option<(u64, usize)> =
                     if matches!(e.error_type.borrow().clone(), Error::Break(_)) {
-                        self.break_landing.borrow().clone()
+                        *self.break_landing.borrow()
                     } else {
                         None
                     };
@@ -784,8 +797,8 @@ impl VM {
                         // once the anchored send crumb has been
                         // popped its frame is gone; deliver the break value
                         // into its return register and resume there.
-                        if let Some((target, treg)) = &break_landing
-                            && !breadcrumb_chain_contains(&self.current_breadcrumb, target)
+                        if let Some((target_id, treg)) = &break_landing
+                            && !breadcrumb_stack_contains(&self.breadcrumbs.borrow(), *target_id)
                             && let Error::Break(brkval) = e.error_type.borrow().clone()
                         {
                             self.current_regs()[*treg].replace(brkval);
@@ -839,7 +852,7 @@ impl VM {
                 }
                 eprintln!(
                     "{:?}: {:?} (pos={} len={})",
-                    op.code, &operand, op.pos, op.len
+                    op.code, operand, op.pos, op.len
                 );
             }
 
@@ -1124,10 +1137,12 @@ impl VM {
                     .map(|e| e.error_type.borrow().clone())
             );
             eprintln!("--- Breadcrumb ---");
-            if let Some(bc) = &self.current_breadcrumb {
-                bc.display_breadcrumb_for_debug(0, max_breadcrumb_level);
-            } else {
+            let crumbs = self.breadcrumbs.borrow();
+            if crumbs.is_empty() {
                 eprintln!("(none)");
+            }
+            for bc in crumbs.iter().rev().take(max_breadcrumb_level) {
+                bc.display_breadcrumb_for_debug();
             }
             eprintln!("=== End of VM Dump ===");
         }

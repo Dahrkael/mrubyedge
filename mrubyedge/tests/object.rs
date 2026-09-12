@@ -340,7 +340,7 @@ fn object_block_given_with_block_test() {
         .as_ref()
         .try_into()
         .unwrap();
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -365,7 +365,7 @@ fn object_block_given_without_block_test() {
         .as_ref()
         .try_into()
         .unwrap();
-    assert_eq!(result, false);
+    assert!(!result);
 }
 
 #[test]
@@ -390,7 +390,7 @@ fn object_block_given_with_args_and_block_test() {
         .as_ref()
         .try_into()
         .unwrap();
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -420,7 +420,7 @@ fn object_block_given_with_args_without_block_test() {
     .as_ref()
     .try_into()
     .unwrap();
-    assert_eq!(result, false);
+    assert!(!result);
 }
 
 #[test]
@@ -442,7 +442,7 @@ fn object_respond_to_existing_method_test() {
         .as_ref()
         .try_into()
         .unwrap();
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -464,7 +464,7 @@ fn object_respond_to_non_existing_method_test() {
         .as_ref()
         .try_into()
         .unwrap();
-    assert_eq!(result, false);
+    assert!(!result);
 }
 
 #[test]

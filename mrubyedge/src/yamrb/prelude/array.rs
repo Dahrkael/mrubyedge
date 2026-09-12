@@ -179,10 +179,7 @@ pub fn mrb_array_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
                     let idx = RObject::integer_rc(i);
                     mrb_call_block(vm, b.clone(), None, std::slice::from_ref(&idx), 0)?
                 }
-                None => positional
-                    .get(1)
-                    .cloned()
-                    .unwrap_or_else(|| RObject::nil_rc()),
+                None => positional.get(1).cloned().unwrap_or_else(RObject::nil_rc),
             };
             array.push(elem);
         }
@@ -220,7 +217,9 @@ pub fn mrb_array_get_index(this: Rc<RObject>, args: &[Rc<RObject>]) -> Result<Rc
     };
     let index: i64 = args
         .first()
-        .ok_or_else(|| Error::ArgumentError("wrong number of arguments (given 0, expected 1)".to_string()))?
+        .ok_or_else(|| {
+            Error::ArgumentError("wrong number of arguments (given 0, expected 1)".to_string())
+        })?
         .as_ref()
         .try_into()?;
     let elems = array.borrow();
@@ -544,10 +543,7 @@ fn mrb_array_first(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Err
     let this: Vec<Rc<RObject>> = vm.getself()?.as_ref().try_into()?;
 
     if args.is_empty() {
-        Ok(this
-            .first()
-            .cloned()
-            .unwrap_or_else(|| RObject::nil_rc()))
+        Ok(this.first().cloned().unwrap_or_else(RObject::nil_rc))
     } else {
         let n: i64 = args[0].as_ref().try_into()?;
         if n < 0 {
@@ -563,10 +559,7 @@ fn mrb_array_last(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Erro
     let this: Vec<Rc<RObject>> = vm.getself()?.as_ref().try_into()?;
 
     if args.is_empty() {
-        Ok(this
-            .last()
-            .cloned()
-            .unwrap_or_else(|| RObject::nil_rc()))
+        Ok(this.last().cloned().unwrap_or_else(RObject::nil_rc))
     } else {
         let n: i64 = args[0].as_ref().try_into()?;
         if n < 0 {
@@ -582,7 +575,7 @@ fn mrb_array_last(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Erro
 fn mrb_array_pop(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
     let this = vm.getself()?;
     let removed = this.array_borrow_mut()?.pop();
-    Ok(removed.unwrap_or_else(|| RObject::nil_rc()))
+    Ok(removed.unwrap_or_else(RObject::nil_rc))
 }
 
 // Array#shift: Removes and returns the first element (destructive)

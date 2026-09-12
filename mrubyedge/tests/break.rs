@@ -217,7 +217,10 @@ fn dump_block_registers() {
                     .join(", ")
             })
             .unwrap_or_else(|| "-".to_string());
-        eprintln!("[dump] {pad}{name}: nlocals={} nregs={} locals=[{lv}]", irep.nlocals, irep.nregs);
+        eprintln!(
+            "[dump] {pad}{name}: nlocals={} nregs={} locals=[{lv}]",
+            irep.nlocals, irep.nregs
+        );
         for op in irep.code.iter().take(14) {
             eprintln!("[dump] {pad}  {:?} {:?}", op.code, op.operand);
         }

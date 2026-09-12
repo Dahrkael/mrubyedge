@@ -273,7 +273,7 @@ fn mrb_string_unpack(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
             b'q' => {
                 let value = i64::from_le_bytes(bytes_of::<8>(&value, cursor)?);
                 cursor += 8;
-                value as i64
+                value
             }
             b'L' | b'I' => {
                 let value = u32::from_le_bytes(bytes_of::<4>(&value, cursor)?);
@@ -313,7 +313,7 @@ fn mrb_string_unpack(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
                 return Err(Error::RuntimeError("Unsupported format".to_string()));
             }
         };
-        mrb_array_push(result.clone(), &[RObject::integer_rc(value as i64)])?;
+        mrb_array_push(result.clone(), &[RObject::integer_rc(value)])?;
     }
 
     Ok(result)

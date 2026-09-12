@@ -99,7 +99,10 @@ fn cvar_uninitialized_raises_name_error_test() {
     let binary = mrbc_compile("cvar_uninitialized", code);
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
-    assert!(vm.run().is_err(), "uninitialized class variable should error");
+    assert!(
+        vm.run().is_err(),
+        "uninitialized class variable should error"
+    );
 }
 
 #[test]

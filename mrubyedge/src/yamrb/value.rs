@@ -705,11 +705,7 @@ impl RObject {
                 let parent_obj = RObject::class(module_class.clone(), vm);
                 let super_class = parent_obj.initialize_or_get_singleton_class_for_class(vm);
                 let class_name = format!("#<Module:{}>", m.sym_id.name);
-                let sclass = Rc::new(RClass::new_singleton(
-                    &class_name,
-                    Some(super_class),
-                    None,
-                ));
+                let sclass = Rc::new(RClass::new_singleton(&class_name, Some(super_class), None));
                 sclass.update_module_weakref();
                 self.set_singleton_class(Some(sclass.clone()));
                 return sclass;
@@ -1516,7 +1512,7 @@ impl RClass {
             Error::ZeroDivisionError => vm.get_class_by_name("ZeroDivisionError"),
 
             Error::TaggedError(tag, _) => vm
-                .get_const_by_name(&tag)
+                .get_const_by_name(tag)
                 .and_then(|obj| {
                     if let RValue::Class(c) = &obj.value {
                         Some(c.clone())

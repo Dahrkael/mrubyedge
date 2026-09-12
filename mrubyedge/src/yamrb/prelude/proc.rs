@@ -5,7 +5,7 @@ use crate::{
     yamrb::{
         helpers::{mrb_call_block, mrb_define_class_cmethod, mrb_define_cmethod},
         value::*,
-        vm::{Breadcrumb, CallerLabel, VM},
+        vm::{CallerLabel, VM},
     },
 };
 
@@ -23,20 +23,20 @@ fn mrb_proc_new(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error
 }
 
 pub fn mrb_proc_call(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    // handle Proc#call as special
+    // handle Proc#call as special: replace the send crumb with a Proc#call
+    // crumb, keeping its return register so break and unwinding still land.
     let cur = vm
-        .current_breadcrumb
-        .take()
+        .breadcrumbs
+        .borrow_mut()
+        .pop()
         .expect("empty breadcrumb on call");
-    let new_breadcrumb = Rc::new(Breadcrumb {
-        upper: cur.upper.clone(),
-        caller: Some(CallerLabel::Static("Proc#call")),
-        event: "_proc_call_via_method",
-        return_reg: cur.return_reg,
-        irep: Some(vm.current_irep.clone()),
-        pc: Some(vm.pc.get().saturating_sub(1)),
-    });
-    vm.current_breadcrumb.replace(new_breadcrumb);
+    vm.push_breadcrumb(
+        "_proc_call_via_method",
+        Some(CallerLabel::Static("Proc#call")),
+        cur.return_reg,
+        Some(vm.current_irep.clone()),
+        Some(vm.pc.get().saturating_sub(1)),
+    );
 
     let this = vm.getself()?;
     mrb_call_block(vm, this.clone(), None, args, 0)

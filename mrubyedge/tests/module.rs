@@ -258,7 +258,10 @@ X
     let binary = mrbc_compile("class_const_no_leak", script);
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
-    assert!(vm.run().is_err(), "bare top-level X should not resolve C::X");
+    assert!(
+        vm.run().is_err(),
+        "bare top-level X should not resolve C::X"
+    );
 }
 
 // KNOWN LIMITATION, not worth fixing by design: real Ruby binds a constant
@@ -312,7 +315,10 @@ Child.new.r
     let binary = mrbc_compile("superclass_const_limitation", script);
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
-    assert!(vm.run().is_err(), "Child.new.r should fail (documented limitation)");
+    assert!(
+        vm.run().is_err(),
+        "Child.new.r should fail (documented limitation)"
+    );
 }
 
 // KNOWN LIMITATION, not worth fixing by design: a bare constant read inside
@@ -339,7 +345,10 @@ C.new.m
     let binary = mrbc_compile("included_module_const_limitation", script);
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
-    assert!(vm.run().is_err(), "C.new.m should fail (documented limitation)");
+    assert!(
+        vm.run().is_err(),
+        "C.new.m should fail (documented limitation)"
+    );
 }
 
 #[test]

@@ -662,10 +662,7 @@ pub(crate) fn op_setiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val = vm.get_current_regs_cloned(a as usize)?;
     // Borrow the sym name instead of cloning it; the ivar map hashes it
     // transiently and never stores the key by value.
-    this.set_ivar(
-        vm.current_irep.syms[b as usize].name.as_str(),
-        val.clone(),
-    );
+    this.set_ivar(vm.current_irep.syms[b as usize].name.as_str(), val.clone());
     Ok(())
 }
 
@@ -696,8 +693,7 @@ pub(crate) fn op_setcv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 /// Class context for cvar resolution: the class whose body runs (self is a
 /// Class) or the runtime class of self inside an instance method.
 fn class_context(vm: &mut VM) -> Result<Rc<RClass>, Error> {
-    let obj = vm
-        .current_regs()[0]
+    let obj = vm.current_regs()[0]
         .clone()
         .ok_or_else(|| Error::internal("self is not assigned"))?;
     match &obj.value {
@@ -719,7 +715,9 @@ fn cvar_lookup(vm: &mut VM, name: &str) -> Result<Rc<RObject>, Error> {
         }
         current = klass.super_class.clone();
     }
-    Err(Error::NameError(format!("uninitialized class variable {name}")))
+    Err(Error::NameError(format!(
+        "uninitialized class variable {name}"
+    )))
 }
 
 fn cvar_set(vm: &mut VM, name: &str, value: Rc<RObject>) {
@@ -731,10 +729,7 @@ fn cvar_set(vm: &mut VM, name: &str, value: Rc<RObject>) {
     while let Some(klass) = current.clone() {
         let wrapper = RObject::class(klass.clone(), vm);
         if wrapper.ivar.borrow().contains_key(name) {
-            wrapper
-                .ivar
-                .borrow_mut()
-                .insert(Rc::from(name), value);
+            wrapper.ivar.borrow_mut().insert(Rc::from(name), value);
             return;
         }
         current = klass.super_class.clone();
@@ -790,10 +785,7 @@ pub(crate) fn op_setconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             // define_module mirror there); keep both in sync so reads that
             // resolve through the class of self agree.
             vm.consts.insert(name.clone(), val.clone());
-            vm.object_class
-                .consts
-                .borrow_mut()
-                .insert(name, val);
+            vm.object_class.consts.borrow_mut().insert(name, val);
         }
     }
     Ok(())
@@ -1088,7 +1080,7 @@ fn consume_ensure_block(vm: &mut VM) -> Result<(), Error> {
             }
             eprintln!(
                 "{:?}: {:?} (pos={} len={})",
-                op.code, &operand, op.pos, op.len
+                op.code, operand, op.pos, op.len
             );
         }
 
@@ -1114,7 +1106,7 @@ pub(crate) fn op_except(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         .exception
         .take()
         .map(|e| RObject::exception(e).to_refcount_assigned())
-        .unwrap_or_else(|| RObject::nil_rc());
+        .unwrap_or_else(RObject::nil_rc);
     vm.current_regs()[a as usize].replace(val);
     Ok(())
 }
@@ -1300,7 +1292,6 @@ pub(crate) fn do_op_send(
     if let Some(irep) = method.irep.as_ref() {
         vm.check_frame_window(a as usize, irep.nregs)?;
     }
-    let upper = vm.current_breadcrumb.take();
     // lazy frame label; the receiver class is cloned (no
     // allocation) and the name is resolved from the frame irep at error time.
     let receiver = match &recv.value {
@@ -1308,19 +1299,17 @@ pub(crate) fn do_op_send(
         RValue::Module(m) => CallerReceiver::Module(m.clone()),
         _ => CallerReceiver::Instance(recv.get_class(vm)),
     };
-    let new_breadcrumb = Rc::new(Breadcrumb {
-        upper,
-        event: "do_op_send",
-        caller: Some(CallerLabel::Send {
+    vm.push_breadcrumb(
+        "do_op_send",
+        Some(CallerLabel::Send {
             receiver,
             sym_index: b as usize,
             use_method_missing: via_method_missing && method.is_rb_func,
         }),
-        return_reg: Some(a as usize),
-        irep: Some(irep.clone()),
-        pc: Some(vm.pc.get().saturating_sub(1)),
-    });
-    vm.current_breadcrumb.replace(new_breadcrumb);
+        Some(a as usize),
+        Some(irep.clone()),
+        Some(vm.pc.get().saturating_sub(1)),
+    );
 
     vm.current_regs()[a as usize].replace(recv.clone());
     if !method.is_rb_func {
@@ -1370,13 +1359,7 @@ pub(crate) fn do_op_send(
         match res {
             Ok(val) => {
                 vm.current_regs()[a as usize].replace(val);
-                let cur = vm
-                    .current_breadcrumb
-                    .take()
-                    .expect("send should push breadcrumb");
-                let upper = cur.upper.clone();
-                vm.current_breadcrumb
-                    .replace(upper.expect("should have upper breadcrumb"));
+                vm.pop_breadcrumb();
             }
             Err(e) => {
                 vm.current_regs()[a as usize].replace(RObject::nil_rc());
@@ -1390,11 +1373,7 @@ pub(crate) fn do_op_send(
                     let exception = RException::from_error(vm, &e);
                     vm.exception = Some(Rc::new(exception));
                 }
-                if let Some(cur) = vm.current_breadcrumb.take()
-                    && let Some(upper) = cur.upper.clone()
-                {
-                    vm.current_breadcrumb.replace(upper);
-                }
+                vm.pop_breadcrumb();
                 return Err(e);
             }
         }
@@ -1427,7 +1406,7 @@ fn unshift_method_name(vm: &mut VM, method_id: &RSym, a: usize, total_args: usiz
     for i in (a + 1..=a + total_args).rev() {
         let val = vm.current_regs().get(i).and_then(|r| r.as_ref().cloned());
         val.as_ref().cloned().map(|v| mrb_call_inspect(vm, v));
-        vm.current_regs()[i + 1].replace(val.unwrap_or_else(|| RObject::nil_rc()));
+        vm.current_regs()[i + 1].replace(val.unwrap_or_else(RObject::nil_rc));
     }
     vm.current_regs()[a + 1].replace(method_name);
 }
@@ -1459,16 +1438,13 @@ fn kwarg_op_return(vm: &mut VM) {
 }
 
 pub(crate) fn op_call(vm: &mut VM, _operand: &Fetched) -> Result<(), Error> {
-    let upper = vm.current_breadcrumb.take();
-    let new_breadcrumb = Rc::new(Breadcrumb {
-        upper,
-        event: "op_call",
-        caller: Some(CallerLabel::Static("<tailcall>")),
-        return_reg: None,
-        irep: Some(vm.current_irep.clone()),
-        pc: Some(vm.pc.get().saturating_sub(1)),
-    });
-    vm.current_breadcrumb.replace(new_breadcrumb);
+    vm.push_breadcrumb(
+        "op_call",
+        Some(CallerLabel::Static("<tailcall>")),
+        None,
+        Some(vm.current_irep.clone()),
+        Some(vm.pc.get().saturating_sub(1)),
+    );
     push_callinfo(vm, "<tailcall>".into(), 0, None, 0, false);
 
     vm.pc.set(0);
@@ -1533,7 +1509,7 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         })?;
     if !method.is_rb_func {
         let func = vm.get_fn(method.func.unwrap()).ok_or_else(|| {
-            Error::internal(format!("functon registerd but no entry found: {}", &sym_id))
+            Error::internal(format!("functon registerd but no entry found: {}", sym_id))
         })?;
         let res = func(vm, &args);
         for i in (a as usize + 1)..(a as usize + arg_count + 1) {
@@ -1568,20 +1544,16 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vm.current_regs()[a as usize + 1 + i].replace(arg.clone());
     }
     if splat {
-        vm.current_regs()[a as usize + arg_count + 1]
-            .replace(blk.unwrap_or_else(RObject::nil_rc));
+        vm.current_regs()[a as usize + arg_count + 1].replace(blk.unwrap_or_else(RObject::nil_rc));
     }
 
-    let upper = vm.current_breadcrumb.take();
-    let new_breadcrumb = Rc::new(Breadcrumb {
-        upper,
-        event: "super",
-        caller: Some(CallerLabel::Owned(format!("super({})", sym_id))),
-        return_reg: None,
-        irep: Some(vm.current_irep.clone()),
-        pc: Some(vm.pc.get().saturating_sub(1)),
-    });
-    vm.current_breadcrumb.replace(new_breadcrumb);
+    vm.push_breadcrumb(
+        "super",
+        Some(CallerLabel::Owned(format!("super({})", sym_id))),
+        None,
+        Some(vm.current_irep.clone()),
+        Some(vm.pc.get().saturating_sub(1)),
+    );
 
     vm.current_regs()[a as usize].replace(recv.clone());
     push_callinfo(
@@ -1763,8 +1735,7 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     // already holds an argument (native funcalls can pass a proc as a
     // positional argument to a `&block` parameter, e.g. Enumerable#map).
     if vm.current_regs()[(block_len + 1) as usize].is_none() {
-        vm.current_regs()[(block_len + 1) as usize]
-            .replace(blk.unwrap_or_else(RObject::nil_rc));
+        vm.current_regs()[(block_len + 1) as usize].replace(blk.unwrap_or_else(RObject::nil_rc));
     }
 
     Ok(())
@@ -1849,13 +1820,12 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             environ.capture_no_clone(regs0_cloned);
             if let Some(ref mut captured) = *environ.captured.borrow_mut() {
                 for slot in captured.iter_mut() {
-                    if let Some(obj) = slot {
-                        if let RValue::Proc(p) = &obj.value
-                            && let Some(pe) = &p.environ
-                            && Rc::ptr_eq(&environ, pe)
-                        {
-                            *slot = None;
-                        }
+                    if let Some(obj) = slot
+                        && let RValue::Proc(p) = &obj.value
+                        && let Some(pe) = &p.environ
+                        && Rc::ptr_eq(&environ, pe)
+                    {
+                        *slot = None;
                     }
                 }
             }
@@ -1877,10 +1847,7 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
     let ci = vm.current_callinfo.take();
     if ci.is_none() || ci.as_ref().is_some_and(|c| c.is_funcall) {
-        let cur = vm.current_breadcrumb.take().expect("not found breadcrumb");
-        if let Some(upper) = &cur.as_ref().upper {
-            vm.current_breadcrumb.replace(upper.clone());
-        }
+        vm.pop_breadcrumb();
         // When called from mrb_funcall, return error if there's an exception
 
         if let Some(e) = &vm.exception {
@@ -1907,10 +1874,7 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         kwarg_op_return(vm);
     }
 
-    let cur = vm.current_breadcrumb.take().expect("not found breadcrumb");
-    if let Some(upper) = &cur.as_ref().upper {
-        vm.current_breadcrumb.replace(upper.clone());
-    }
+    vm.pop_breadcrumb();
     Ok(())
 }
 
@@ -1929,16 +1893,15 @@ pub(crate) fn op_break(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let val = vm.get_current_regs_cloned(a)?;
     // record where this break must land — the nearest
-    // do_op_send breadcrumb in the chain, captured BEFORE any unwinding or
-    // intermediate error handling can pop crumbs.
-    let mut cursor = vm.current_breadcrumb.clone();
+    // do_op_send crumb in the stack, captured BEFORE any unwinding or
+    // intermediate error handling can pop crumbs. The crumb id stays valid
+    // after pops, so the unwinder can tell when that frame is gone.
     let mut landing = None;
-    while let Some(bc) = cursor {
+    for bc in vm.breadcrumbs.borrow().iter().rev() {
         if bc.event == "do_op_send" && bc.return_reg.is_some() {
-            landing = Some((bc.clone(), bc.return_reg.unwrap_or(0)));
+            landing = Some((bc.id, bc.return_reg.unwrap_or(0)));
             break;
         }
-        cursor = bc.upper.clone();
     }
     vm.break_landing.replace(landing);
     Err(Error::Break(val))
@@ -2081,7 +2044,7 @@ fn compare_via_spaceship(
     val2: Rc<RObject>,
     op: &str,
 ) -> Result<Rc<RObject>, Error> {
-    let r = mrb_funcall(vm, Some(val1.clone()), "<=>", &[val2.clone()])?;
+    let r = mrb_funcall(vm, Some(val1.clone()), "<=>", std::slice::from_ref(&val2))?;
     match r.value {
         RValue::Nil => Err(Error::ArgumentError("comparison failed".into())),
         _ => {
@@ -2275,10 +2238,7 @@ pub(crate) fn op_aref(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     match &array.value {
         RValue::Array(ary) => {
             let ary = ary.borrow();
-            let val = ary
-                .get(index)
-                .cloned()
-                .unwrap_or_else(|| RObject::nil_rc());
+            let val = ary.get(index).cloned().unwrap_or_else(RObject::nil_rc);
             vm.current_regs()[a as usize].replace(val);
         }
         _ => {
@@ -2576,26 +2536,24 @@ pub(crate) fn op_class(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let mut reused: Option<Rc<RObject>> = None;
     let mut scopes: Vec<Option<Rc<RModule>>> =
         vec![current_namespace(vm), Some(vm.object_class.module.clone())];
-    for scope in scopes.drain(..) {
-        if let Some(ns) = scope {
-            // Clone out and drop the Ref guard before any borrow_mut on the
-            // same consts: reopening an existing class hits this path with
-            // cur == ns.
-            let found = ns
-                .consts
-                .borrow()
-                .get(&lookup_key)
-                .cloned()
-                .filter(|v| matches!(v.value, RValue::Class(_)));
-            if let Some(existing) = found {
-                if let Some(cur) = current_namespace(vm) {
-                    cur.consts
-                        .borrow_mut()
-                        .insert(lookup_key.clone(), existing.clone());
-                }
-                reused = Some(existing);
-                break;
+    for ns in scopes.drain(..).flatten() {
+        // Clone out and drop the Ref guard before any borrow_mut on the
+        // same consts: reopening an existing class hits this path with
+        // cur == ns.
+        let found = ns
+            .consts
+            .borrow()
+            .get(&lookup_key)
+            .cloned()
+            .filter(|v| matches!(v.value, RValue::Class(_)));
+        if let Some(existing) = found {
+            if let Some(cur) = current_namespace(vm) {
+                cur.consts
+                    .borrow_mut()
+                    .insert(lookup_key.clone(), existing.clone());
             }
+            reused = Some(existing);
+            break;
         }
     }
     if let Some(existing) = reused {
@@ -2643,20 +2601,19 @@ pub(crate) fn op_module(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let search_scopes: Vec<Option<Rc<RModule>>> =
         vec![current_namespace(vm), Some(vm.object_class.module.clone())];
     for scope in &search_scopes {
-        if let Some(ns) = scope {
-            if let Some(existing) = ns.consts.borrow().get(&lookup_key).cloned() {
-                if let RValue::Module(ref _m) = existing.value {
-                    vm.current_regs()[a as usize].replace(existing);
-                    return Ok(());
-                }
-            }
-        }
-    }
-    if let Some(existing) = vm.get_const_by_name(&lookup_key) {
-        if let RValue::Module(_) = existing.value {
+        if let Some(ns) = scope
+            && let Some(existing) = ns.consts.borrow().get(&lookup_key).cloned()
+            && let RValue::Module(ref _m) = existing.value
+        {
             vm.current_regs()[a as usize].replace(existing);
             return Ok(());
         }
+    }
+    if let Some(existing) = vm.get_const_by_name(&lookup_key)
+        && let RValue::Module(_) = existing.value
+    {
+        vm.current_regs()[a as usize].replace(existing);
+        return Ok(());
     }
 
     let name = name.name;
@@ -2688,16 +2645,13 @@ pub(crate) fn op_exec(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let irep = vm.current_irep.reps[b as usize].clone();
     vm.check_frame_window(a as usize, irep.nregs)?;
 
-    let upper = vm.current_breadcrumb.take();
-    let new_breadcrumb = Rc::new(Breadcrumb {
-        upper,
-        event: "exec",
-        caller: Some(CallerLabel::Static("<exec>")),
-        return_reg: None,
-        irep: Some(vm.current_irep.clone()),
-        pc: Some(vm.pc.get().saturating_sub(1)),
-    });
-    vm.current_breadcrumb.replace(new_breadcrumb);
+    vm.push_breadcrumb(
+        "exec",
+        Some(CallerLabel::Static("<exec>")),
+        None,
+        Some(vm.current_irep.clone()),
+        Some(vm.pc.get().saturating_sub(1)),
+    );
     push_callinfo(vm, "<exec>".into(), 0, None, a as usize, false);
 
     vm.pc.set(0);

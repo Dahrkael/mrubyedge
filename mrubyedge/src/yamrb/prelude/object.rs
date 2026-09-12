@@ -204,18 +204,22 @@ pub fn mrb_object_is_equal(vm: &mut VM, lhs: Rc<RObject>, rhs: Rc<RObject>) -> R
     let primitive = |o: &Rc<RObject>| {
         matches!(
             o.value,
-            RValue::Integer(_) | RValue::Float(_) | RValue::String(..) | RValue::Bool(_) | RValue::Nil | RValue::Symbol(_)
+            RValue::Integer(_)
+                | RValue::Float(_)
+                | RValue::String(..)
+                | RValue::Bool(_)
+                | RValue::Nil
+                | RValue::Symbol(_)
         )
     };
     if primitive(&lhs) && primitive(&rhs) {
         return structural();
     }
-    if let Some((owner, _method)) = resolve_method(&lhs.get_class(vm), "==") {
-        if owner.sym_id.name != "Object" {
-            if let Ok(r) = mrb_funcall(vm, Some(lhs.clone()), "==", std::slice::from_ref(&rhs)) {
-                return r;
-            }
-        }
+    if let Some((owner, _method)) = resolve_method(&lhs.get_class(vm), "==")
+        && owner.sym_id.name != "Object"
+        && let Ok(r) = mrb_funcall(vm, Some(lhs.clone()), "==", std::slice::from_ref(&rhs))
+    {
+        return r;
     }
     structural()
 }

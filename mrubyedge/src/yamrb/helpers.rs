@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{Error, yamrb::vm::Breadcrumb};
+use crate::Error;
 
 use super::{
     optable::push_callinfo,
@@ -143,16 +143,13 @@ pub fn mrb_call_block(
             .clone()
             .ok_or_else(|| Error::RuntimeError("No block self assigned".to_string()))?,
     };
-    let upper = vm.current_breadcrumb.take();
-    let new_breadcrumb = Rc::new(Breadcrumb {
-        upper,
-        event: "block_call",
-        caller: None,
-        return_reg: None,
-        irep: Some(vm.current_irep.clone()),
-        pc: Some(vm.pc.get().saturating_sub(1)),
-    });
-    vm.current_breadcrumb.replace(new_breadcrumb);
+    vm.push_breadcrumb(
+        "block_call",
+        None,
+        None,
+        Some(vm.current_irep.clone()),
+        Some(vm.pc.get().saturating_sub(1)),
+    );
     let res = if block.is_rb_func {
         call_block(vm, block, recv, args, None, return_register)
     } else if block.is_fnblock {
@@ -165,10 +162,7 @@ pub fn mrb_call_block(
             "Cannot call non-block RProc".to_string(),
         ))
     };
-    let cur = vm.current_breadcrumb.take().expect("not found breadcrumb");
-    if let Some(upper) = &cur.as_ref().upper {
-        vm.current_breadcrumb.replace(upper.clone());
-    }
+    vm.pop_breadcrumb();
     res
 }
 
@@ -212,26 +206,21 @@ pub fn mrb_funcall(
         }
     };
 
-    let upper = vm.current_breadcrumb.take();
-    // lazy frame label; the receiver class is cloned (no
-    // allocation) and only formatted when the error stack is captured.
     let receiver = match &recv.value {
         RValue::Class(c) => CallerReceiver::Class(c.clone()),
         RValue::Module(m) => CallerReceiver::Module(m.clone()),
         _ => CallerReceiver::Instance(recv.get_class(vm)),
     };
-    let new_breadcrumb = Rc::new(Breadcrumb {
-        upper,
-        event: "funcall",
-        caller: Some(CallerLabel::Named {
+    vm.push_breadcrumb(
+        "funcall",
+        Some(CallerLabel::Named {
             receiver,
             method: name.to_string(),
         }),
-        return_reg: None,
-        irep: Some(vm.current_irep.clone()),
-        pc: Some(vm.pc.get().saturating_sub(1)),
-    });
-    vm.current_breadcrumb.replace(new_breadcrumb);
+        None,
+        Some(vm.current_irep.clone()),
+        Some(vm.pc.get().saturating_sub(1)),
+    );
 
     let res = if method.is_rb_func {
         let method_id = method
@@ -258,10 +247,7 @@ pub fn mrb_funcall(
 
         res
     };
-    let cur = vm.current_breadcrumb.take().expect("not found breadcrumb");
-    if let Some(upper) = &cur.as_ref().upper {
-        vm.current_breadcrumb.replace(upper.clone());
-    }
+    vm.pop_breadcrumb();
 
     res
 }

@@ -567,8 +567,7 @@ fn mrb_enumerable_minmax(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObjec
 
     if collected.is_empty() {
         return Ok(
-            RObject::array(vec![RObject::nil_rc(), RObject::nil_rc()])
-                .to_refcount_assigned(),
+            RObject::array(vec![RObject::nil_rc(), RObject::nil_rc()]).to_refcount_assigned()
         );
     }
 
@@ -723,7 +722,8 @@ fn mrb_enumerable_reduce(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
             // Call block with (accumulator, element)
             let current_acc = acc_array[0].clone();
             let block = original_block.clone();
-            let result = record_and_reraise_break(vm, block, &[current_acc, current_elem], &broken_ref)?;
+            let result =
+                record_and_reraise_break(vm, block, &[current_acc, current_elem], &broken_ref)?;
 
             // Update accumulator
             mrb_funcall(vm, Some(acc_ref.clone()), "pop", &[])?;
