@@ -2554,7 +2554,7 @@ pub(crate) fn op_module(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     for scope in &search_scopes {
         if let Some(ns) = scope {
             if let Some(existing) = ns.consts.borrow().get(&lookup_key).cloned() {
-                if let RValue::Module(ref m) = existing.value {
+                if let RValue::Module(ref _m) = existing.value {
                     vm.current_regs()[a as usize].replace(existing);
                     return Ok(());
                 }
