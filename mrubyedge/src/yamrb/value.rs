@@ -1192,6 +1192,78 @@ impl TryFrom<&RObject> for bool {
     }
 }
 
+// Numeric coercions over unboxed `Value`: mirror the `&RObject` impls above
+// exactly so native methods reading `Option<Value>` args behave identically.
+// The `Object` arm delegates to the boxed impl for values produced by old
+// paths (a boxed numeric returned by legacy code).
+
+macro_rules! value_numeric_try_from {
+    ($t:ty, $int:expr, $f:expr) => {
+        impl TryFrom<&Value> for $t {
+            type Error = Error;
+
+            fn try_from(value: &Value) -> Result<Self, Self::Error> {
+                match value {
+                    Value::Integer(i) => Ok($int(*i)),
+                    Value::Float(f) => Ok($f(*f)),
+                    // 1/0 become i64 then $int (real cast), so a plain integer
+                    // literal never triggers an unnecessary_cast lint.
+                    Value::Bool(b) => Ok($int(if *b { 1i64 } else { 0i64 })),
+                    Value::Object(o) => <$t>::try_from(o.as_ref()),
+                    Value::Nil | Value::Symbol(_) => Err(Error::TypeMismatch),
+                }
+            }
+        }
+    };
+}
+
+value_numeric_try_from!(i32, |i| i as i32, |f| f as i32);
+value_numeric_try_from!(u32, |i| i as u32, |f| f as u32);
+value_numeric_try_from!(i64, |i| i, |f| f as i64);
+value_numeric_try_from!(u64, |i| i as u64, |f| f as u64);
+value_numeric_try_from!(usize, |i| i as usize, |f| f as usize);
+value_numeric_try_from!(f32, |i| i as f32, |f| f as f32);
+value_numeric_try_from!(f64, |i| i as f64, |f| f);
+
+impl TryFrom<&Value> for bool {
+    type Error = Error;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Bool(b) => Ok(*b),
+            Value::Integer(i) => Ok(*i != 0),
+            Value::Nil => Ok(false),
+            Value::Object(o) => bool::try_from(o.as_ref()),
+            Value::Float(_) | Value::Symbol(_) => Err(Error::TypeMismatch),
+        }
+    }
+}
+
+// Object coercions over `Value` delegate to the boxed impl, boxing only when
+// the value is an immediate. Semantics match `TryFrom<&RObject>` exactly.
+macro_rules! value_obj_try_from {
+    ($t:ty) => {
+        impl TryFrom<&Value> for $t {
+            type Error = Error;
+
+            fn try_from(value: &Value) -> Result<Self, Self::Error> {
+                <$t>::try_from(value.to_rc().as_ref())
+            }
+        }
+    };
+}
+
+value_obj_try_from!(String);
+value_obj_try_from!(Vec<u8>);
+value_obj_try_from!(Vec<Rc<RObject>>);
+value_obj_try_from!(Vec<(Rc<RObject>, Rc<RObject>)>);
+value_obj_try_from!((i32, i32));
+value_obj_try_from!((i32, i32, i32));
+value_obj_try_from!((i32, i32, i32, i32));
+value_obj_try_from!((i64, u32));
+value_obj_try_from!((i64, u32, i32));
+value_obj_try_from!(*mut u8);
+
 impl TryFrom<&RObject> for String {
     type Error = Error;
 
