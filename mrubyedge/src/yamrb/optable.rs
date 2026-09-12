@@ -2156,17 +2156,20 @@ pub(crate) fn op_module(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let parent_module = current_namespace(vm);
     let module = vm.define_module(&name, parent_module.clone());
 
-    let module_value = RObject::module(module.clone()).to_refcount_assigned();
+    // one canonical wrapper shared by consts and the body
+    // self register; two wrappers made body-self singletons invisible to
+    // constant lookups.
+    let module_value = Rc::new(RObject::module(module.clone()));
     if let Some(parent) = parent_module {
         parent
             .consts
             .borrow_mut()
-            .insert(name.clone(), module_value);
+            .insert(name.clone(), module_value.clone());
     } else {
-        vm.consts.insert(name.clone(), module_value);
+        vm.consts.insert(name.clone(), module_value.clone());
     }
 
-    vm.current_regs()[a as usize].replace(Rc::new(module.into()));
+    vm.current_regs()[a as usize].replace(module_value);
     Ok(())
 }
 

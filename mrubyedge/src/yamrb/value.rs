@@ -431,9 +431,34 @@ impl RObject {
         }
     }
 
+    // singleton classes are stored per object identity.
+    // Classes and modules route to their underlying RModule so wrapper
+    // duplicates (op_tclass, ad hoc RObject::module) share one cell.
+    pub(crate) fn get_singleton_class(&self) -> Option<Rc<RClass>> {
+        match &self.value {
+            RValue::Class(c) => c.module.singleton_class.borrow().clone(),
+            RValue::Module(m) => m.singleton_class.borrow().clone(),
+            _ => self.singleton_class.borrow().clone(),
+        }
+    }
+
+    pub(crate) fn set_singleton_class(&self, sclass: Option<Rc<RClass>>) {
+        match &self.value {
+            RValue::Class(c) => {
+                c.module.singleton_class.replace(sclass);
+            }
+            RValue::Module(m) => {
+                m.singleton_class.replace(sclass);
+            }
+            _ => {
+                self.singleton_class.replace(sclass);
+            }
+        };
+    }
+
     pub(crate) fn initialize_or_get_singleton_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
-        if let Some(sclass) = self.singleton_class.borrow().as_ref() {
-            return sclass.clone();
+        if let Some(sclass) = self.get_singleton_class() {
+            return sclass;
         }
 
         let class_name = {
@@ -455,7 +480,7 @@ impl RObject {
         ));
         sclass.update_module_weakref();
 
-        self.singleton_class.replace(Some(sclass.clone()));
+        self.set_singleton_class(Some(sclass.clone()));
         sclass
     }
 
@@ -463,25 +488,26 @@ impl RObject {
         self: &Rc<Self>,
         vm: &mut VM,
     ) -> Rc<RClass> {
-        if self.singleton_class.borrow().is_some() {
-            return self.singleton_class.borrow().as_ref().unwrap().clone();
+        if let Some(sclass) = self.get_singleton_class() {
+            return sclass;
         }
 
-        // Local patch: support modules (not just classes) so that
-        // `def self.method` works inside module bodies.
         let class = match &self.value {
             RValue::Class(c) => c.clone(),
             RValue::Module(m) => {
-                // Create a singleton class whose superclass is the Class class.
+                // Metaclass chain: singleton(Module), mirroring how class
+                // singletons chain to their superclass metaclass.
+                let module_class = vm.get_class_by_name("Module");
+                let parent_obj = RObject::class(module_class.clone(), vm);
+                let super_class = parent_obj.initialize_or_get_singleton_class_for_class(vm);
                 let class_name = format!("#<Module:{}>", m.sym_id.name);
-                let super_class = vm.get_class_by_name("Class");
                 let sclass = Rc::new(RClass::new_singleton(
                     &class_name,
                     Some(super_class),
                     None,
                 ));
                 sclass.update_module_weakref();
-                self.singleton_class.replace(Some(sclass.clone()));
+                self.set_singleton_class(Some(sclass.clone()));
                 return sclass;
             }
             _ => panic!("Not called on a class or module"),
@@ -503,7 +529,7 @@ impl RObject {
         ));
         sclass.update_module_weakref();
 
-        self.singleton_class.replace(Some(sclass.clone()));
+        self.set_singleton_class(Some(sclass.clone()));
         class
             .singleton_class_ref
             .borrow_mut()
@@ -512,8 +538,8 @@ impl RObject {
     }
 
     pub fn singleton_or_this_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
-        if let Some(sclass) = self.singleton_class.borrow().as_ref() {
-            return sclass.clone();
+        if let Some(sclass) = self.get_singleton_class() {
+            return sclass;
         }
         self.get_class(vm)
     }
@@ -901,6 +927,9 @@ pub struct RModule {
     pub consts: RefCell<RHashMap<String, Rc<RObject>>>,
     pub mixed_in_modules: RefCell<Vec<Rc<RModule>>>,
     pub parent: RefCell<Option<Rc<RModule>>>,
+    // singleton class anchored to module identity so every
+    // wrapper over this RModule observes the same singleton state.
+    pub singleton_class: RefCell<Option<Rc<RClass>>>,
 
     pub underlying: RefCell<Option<Weak<RClass>>>,
 }
@@ -914,6 +943,7 @@ impl RModule {
             consts: RefCell::new(RHashMap::default()),
             mixed_in_modules: RefCell::new(Vec::new()),
             parent: RefCell::new(None),
+            singleton_class: RefCell::new(None),
             underlying: RefCell::new(None),
         }
     }
