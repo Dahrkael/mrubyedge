@@ -661,7 +661,13 @@ pub(crate) fn op_setiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_getconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let name = vm.current_irep.syms[b as usize].name.clone();
-    let mut current = current_namespace(vm);
+    // Bare lookups start from the current namespace (module/class body). In
+    // an instance method there is no lexical cref, so fall back to the
+    // runtime class of self to reach constants defined in that class body.
+    let mut current = current_namespace(vm).or_else(|| {
+        let obj = vm.current_regs()[0].clone();
+        obj.as_ref().map(|o| o.get_class(vm).module.clone())
+    });
 
     // Walk namespace chain upwards until found or reach top-level
     while let Some(ns) = current.clone() {
@@ -684,7 +690,24 @@ pub(crate) fn op_setconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let name = vm.current_irep.syms[b as usize].name.clone();
     let val = vm.get_current_regs_cloned(a as usize)?;
-    vm.consts.insert(name, val);
+    // Scope the constant to the defining module/class so qualified reads
+    // (Module::CONST via op_getmcnst) resolve. Without a cref, assignments
+    // inside an instance method fall back to the global table.
+    match current_namespace(vm) {
+        Some(ns) => {
+            ns.consts.borrow_mut().insert(name, val);
+        }
+        None => {
+            // Top-level constants also live in Object's table (define_class/
+            // define_module mirror there); keep both in sync so reads that
+            // resolve through the class of self agree.
+            vm.consts.insert(name.clone(), val.clone());
+            vm.object_class
+                .consts
+                .borrow_mut()
+                .insert(name, val);
+        }
+    }
     Ok(())
 }
 

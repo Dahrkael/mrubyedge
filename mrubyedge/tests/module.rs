@@ -150,3 +150,194 @@ Wrapper.new.core_value
         .expect("core_value should return integer");
     assert_eq!(value, 124);
 }
+
+#[test]
+fn constants_inside_module_are_scoped_to_the_module() {
+    let script = r#"
+module CptnTiles
+  Grass = 0
+  Earth = 1
+end
+CptnTiles::Earth
+"#;
+
+    let binary = mrbc_compile("module_const_scoped", script);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    let result = vm.run().unwrap();
+
+    let value: i64 = result
+        .as_ref()
+        .try_into()
+        .expect("CptnTiles::Earth should return an integer");
+    assert_eq!(value, 1);
+}
+
+#[test]
+fn nested_module_constants_resolve_through_the_path() {
+    let script = r#"
+module Outer
+  module Inner
+    V = 7
+  end
+end
+Outer::Inner::V
+"#;
+
+    let binary = mrbc_compile("module_const_nested", script);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    let result = vm.run().unwrap();
+
+    let value: i64 = result
+        .as_ref()
+        .try_into()
+        .expect("Outer::Inner::V should return an integer");
+    assert_eq!(value, 7);
+}
+
+#[test]
+fn class_constants_resolve_qualified() {
+    let script = r#"
+class C
+  W = 10
+end
+C::W
+"#;
+
+    let binary = mrbc_compile("class_const_qualified", script);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    let result = vm.run().unwrap();
+
+    let value: i64 = result
+        .as_ref()
+        .try_into()
+        .expect("C::W should return an integer");
+    assert_eq!(value, 10);
+}
+
+#[test]
+fn class_constants_stay_readable_from_instance_methods() {
+    // op_getconst falls back to the runtime class of self when there is no
+    // namespace (instance method), so constants defined in a class body
+    // remain reachable from its own methods.
+    let script = r#"
+class C
+  W = 10
+  def read
+    W
+  end
+end
+C.new.read
+"#;
+
+    let binary = mrbc_compile("class_const_from_method", script);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    let result = vm.run().unwrap();
+
+    let value: i64 = result
+        .as_ref()
+        .try_into()
+        .expect("read should return an integer");
+    assert_eq!(value, 10);
+}
+
+#[test]
+fn class_constants_do_not_leak_to_top_level_bare_reads() {
+    // Scoping to the class means a bare read at top level no longer resolves
+    // the class constant from the global table (matches real Ruby).
+    let script = r#"
+class C
+  X = 1
+end
+X
+"#;
+
+    let binary = mrbc_compile("class_const_no_leak", script);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    assert!(vm.run().is_err(), "bare top-level X should not resolve C::X");
+}
+
+// KNOWN LIMITATION, not worth fixing by design: real Ruby binds a constant
+// assigned inside an instance method to its lexical class via the cref, so
+// Foo::THRESHOLD == 10 here. mrubyedge has no cref: op_setconst derives the
+// namespace from `self`, and inside an instance method self is an instance,
+// so the assignment falls back to the global table and Foo::THRESHOLD raises
+// NameError. Full lexical constant scope would need cref support across the
+// VM; this engine keeps the pragmatic global fallback instead.
+#[test]
+fn instance_method_constant_assignment_is_not_lexically_scoped() {
+    let script = r#"
+class Foo
+  def setup
+    THRESHOLD = 10
+  end
+end
+Foo.new.setup
+Foo::THRESHOLD
+"#;
+
+    let binary = mrbc_compile("inst_method_const_limitation", script);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    assert!(
+        vm.run().is_err(),
+        "Foo::THRESHOLD should fail (documented limitation)"
+    );
+}
+
+// KNOWN LIMITATION, not worth fixing by design: a bare constant read inside
+// an instance method resolves through the runtime class of self, but the walk
+// follows the module nesting (`.parent`) chain, not the superclass chain.
+// Real Ruby reaches Base::CONFIG lexically; here Child.new.r raises NameError.
+#[test]
+fn superclass_constants_are_not_walked_in_bare_reads() {
+    let script = r#"
+class Base
+  CONFIG = 5
+end
+
+class Child < Base
+  def r
+    CONFIG
+  end
+end
+
+Child.new.r
+"#;
+
+    let binary = mrbc_compile("superclass_const_limitation", script);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    assert!(vm.run().is_err(), "Child.new.r should fail (documented limitation)");
+}
+
+// KNOWN LIMITATION, not worth fixing by design: a bare constant read inside
+// a method provided by an included module resolves through the runtime class
+// of self, which does not reach the included module's consts. Real Ruby finds
+// M::X via the lexical cref; here C.new.m raises NameError.
+#[test]
+fn included_module_constants_are_not_walked_in_bare_reads() {
+    let script = r#"
+module M
+  X = 1
+  def m
+    X
+  end
+end
+
+class C
+  include M
+end
+
+C.new.m
+"#;
+
+    let binary = mrbc_compile("included_module_const_limitation", script);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    assert!(vm.run().is_err(), "C.new.m should fail (documented limitation)");
+}
