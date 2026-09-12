@@ -927,16 +927,7 @@ fn consume_ensure_block(vm: &mut VM) -> Result<(), Error> {
                 // snapshot at the deepest raise only (see
                 // vm.rs twin site for rationale).
                 if vm.exception.is_none() {
-                    let mut frames = Vec::new();
-                    let mut bc = vm.current_breadcrumb.clone();
-                    while let Some(b) = bc.as_ref() {
-                        if let Some(caller) = &b.caller {
-                            frames.push(caller.clone());
-                        }
-                        bc = b.upper.clone();
-                    }
-                    frames.reverse();
-                    *vm.last_error_stack.borrow_mut() = frames;
+                    *vm.last_error_stack.borrow_mut() = vm.capture_error_stack();
                 }
                 let exception = RException::from_error(vm, &e);
                 vm.exception = Some(Rc::new(exception));
@@ -1080,10 +1071,12 @@ pub(crate) fn do_op_send(
     } else {
         recv.singleton_or_this_class(vm)
     };
+    let mut via_method_missing = false;
     let (owner_module, method) = resolve_method(&klass, &method_id.name)
         .or_else(|| {
             unshift_method_name(vm, &mut args, &method_id, a as usize, n + k * 2 + 1);
             n += 1;
+            via_method_missing = true;
             resolve_method(&klass, "method_missing")
         })
         .ok_or_else(|| {
@@ -1094,13 +1087,23 @@ pub(crate) fn do_op_send(
             ))
         })?;
 
+    // a send resolved to a Ruby method_missing is reported as
+    // such, since its failing line belongs to that body; the native default
+    // keeps the requested name, matching MRI's NoMethodError backtrace.
+    let send_label = if via_method_missing && method.is_rb_func {
+        "method_missing"
+    } else {
+        method_id.name.as_str()
+    };
     let upper = vm.current_breadcrumb.take();
     let new_breadcrumb = Rc::new(Breadcrumb {
         upper,
         event: "do_op_send",
         // qualify with receiver class for backtraces.
-        caller: Some(crate::yamrb::helpers::frame_label(vm, &recv, &method_id.name)),
+        caller: Some(crate::yamrb::helpers::frame_label(vm, &recv, send_label)),
         return_reg: Some(a as usize),
+        irep: Some(vm.current_irep.clone()),
+        pc: Some(vm.pc.get().saturating_sub(1)),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
 
@@ -1141,16 +1144,7 @@ pub(crate) fn do_op_send(
                 // snapshots, then pop our breadcrumb so failed native calls
                 // do not leak frames into later backtraces.
                 if vm.exception.is_none() {
-                    let mut frames = Vec::new();
-                    let mut bc = vm.current_breadcrumb.clone();
-                    while let Some(b) = bc.as_ref() {
-                        if let Some(caller) = &b.caller {
-                            frames.push(caller.clone());
-                        }
-                        bc = b.upper.clone();
-                    }
-                    frames.reverse();
-                    *vm.last_error_stack.borrow_mut() = frames;
+                    *vm.last_error_stack.borrow_mut() = vm.capture_error_stack();
                     let exception = RException::from_error(vm, &e);
                     vm.exception = Some(Rc::new(exception));
                 }
@@ -1229,6 +1223,8 @@ pub(crate) fn op_call(vm: &mut VM, _operand: &Fetched) -> Result<(), Error> {
         event: "op_call",
         caller: Some("<tailcall>".into()),
         return_reg: None,
+        irep: Some(vm.current_irep.clone()),
+        pc: Some(vm.pc.get().saturating_sub(1)),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
     push_callinfo(vm, "<tailcall>".into(), 0, None, 0);
@@ -1304,6 +1300,8 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         event: "super",
         caller: Some(format!("super({})", sym_id)),
         return_reg: None,
+        irep: Some(vm.current_irep.clone()),
+        pc: Some(vm.pc.get().saturating_sub(1)),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
 
@@ -2253,6 +2251,8 @@ pub(crate) fn op_exec(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         event: "exec",
         caller: Some("<exec>".into()),
         return_reg: None,
+        irep: Some(vm.current_irep.clone()),
+        pc: Some(vm.pc.get().saturating_sub(1)),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
     push_callinfo(vm, "<exec>".into(), 0, None, a as usize);

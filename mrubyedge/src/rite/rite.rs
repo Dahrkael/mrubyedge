@@ -39,6 +39,9 @@ pub struct Irep<'a> {
     pub syms: Vec<CString>,
     pub catch_handlers: Vec<CatchHandler>,
     pub lv: Vec<Option<CString>>, // Local variable names (indices into LVar::syms)
+    /// Source line changes (instruction-byte offset, line), ascending.
+    /// Empty when the blob was compiled without debug info.
+    pub lines: Vec<(u32, u32)>,
 }
 
 impl Irep<'_> {
@@ -112,7 +115,7 @@ pub fn load<'a>(src: &'a [u8]) -> Result<Rite<'a>, Error> {
                 head = &head[cur..];
             }
             DBG => {
-                let cur = section_skip(head)?;
+                let cur = parse_debug_section(head, &mut rite.irep)?;
                 head = &head[cur..];
             }
             END => {
@@ -278,6 +281,7 @@ pub fn section_irep_1(head: &[u8]) -> Result<(usize, SectionIrepHeader, Vec<Irep
             syms,
             catch_handlers,
             lv: Vec::new(), // Will be filled by section_lvar if present
+            lines: Vec::new(),
         };
         ireps.push(irep);
     }
@@ -371,9 +375,189 @@ fn read_lv_records(
     Ok((cur, child_irep_idx))
 }
 
+/// Source line for an instruction byte offset, from a `lines` map.
+pub fn line_at(map: &[(u32, u32)], pos: u32) -> Option<u32> {
+    let mut lo = 0usize;
+    let mut hi = map.len();
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if map[mid].0 <= pos {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    if lo == 0 {
+        None
+    } else {
+        Some(map[lo - 1].1)
+    }
+}
+
+fn u16_at(head: &[u8], cur: usize) -> Result<u16, Error> {
+    if cur + 2 > head.len() {
+        return Err(Error::TooShort);
+    }
+    Ok(be16_to_u16([head[cur], head[cur + 1]]))
+}
+
+fn u32_at(head: &[u8], cur: usize) -> Result<u32, Error> {
+    if cur + 4 > head.len() {
+        return Err(Error::TooShort);
+    }
+    Ok(be32_to_u32([head[cur], head[cur + 1], head[cur + 2], head[cur + 3]]))
+}
+
+/// Parses the debug section. File names are consumed but not kept: only the
+/// per-irep source line maps are stored, in the same DFS pre-order as the
+/// irep records.
+fn parse_debug_section(head: &[u8], ireps: &mut [Irep]) -> Result<usize, Error> {
+    let header = SectionMiscHeader::from_bytes(head)?;
+    let section_size = be32_to_u32(header.size) as usize;
+    if head.len() < section_size {
+        return Err(Error::TooShort);
+    }
+    // Parse within the section only: a malformed section must not read into
+    // the following ones (LVAR, END).
+    let sec = &head[..section_size];
+    let mut cur = mem::size_of::<SectionMiscHeader>();
+
+    // Filename table: (u16 len, bytes) entries, not null-terminated.
+    let file_count = u16_at(sec, cur)? as usize;
+    cur += 2;
+    for _ in 0..file_count {
+        let len = u16_at(sec, cur)? as usize;
+        cur += 2 + len;
+    }
+
+    let mut idx = 0usize;
+    cur = read_debug_record(sec, cur, ireps, &mut idx, section_size)?;
+
+    // Tolerate a short section (trailing padding), reject an overrun.
+    if cur > section_size {
+        return Err(Error::InvalidFormat);
+    }
+    Ok(section_size)
+}
+
+fn read_debug_record(
+    head: &[u8],
+    mut cur: usize,
+    ireps: &mut [Irep],
+    irep_idx: &mut usize,
+    limit: usize,
+) -> Result<usize, Error> {
+    if *irep_idx >= ireps.len() || cur >= limit {
+        return Ok(cur);
+    }
+    let rlen = ireps[*irep_idx].rlen();
+
+    let record_start = cur;
+    let _record_size = u32_at(head, cur)? as usize;
+    cur += 4;
+
+    let file_count = u16_at(head, cur)? as usize;
+    cur += 2;
+
+    let mut lines: Vec<(u32, u32)> = Vec::new();
+    for _ in 0..file_count {
+        let start_pos = u32_at(head, cur)?;
+        cur += 4;
+        let _filename_idx = u16_at(head, cur)?;
+        cur += 2;
+        let entry_count = u32_at(head, cur)? as usize;
+        cur += 4;
+        let line_type = if cur < head.len() { head[cur] } else { return Err(Error::TooShort) };
+        cur += 1;
+
+        match line_type {
+            // mrb_debug_line_ary: one line per pc, starting at start_pos.
+            0 => {
+                for i in 0..entry_count {
+                    let line = u16_at(head, cur)? as u32;
+                    cur += 2;
+                    push_line(&mut lines, start_pos + i as u32, line);
+                }
+            }
+            // mrb_debug_line_flat_map: (start_pos, line) pairs.
+            1 => {
+                for _ in 0..entry_count {
+                    let pos = u32_at(head, cur)?;
+                    cur += 4;
+                    let line = u16_at(head, cur)? as u32;
+                    cur += 2;
+                    push_line(&mut lines, pos, line);
+                }
+            }
+            // mrb_debug_line_packed_map: (pos_delta, line_delta) varint
+            // pairs; entry_count is the byte length of the packed data.
+            2 => {
+                let data_end = cur + entry_count;
+                let mut pos: u32 = 0;
+                let mut line: u32 = 0;
+                while cur < data_end {
+                    let (delta, used) = decode_packed_int(head, cur)?;
+                    cur += used;
+                    pos = pos.wrapping_add(delta);
+                    let (delta, used) = decode_packed_int(head, cur)?;
+                    cur += used;
+                    // Deltas carry sign via two's complement, matching the
+                    // C decoder's unsigned wraparound adds.
+                    line = line.wrapping_add(delta);
+                    push_line(&mut lines, pos, line);
+                }
+            }
+            _ => return Err(Error::InvalidFormat),
+        }
+    }
+
+    ireps[*irep_idx].lines = lines;
+    if cur - record_start != _record_size {
+        return Err(Error::InvalidFormat);
+    }
+    *irep_idx += 1;
+    let mut child = *irep_idx;
+    for _ in 0..rlen {
+        cur = read_debug_record(head, cur, ireps, &mut child, limit)?;
+    }
+    *irep_idx = child;
+    Ok(cur)
+}
+
+/// 7-bit varint used by packed line maps (mirrors mrc_packed_int_decode).
+fn decode_packed_int(head: &[u8], cur: usize) -> Result<(u32, usize), Error> {
+    let mut value: u32 = 0;
+    let mut shift = 0u32;
+    let mut i = 0usize;
+    loop {
+        if cur + i >= head.len() {
+            return Err(Error::TooShort);
+        }
+        let byte = head[cur + i];
+        value |= ((byte & 0x7f) as u32) << shift;
+        i += 1;
+        if byte & 0x80 == 0 {
+            break;
+        }
+        shift += 7;
+        if shift >= 32 {
+            return Err(Error::InvalidFormat);
+        }
+    }
+    Ok((value, i))
+}
+
+fn push_line(lines: &mut Vec<(u32, u32)>, pos: u32, line: u32) {
+    if let Some((_, last)) = lines.last() {
+        if *last == line {
+            return;
+        }
+    }
+    lines.push((pos, line));
+}
+
 pub fn section_skip(head: &[u8]) -> Result<usize, Error> {
     let header = SectionMiscHeader::from_bytes(head)?;
-    // eprintln!("skipped section {:?}", header.ident.as_ascii());
     Ok(be32_to_u32(header.size) as usize)
 }
 

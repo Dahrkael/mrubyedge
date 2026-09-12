@@ -33,6 +33,8 @@ pub fn mrb_proc_call(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
         caller: Some("Proc#call".to_string()),
         event: "_proc_call_via_method",
         return_reg: cur.return_reg,
+        irep: Some(vm.current_irep.clone()),
+        pc: Some(vm.pc.get().saturating_sub(1)),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
 

@@ -147,6 +147,8 @@ pub fn mrb_call_block(
         event: "block_call",
         caller: None,
         return_reg: None,
+        irep: Some(vm.current_irep.clone()),
+        pc: Some(vm.pc.get().saturating_sub(1)),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
     let res = if block.is_rb_func {
@@ -215,6 +217,8 @@ pub fn mrb_funcall(
         // qualify with receiver class for backtraces.
         caller: Some(frame_label(vm, &recv, name)),
         return_reg: None,
+        irep: Some(vm.current_irep.clone()),
+        pc: Some(vm.pc.get().saturating_sub(1)),
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
 

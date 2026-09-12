@@ -45,6 +45,10 @@ pub struct Breadcrumb {
     pub event: &'static str, // TODO: be enum
     pub caller: Option<String>,
     pub return_reg: Option<usize>,
+    // caller's irep and pc at push time, for mapping a stack
+    // frame to its source line via the irep's debug info.
+    pub irep: Option<Rc<IREP>>,
+    pub pc: Option<usize>,
     pub upper: Option<Rc<Breadcrumb>>,
 }
 
@@ -264,6 +268,7 @@ impl VM {
             reps: Vec::new(),
             lv: None,
             catch_target_pos: Vec::new(),
+            lines: Vec::new(),
         };
         Self::new_by_raw_irep(irep)
     }
@@ -296,6 +301,8 @@ impl VM {
             event: "root",
             caller: None,
             return_reg: None,
+            irep: Some(current_irep.clone()),
+            pc: Some(0),
         }));
         let kargs = RefCell::new(None);
         let current_kargs = RefCell::new(None);
@@ -385,6 +392,8 @@ impl VM {
             event: "run",
             caller: None,
             return_reg: None,
+            irep: Some(self.current_irep.clone()),
+            pc: Some(self.pc.get()),
         });
         self.current_breadcrumb.replace(new_breadcrumb);
         self.__run()
@@ -398,6 +407,8 @@ impl VM {
             event: "run_internal",
             caller: None,
             return_reg: None,
+            irep: Some(self.current_irep.clone()),
+            pc: Some(self.pc.get()),
         });
         self.current_breadcrumb.replace(new_breadcrumb);
         self.__run()
@@ -423,9 +434,48 @@ impl VM {
             event: "eval",
             caller: None,
             return_reg: None,
+            irep: Some(self.current_irep.clone()),
+            pc: Some(self.pc.get()),
         });
         self.current_breadcrumb.replace(new_breadcrumb);
         self.__run()
+    }
+
+    /// Source line of the opcode being (or just) executed, if the current
+    /// irep carries debug info. The dispatch loop advances `pc` before an
+    /// opcode runs, so the failing opcode sits at `pc - 1`.
+    pub fn current_frame_line(&self) -> Option<u32> {
+        self.current_irep.line_at_op(self.pc.get().saturating_sub(1))
+    }
+
+    /// call stack of the current exception. The innermost
+    /// frame uses the currently executing pc (the failing spot); outer frames
+    /// use the irep/pc recorded at their breadcrumb push (where they were
+    /// called from). Frames without a line fall back to the bare method label.
+    pub fn capture_error_stack(&self) -> Vec<String> {
+        let mut frames = Vec::new();
+        let mut bc = self.current_breadcrumb.clone();
+        // The innermost named frame is the currently executing spot.
+        let mut cur_frame = true;
+        while let Some(b) = bc.as_ref() {
+            if let Some(caller) = &b.caller {
+                let line = if cur_frame {
+                    self.current_frame_line()
+                } else {
+                    b.irep
+                        .as_ref()
+                        .and_then(|i| b.pc.and_then(|p| i.line_at_op(p)))
+                };
+                frames.push(match line {
+                    Some(l) => format!("{caller}:{l}"),
+                    None => caller.clone(),
+                });
+                cur_frame = false;
+            }
+            bc = b.upper.clone();
+        }
+        frames.reverse();
+        frames
     }
 
     fn __run(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
@@ -549,16 +599,7 @@ impl VM {
                     // exception, whose later re-conversions see popped
                     // chains. Last fresh raise wins.
                     if self.exception.is_none() {
-                        let mut frames = Vec::new();
-                        let mut bc = self.current_breadcrumb.clone();
-                        while let Some(b) = bc.as_ref() {
-                            if let Some(caller) = &b.caller {
-                                frames.push(caller.clone());
-                            }
-                            bc = b.upper.clone();
-                        }
-                    frames.reverse();
-                    *self.last_error_stack.borrow_mut() = frames;
+                        *self.last_error_stack.borrow_mut() = self.capture_error_stack();
                     }
                     let exception = RException::from_error(self, &e);
                     self.exception = Some(Rc::new(exception));
@@ -878,6 +919,7 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
         reps: Vec::new(),
         lv: None,
         catch_target_pos: Vec::new(),
+        lines: irep.lines.clone(),
     };
     for sym in irep.syms.iter() {
         irep1
@@ -960,6 +1002,17 @@ pub struct IREP {
     pub reps: Vec<Rc<IREP>>,
     pub lv: Option<RHashMap<usize, String>>,
     pub catch_target_pos: Vec<usize>,
+    /// Source line changes (instruction-byte offset, line), ascending.
+    /// Empty when the blob was compiled without debug info.
+    pub lines: Vec<(u32, u32)>,
+}
+
+impl IREP {
+    /// Source line of the opcode at `pc`, if the irep carries debug info.
+    pub fn line_at_op(&self, pc: usize) -> Option<u32> {
+        let op = self.code.get(pc)?;
+        crate::rite::line_at(&self.lines, op.pos as u32)
+    }
 }
 
 #[derive(Debug, Clone)]

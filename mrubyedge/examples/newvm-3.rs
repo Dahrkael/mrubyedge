@@ -195,6 +195,7 @@ fn main() {
         reps: Vec::new(),
         lv: None,
         catch_target_pos: Vec::new(),
+        lines: Vec::new(),
     };
 
     // irep0:
@@ -262,6 +263,7 @@ fn main() {
         reps: vec![Rc::new(irep1)],
         lv: None,
         catch_target_pos: Vec::new(),
+        lines: Vec::new(),
     };
     let mut vm = vm::VM::new_by_raw_irep(irep0);
     let ret = vm.run().unwrap();
