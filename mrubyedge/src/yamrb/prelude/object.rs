@@ -164,7 +164,7 @@ pub(crate) fn initialize_object(vm: &mut VM) {
 }
 
 pub fn mrb_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    Ok(Value::from_rc(vm.getself()?))
+    vm.getself()
 }
 
 #[cfg(feature = "wasi")]
@@ -238,39 +238,44 @@ pub fn mrb_object_is_not_equal(_vm: &mut VM, lhs: Value, rhs: Value) -> Value {
 }
 
 pub fn mrb_object_double_eq(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs = Value::from_rc(vm.getself()?);
+    let lhs = vm.getself()?;
     let rhs = args[0].as_ref().unwrap().clone();
     Ok(mrb_object_is_equal(vm, lhs, rhs))
 }
 
 pub fn mrb_object_not_eq(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs = Value::from_rc(vm.getself()?);
+    let lhs = vm.getself()?;
     let rhs = args[0].as_ref().unwrap().clone();
     Ok(mrb_object_is_not_equal(vm, lhs, rhs))
 }
 
 pub fn mrb_object_triple_eq(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let lhs = vm.getself()?;
-    let rhs = args[0].as_ref().unwrap().to_rc();
+    let rhs = args[0].as_ref().unwrap().clone();
 
-    match (&lhs.value, &rhs.value) {
-        (RValue::Integer(i1), RValue::Integer(i2)) => Ok(Value::Bool(*i1 == *i2)),
-        (RValue::Float(f1), RValue::Float(f2)) => Ok(Value::Bool(*f1 == *f2)),
-        (RValue::Symbol(sym1), RValue::Symbol(sym2)) => Ok(Value::Bool(sym1 == sym2)),
-        (RValue::String(s1, _), RValue::String(s2, _)) => Ok(Value::Bool(s1 == s2)),
-        (RValue::Class(c1), _) => match &lhs.value {
-            RValue::Class(c2) => Ok(Value::Bool(c1.sym_id == c2.sym_id)),
-            _ => {
+    match (&lhs, &rhs) {
+        (Value::Integer(i1), Value::Integer(i2)) => Ok(Value::Bool(i1 == i2)),
+        (Value::Float(f1), Value::Float(f2)) => Ok(Value::Bool(f1 == f2)),
+        (Value::Symbol(sym1), Value::Symbol(sym2)) => Ok(Value::Bool(sym1 == sym2)),
+        (Value::Object(o1), _) => match &o1.value {
+            RValue::String(s1, _) => match &rhs {
+                Value::Object(o2) => match &o2.value {
+                    RValue::String(s2, _) => Ok(Value::Bool(s1 == s2)),
+                    _ => Ok(Value::Bool(false)),
+                },
+                _ => Ok(Value::Bool(false)),
+            },
+            RValue::Class(c1) => {
                 let c2 = lhs.get_class(vm);
                 Ok(Value::Bool(c1.sym_id == c2.sym_id))
             }
+            RValue::Range(_s, _e, _v) => {
+                let arg = vec![rhs.clone()];
+                mrb_funcall(vm, Some(lhs.clone()), "include?", &arg)
+            }
+            // TODO: Implement object id for generic instance
+            _ => Ok(Value::Bool(false)),
         },
-        (RValue::Range(_s, _e, _v), _) => {
-            let arg = vec![Value::from_rc(rhs.clone())];
-            let r = mrb_funcall(vm, Some(Value::from_rc(lhs.clone())), "include?", &arg)?;
-            Ok(r)
-        }
-        // TODO: Implement object id for generic instance
         _ => Ok(Value::Bool(false)),
     }
 }
@@ -354,7 +359,7 @@ pub fn mrb_object_compare(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, 
 
 pub fn mrb_object_object_id(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     // Abstract method; do nothing
-    let x = vm.getself()?.object_id.get();
+    let x = vm.getself()?.object_id();
     // ref: https://stackoverflow.com/questions/74491204/how-do-i-represent-an-i64-in-the-u64-domain
     let to_i64 = ((x as i64) ^ (1 << 63)) & (1 << 63) | (x & (u64::MAX >> 1)) as i64;
     Ok(Value::Integer(to_i64))
@@ -368,7 +373,8 @@ pub fn mrb_object_to_s(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Er
         ));
     }
     let class = obj.get_class(vm);
-    let addr = format!("{:018p}", Rc::as_ptr(&obj));
+    let obj_rc = obj.to_rc();
+    let addr = format!("{:018p}", Rc::as_ptr(&obj_rc));
     Ok(Value::from_rc(
         RObject::string(format!("#<{}:{}>", class.full_name(), addr)).to_refcount_assigned(),
     ))
@@ -434,8 +440,8 @@ fn mrb_object_is_a(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> 
     let class_arg = args[0].as_ref().unwrap().clone();
     let is_a = match &class_arg {
         Value::Object(o) => match &o.value {
-            RValue::Class(c) => mrb_is_a(vm, obj, c.clone()),
-            RValue::Module(m) => mrb_is_a(vm, obj, m.clone()),
+            RValue::Class(c) => mrb_is_a(vm, &obj, c.clone()),
+            RValue::Module(m) => mrb_is_a(vm, &obj, m.clone()),
             _ => {
                 return Err(Error::ArgumentError(
                     "Object#is_a? expects a Class or Module".to_string(),
@@ -470,20 +476,14 @@ fn mrb_object_loop(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> 
 
     let this = vm.getself()?;
     loop {
-        match mrb_call_block(
-            vm,
-            block.to_rc(),
-            Some(Value::from_rc(this.clone())),
-            &[],
-            0,
-        ) {
+        match mrb_call_block(vm, block.to_rc(), Some(this.clone()), &[], 0) {
             Ok(_) => {}
             // break inside the block stops loop and its
             // value becomes the method result (Ruby semantics). Consume the
             // pending exception (see integer.rs note).
             Err(Error::Break(v)) => {
                 vm.exception.take();
-                return Ok(Value::from_rc(v));
+                return Ok(v);
             }
             Err(e) => return Err(e),
         }
@@ -513,7 +513,7 @@ fn mrb_object_public_send(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, 
         .collect::<Vec<_>>();
 
     // For now, public_send behaves the same as send since we don't have visibility modifiers
-    mrb_funcall(vm, Some(Value::from_rc(obj)), &method_name, &method_args)
+    mrb_funcall(vm, Some(obj), &method_name, &method_args)
 }
 
 fn mrb_object_method_missing(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
@@ -533,7 +533,7 @@ fn mrb_object_method_missing(vm: &mut VM, args: &[Option<Value>]) -> Result<Valu
     )))
 }
 
-pub fn mrb_is_a(vm: &mut VM, obj: Rc<RObject>, class: impl AsModule) -> bool {
+pub fn mrb_is_a(vm: &mut VM, obj: &Value, class: impl AsModule) -> bool {
     let obj_class = obj.get_class(vm);
     let target_module = class.as_module();
     for module in build_lookup_chain(&obj_class).iter() {
@@ -794,114 +794,114 @@ fn test_mrb_object_is_equal_hash() {
 
     let mut vm = VM::empty();
 
-    let lhs = RObject::hash(RHashMap::default()).to_refcount_assigned();
-    let rhs = RObject::hash(RHashMap::default()).to_refcount_assigned();
-    let ret: bool = mrb_object_is_equal(&mut vm, Value::from_rc(lhs), Value::from_rc(rhs))
+    let lhs = Value::from_rc(RObject::hash(RHashMap::default()).to_refcount_assigned());
+    let rhs = Value::from_rc(RObject::hash(RHashMap::default()).to_refcount_assigned());
+    let ret: bool = mrb_object_is_equal(&mut vm, lhs.clone(), rhs.clone())
         .to_rc()
         .as_ref()
         .try_into()
         .expect("must return bool");
     assert!(ret);
 
-    let lhs = RObject::hash(RHashMap::default()).to_refcount_assigned();
+    let lhs = Value::from_rc(RObject::hash(RHashMap::default()).to_refcount_assigned());
     mrb_hash_set_index(
-        lhs.clone(),
+        &lhs,
         Value::from_rc(RObject::symbol("key1".into()).to_refcount_assigned()),
         Value::Integer(1),
     )
     .expect("set index failed");
     mrb_hash_set_index(
-        lhs.clone(),
+        &lhs,
         Value::from_rc(RObject::symbol("key2".into()).to_refcount_assigned()),
         Value::Integer(2),
     )
     .expect("set index failed");
 
-    let rhs = RObject::hash(RHashMap::default()).to_refcount_assigned();
+    let rhs = Value::from_rc(RObject::hash(RHashMap::default()).to_refcount_assigned());
     mrb_hash_set_index(
-        rhs.clone(),
+        &rhs,
         Value::from_rc(RObject::symbol("key2".into()).to_refcount_assigned()),
         Value::Integer(2),
     )
     .expect("set index failed");
     mrb_hash_set_index(
-        rhs.clone(),
+        &rhs,
         Value::from_rc(RObject::symbol("key1".into()).to_refcount_assigned()),
         Value::Integer(1),
     )
     .expect("set index failed");
 
-    let ret: bool = mrb_object_is_equal(&mut vm, Value::from_rc(lhs), Value::from_rc(rhs))
+    let ret: bool = mrb_object_is_equal(&mut vm, lhs.clone(), rhs.clone())
         .to_rc()
         .as_ref()
         .try_into()
         .expect("must return bool");
     assert!(ret);
 
-    let lhs = RObject::hash(RHashMap::default()).to_refcount_assigned();
+    let lhs = Value::from_rc(RObject::hash(RHashMap::default()).to_refcount_assigned());
     mrb_hash_set_index(
-        lhs.clone(),
+        &lhs,
         Value::from_rc(RObject::symbol("key1".into()).to_refcount_assigned()),
         Value::Integer(1),
     )
     .expect("set index failed");
     mrb_hash_set_index(
-        lhs.clone(),
+        &lhs,
         Value::from_rc(RObject::symbol("key2".into()).to_refcount_assigned()),
         Value::Integer(2),
     )
     .expect("set index failed");
 
-    let rhs = RObject::hash(RHashMap::default()).to_refcount_assigned();
+    let rhs = Value::from_rc(RObject::hash(RHashMap::default()).to_refcount_assigned());
     mrb_hash_set_index(
-        rhs.clone(),
+        &rhs,
         Value::from_rc(RObject::symbol("key2".into()).to_refcount_assigned()),
         Value::Integer(2),
     )
     .expect("set index failed");
     mrb_hash_set_index(
-        rhs.clone(),
+        &rhs,
         Value::from_rc(RObject::symbol("key1".into()).to_refcount_assigned()),
         Value::Integer(3),
     )
     .expect("set index failed");
 
-    let ret: bool = mrb_object_is_equal(&mut vm, Value::from_rc(lhs), Value::from_rc(rhs))
+    let ret: bool = mrb_object_is_equal(&mut vm, lhs.clone(), rhs.clone())
         .to_rc()
         .as_ref()
         .try_into()
         .expect("must return bool");
     assert!(!ret);
 
-    let lhs = RObject::hash(RHashMap::default()).to_refcount_assigned();
+    let lhs = Value::from_rc(RObject::hash(RHashMap::default()).to_refcount_assigned());
     mrb_hash_set_index(
-        lhs.clone(),
+        &lhs,
         Value::from_rc(RObject::symbol("key1".into()).to_refcount_assigned()),
         Value::Integer(1),
     )
     .expect("set index failed");
     mrb_hash_set_index(
-        lhs.clone(),
+        &lhs,
         Value::from_rc(RObject::symbol("key2".into()).to_refcount_assigned()),
         Value::Integer(2),
     )
     .expect("set index failed");
 
-    let rhs = RObject::hash(RHashMap::default()).to_refcount_assigned();
+    let rhs = Value::from_rc(RObject::hash(RHashMap::default()).to_refcount_assigned());
     mrb_hash_set_index(
-        rhs.clone(),
+        &rhs,
         Value::from_rc(RObject::symbol("key2".into()).to_refcount_assigned()),
         Value::Integer(2),
     )
     .expect("set index failed");
     mrb_hash_set_index(
-        rhs.clone(),
+        &rhs,
         Value::from_rc(RObject::symbol("key1-b".into()).to_refcount_assigned()),
         Value::Integer(1),
     )
     .expect("set index failed");
 
-    let ret: bool = mrb_object_is_equal(&mut vm, Value::from_rc(lhs), Value::from_rc(rhs))
+    let ret: bool = mrb_object_is_equal(&mut vm, lhs.clone(), rhs.clone())
         .to_rc()
         .as_ref()
         .try_into()
@@ -998,5 +998,5 @@ fn mrb_object_extend(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
             .insert(0, module);
     }
 
-    Ok(Value::from_rc(this))
+    Ok(this)
 }

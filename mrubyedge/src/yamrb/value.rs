@@ -186,6 +186,96 @@ impl Value {
             Value::Object(o) => o.as_eq_value(),
         }
     }
+
+    /// Borrows the object's `RValue`; `None` for immediates. Lets methods that
+    /// only ever run on a given heap class inspect the receiver without boxing.
+    pub fn rvalue(&self) -> Option<&RValue> {
+        match self {
+            Value::Object(o) => Some(&o.value),
+            _ => None,
+        }
+    }
+
+    /// Identity of the receiver; immediates resolve through their flyweight.
+    pub fn object_id(&self) -> u64 {
+        match self {
+            Value::Object(o) => o.object_id.get(),
+            _ => self.to_rc().object_id.get(),
+        }
+    }
+
+    pub fn is_main(&self) -> bool {
+        match self {
+            Value::Object(o) => o.is_main(),
+            _ => false,
+        }
+    }
+
+    /// MRI immediates share one instance across the process, so they must
+    /// never carry per-instance state (ivars, singleton class).
+    pub fn is_immediate(&self) -> bool {
+        !matches!(self, Value::Object(_))
+    }
+
+    /// error for writing per-instance state to an immediate,
+    /// which MRI rejects with FrozenError.
+    pub fn frozen_immediate_error(&self, vm: &crate::yamrb::vm::VM) -> Error {
+        self.to_rc().frozen_immediate_error(vm)
+    }
+
+    pub fn get_ivar_by_id(&self, key: u32) -> Value {
+        self.to_rc().get_ivar_by_id(key)
+    }
+
+    pub fn set_ivar_by_id(&self, key: u32, value: Value) {
+        self.to_rc().set_ivar_by_id(key, value);
+    }
+
+    pub fn get_ivar(&self, name: &str) -> Value {
+        self.to_rc().get_ivar(name)
+    }
+
+    pub fn set_ivar(&self, name: &str, value: Value) {
+        self.to_rc().set_ivar(name, value);
+    }
+
+    pub fn initialize_or_get_singleton_class(&self, vm: &mut crate::yamrb::vm::VM) -> Rc<RClass> {
+        self.to_rc().initialize_or_get_singleton_class(vm)
+    }
+
+    pub fn string_borrow_mut(&self) -> Result<std::cell::RefMut<'_, Vec<u8>>, Error> {
+        match self {
+            Value::Object(o) => o.string_borrow_mut(),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+
+    pub fn array_borrow_mut(&self) -> Result<std::cell::RefMut<'_, Vec<Value>>, Error> {
+        match self {
+            Value::Object(o) => o.array_borrow_mut(),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+
+    pub fn hash_borrow_mut(&self) -> Result<std::cell::RefMut<'_, RHash>, Error> {
+        match self {
+            Value::Object(o) => o.hash_borrow_mut(),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+
+    pub fn string_is_utf8(&self) -> Result<bool, Error> {
+        match self {
+            Value::Object(o) => o.string_is_utf8(),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_eq_value() == other.as_eq_value()
+    }
 }
 
 /// Numeric operations that the send dispatch can execute inline, skipping the
@@ -890,7 +980,7 @@ impl RObject {
 
     fn build_singleton_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
         let class_name = {
-            let inspect = mrb_call_inspect(vm, self.clone());
+            let inspect = mrb_call_inspect(vm, &Value::from_rc(self.clone()));
             match inspect {
                 Ok(inspect) => (&inspect)
                     .try_into()
@@ -1782,7 +1872,7 @@ pub struct RProc {
     pub irep: Option<Rc<IREP>>,
     pub func: Option<usize>,
     pub environ: Option<Rc<ENV>>,
-    pub block_self: Option<Rc<RObject>>,
+    pub block_self: Option<Value>,
 }
 
 /// Native Rust callable used to implement Ruby methods in the VM.

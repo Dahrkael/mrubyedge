@@ -1,9 +1,7 @@
 use std::env;
 use std::fs::remove_file;
 use std::process::Command;
-use std::rc::Rc;
 
-use mrubyedge::RObject;
 use mrubyedge::yamrb::helpers::mrb_call_p;
 
 extern crate mrubyedge;
@@ -32,7 +30,7 @@ fn compile(
     std::fs::read(output_path)
 }
 
-fn result_p(vm: &mut mrubyedge::VM, result: Rc<RObject>) {
+fn result_p(vm: &mut mrubyedge::VM, result: &mrubyedge::yamrb::value::Value) {
     eprint!("return value: ");
     mrb_call_p(vm, result);
 }
@@ -68,7 +66,7 @@ fn main() -> Result<(), std::io::Error> {
     let mrb = compile(code, output_path, is_verbose)?;
     let mut rite = mrubyedge::rite::load(&mrb).unwrap();
     let res = vm.eval_rite(&mut rite).unwrap();
-    result_p(&mut vm, res.to_rc());
+    result_p(&mut vm, &res);
     remove_file(output_path)?;
 
     let code = r#"
@@ -83,7 +81,7 @@ fn main() -> Result<(), std::io::Error> {
     let mrb = compile(code, output_path, is_verbose)?;
     let mut rite = mrubyedge::rite::load(&mrb).unwrap();
     let res = vm.eval_rite(&mut rite).unwrap();
-    result_p(&mut vm, res.to_rc());
+    result_p(&mut vm, &res);
     remove_file(output_path)?;
 
     // dbg!(&vm);

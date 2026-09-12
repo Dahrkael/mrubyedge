@@ -41,8 +41,8 @@ pub(crate) fn initialize_exception(vm: &mut VM) {
 
 pub fn mrb_exception_message(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let exp = vm.getself()?;
-    match &exp.value {
-        RValue::Exception(e) => {
+    match exp.rvalue() {
+        Some(RValue::Exception(e)) => {
             let message = e.as_ref().message.clone();
             Ok(Value::from_rc(
                 RObject::string(message).to_refcount_assigned(),

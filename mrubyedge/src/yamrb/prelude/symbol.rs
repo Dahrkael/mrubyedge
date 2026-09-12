@@ -26,7 +26,7 @@ pub(crate) fn initialize_symbol(vm: &mut VM) {
 }
 
 fn mrb_symbol_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(format!(
         ":{}",
         this
@@ -34,12 +34,12 @@ fn mrb_symbol_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Err
 }
 
 fn mrb_symbol_to_s(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let symbol: String = vm.getself()?.as_ref().try_into()?;
+    let symbol: String = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(symbol))))
 }
 
 fn mrb_symbol_to_proc(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let method_name: String = vm.getself()?.as_ref().try_into()?;
+    let method_name: String = vm.getself()?.try_into()?;
     let rfn: RFn = Box::new(move |vm: &mut VM, args: &[Option<Value>]| {
         let recv = args
             .first()

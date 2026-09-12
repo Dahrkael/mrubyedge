@@ -24,7 +24,7 @@ end";
     let result = mrb_funcall(&mut vm, None, "pack_unpack", &args).unwrap();
     for (i, expected) in [100, 150, 200, 250].iter().enumerate() {
         let args = vec![mrubyedge::yamrb::value::Value::Integer(i as i64)];
-        let value = mrb_array_get_index(result.to_rc(), &args).expect("getting index failed");
+        let value = mrb_array_get_index(&result, &args).expect("getting index failed");
         let value: i64 = (&value).try_into().expect("value is not integer");
         assert_eq!(value, *expected);
     }

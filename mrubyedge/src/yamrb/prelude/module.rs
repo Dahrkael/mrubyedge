@@ -46,9 +46,9 @@ fn mrb_module_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
     };
 
     let self_obj = vm.getself()?;
-    match &self_obj.value {
-        RValue::Class(klass) => mrb_include_module(klass, mixin)?,
-        RValue::Module(module) => mrb_include_module(module, mixin)?,
+    match self_obj.rvalue() {
+        Some(RValue::Class(klass)) => mrb_include_module(klass, mixin)?,
+        Some(RValue::Module(module)) => mrb_include_module(module, mixin)?,
         _ => {
             return Err(Error::RuntimeError(
                 "Module#include must be called on class or module".to_string(),
@@ -57,7 +57,7 @@ fn mrb_module_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
     };
     vm.bump_method_version();
 
-    Ok(Value::from_rc(self_obj))
+    Ok(self_obj)
 }
 
 /// Public helper.
@@ -83,8 +83,8 @@ pub fn mrb_include_module(target: &impl AsModule, mixin: Rc<RModule>) -> Result<
 
 fn mrb_module_ancestors(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let self_module = vm.getself()?;
-    let target_module = match &self_module.value {
-        RValue::Module(module) => module.clone(),
+    let target_module = match self_module.rvalue() {
+        Some(RValue::Module(module)) => module.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Module#ancestors must be called on class or module".to_string(),

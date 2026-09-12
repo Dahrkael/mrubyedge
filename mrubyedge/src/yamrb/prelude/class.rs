@@ -53,8 +53,8 @@ pub(crate) fn initialize_class(vm: &mut VM) {
 
 fn mrb_class_new(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let class = vm.getself()?;
-    let class = match &class.value {
-        RValue::Class(c) => c.clone(),
+    let class = match class.rvalue() {
+        Some(RValue::Class(c)) => c.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Class#new must be called from class".to_string(),
@@ -77,8 +77,8 @@ fn mrb_class_new(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
 
 fn mrb_class_attr_reader(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let class_ = vm.getself()?;
-    let class = match &class_.value {
-        RValue::Class(c) => c.clone(),
+    let class = match class_.rvalue() {
+        Some(RValue::Class(c)) => c.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Class#attr_reader must be called from class".to_string(),
@@ -122,8 +122,8 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, E
 
 fn mrb_class_attr_writer(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let class_ = vm.getself()?;
-    let class = match &class_.value {
-        RValue::Class(c) => c.clone(),
+    let class = match class_.rvalue() {
+        Some(RValue::Class(c)) => c.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Class#attr_reader must be called from class".to_string(),
@@ -175,8 +175,8 @@ fn mrb_class_attr_acceccor(vm: &mut VM, args: &[Option<Value>]) -> Result<Value,
 
 fn mrb_class_ancestors(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let self_module = vm.getself()?;
-    let target_class = match &self_module.value {
-        RValue::Class(class) => class.clone(),
+    let target_class = match self_module.rvalue() {
+        Some(RValue::Class(class)) => class.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Module#ancestors must be called on class or module".to_string(),
@@ -194,9 +194,9 @@ fn mrb_class_ancestors(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Er
 
 fn mrb_module_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let class = vm.getself()?;
-    let class_name = match &class.value {
-        RValue::Class(c) => c.full_name(),
-        RValue::Module(m) => m.full_name(),
+    let class_name = match class.rvalue() {
+        Some(RValue::Class(c)) => c.full_name(),
+        Some(RValue::Module(m)) => m.full_name(),
         _ => {
             return Err(Error::RuntimeError(
                 "Module#inspect must be called from module or class".to_string(),

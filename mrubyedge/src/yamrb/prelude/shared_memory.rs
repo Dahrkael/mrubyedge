@@ -87,8 +87,8 @@ fn mrb_shared_memory_offset_in_memory(
     _args: &[Option<Value>],
 ) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let sm = match &this.value {
-        RValue::SharedMemory(s) => s,
+    let sm = match this.rvalue() {
+        Some(RValue::SharedMemory(s)) => s,
         _ => {
             return Err(Error::RuntimeError(
                 "SharedMemory#to_s must be called on a SharedMemory".to_string(),
@@ -125,8 +125,8 @@ fn mrb_shared_memory_set_index_range(vm: &mut VM, args: &[Option<Value>]) -> Res
             ));
         }
     };
-    let sm = match &this.value {
-        RValue::SharedMemory(s) => s,
+    let sm = match this.rvalue() {
+        Some(RValue::SharedMemory(s)) => s,
         _ => {
             return Err(Error::RuntimeError(
                 "SharedMemory#to_s must be called on a SharedMemory".to_string(),
@@ -141,13 +141,13 @@ fn mrb_shared_memory_set_index_range(vm: &mut VM, args: &[Option<Value>]) -> Res
     }
     let mut sm = sm.borrow_mut();
     sm.write(start as usize, &data);
-    Ok(Value::from_rc(this.clone()))
+    Ok(this.clone())
 }
 
 fn mrb_shared_memory_to_string(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let sm = match &this.value {
-        RValue::SharedMemory(s) => s,
+    let sm = match this.rvalue() {
+        Some(RValue::SharedMemory(s)) => s,
         _ => {
             return Err(Error::RuntimeError(
                 "SharedMemory#to_s must be called on a SharedMemory".to_string(),
@@ -186,8 +186,8 @@ fn mrb_shared_memory_index_range(vm: &mut VM, args: &[Option<Value>]) -> Result<
             ));
         }
     };
-    let sm = match &this.value {
-        RValue::SharedMemory(s) => s,
+    let sm = match this.rvalue() {
+        Some(RValue::SharedMemory(s)) => s,
         _ => {
             return Err(Error::RuntimeError(
                 "this value's not a SharedMemory".to_string(),
@@ -202,8 +202,8 @@ fn mrb_shared_memory_index_range(vm: &mut VM, args: &[Option<Value>]) -> Result<
 
 fn mrb_shared_memory_replace(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let sm = match &this.value {
-        RValue::SharedMemory(s) => s,
+    let sm = match this.rvalue() {
+        Some(RValue::SharedMemory(s)) => s,
         _ => {
             return Err(Error::RuntimeError(
                 "SharedMemory#write_all must be called on a SharedMemory".to_string(),
@@ -213,7 +213,7 @@ fn mrb_shared_memory_replace(vm: &mut VM, args: &[Option<Value>]) -> Result<Valu
     let data: Vec<u8> = args[0].as_ref().unwrap().try_into()?;
     let mut sm = sm.borrow_mut();
     sm.write(0, &data);
-    Ok(Value::from_rc(this.clone()))
+    Ok(this.clone())
 }
 
 // SharedMemory#read_by_size(size: Integer, offset: Integer) -> Integer
@@ -222,8 +222,8 @@ fn mrb_shared_memory_read_by_size(vm: &mut VM, args: &[Option<Value>]) -> Result
     let size: usize = args[0].as_ref().unwrap().try_into()?;
     let offset: usize = args[1].as_ref().unwrap().try_into()?;
 
-    let sm = match &this.value {
-        RValue::SharedMemory(s) => s,
+    let sm = match this.rvalue() {
+        Some(RValue::SharedMemory(s)) => s,
         _ => {
             return Err(Error::RuntimeError(
                 "SharedMemory#to_s must be called on a SharedMemory".to_string(),
@@ -310,8 +310,8 @@ fn test_mrb_shared_memory_read_by_size() {
     assert_eq!(result, 0);
 
     let sm = vm.must_getself();
-    match &sm.value {
-        RValue::SharedMemory(s) => {
+    match sm.rvalue() {
+        Some(RValue::SharedMemory(s)) => {
             let data = vec![1, 2, 3, 4, 5, 6, 7];
             s.borrow_mut().write(0, &data);
         }

@@ -134,12 +134,10 @@ pub fn mrb_call_block(
     };
     let recv = match recv {
         Some(r) => r,
-        None => Value::from_rc(
-            block
-                .block_self
-                .clone()
-                .ok_or_else(|| Error::RuntimeError("No block self assigned".to_string()))?,
-        ),
+        None => block
+            .block_self
+            .clone()
+            .ok_or_else(|| Error::RuntimeError("No block self assigned".to_string()))?,
     };
     vm.push_breadcrumb(
         "block_call",
@@ -186,8 +184,8 @@ pub fn mrb_funcall(
     name: &str,
     args: &[Value],
 ) -> Result<Value, Error> {
-    let recv: Rc<RObject> = match &top_self {
-        Some(v) => v.to_rc(),
+    let recv: Value = match &top_self {
+        Some(v) => v.clone(),
         None => vm.getself()?,
     };
     let binding = recv.singleton_or_this_class(vm);
@@ -206,9 +204,9 @@ pub fn mrb_funcall(
         }
     };
 
-    let receiver = match &recv.value {
-        RValue::Class(c) => CallerReceiver::Class(c.clone()),
-        RValue::Module(m) => CallerReceiver::Module(m.clone()),
+    let receiver = match recv.rvalue() {
+        Some(RValue::Class(c)) => CallerReceiver::Class(c.clone()),
+        Some(RValue::Module(m)) => CallerReceiver::Module(m.clone()),
         _ => CallerReceiver::Instance(recv.get_class(vm)),
     };
     vm.push_breadcrumb(
@@ -230,19 +228,19 @@ pub fn mrb_funcall(
         call_block(
             vm,
             method,
-            Value::from_rc(recv.clone()),
+            recv.clone(),
             args,
             Some((method_id, owner_module)),
             0, // unused
         )
     } else {
-        let prev = vm.set_reg(0, recv.clone());
+        let prev = vm.current_regs()[0].replace(recv.clone());
         let func = vm.fn_table.get(method.func.unwrap()).unwrap();
         let mut buf = arg_buf();
         let mut tmp = Vec::new();
         let res = func(vm, value_args(args, &mut buf, &mut tmp));
         if let Some(prev) = prev {
-            vm.set_reg(0, prev);
+            vm.set_reg_value(0, prev);
         } else {
             vm.current_regs()[0].take();
         }
@@ -254,7 +252,7 @@ pub fn mrb_funcall(
     res
 }
 
-pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Value, Error> {
+pub fn mrb_call_inspect(vm: &mut VM, recv: &Value) -> Result<Value, Error> {
     let binding = recv.get_class(vm);
     let (owner_module, method) = resolve_method(&binding, "inspect")
         .ok_or_else(|| Error::NoMethodError("inspect".to_string()))?;
@@ -266,17 +264,17 @@ pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Value, Error> 
         call_block(
             vm,
             method,
-            Value::from_rc(recv.clone()),
+            recv.clone(),
             &[],
             Some((method_id, owner_module)),
             0, // unused
         )
     } else {
-        let old = vm.set_reg(0, recv.clone());
+        let old = vm.current_regs()[0].replace(recv.clone());
         let func = vm.fn_table.get(method.func.unwrap()).unwrap();
         let res = func(vm, &[]);
         if let Some(old) = old {
-            vm.set_reg(0, old);
+            vm.set_reg_value(0, old);
         } else {
             vm.current_regs()[0].take();
         }
@@ -284,7 +282,7 @@ pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Value, Error> 
     }
 }
 
-pub fn mrb_call_p(vm: &mut VM, recv: Rc<RObject>) {
+pub fn mrb_call_p(vm: &mut VM, recv: &Value) {
     let inspect = mrb_call_inspect(vm, recv).expect("failed to call inspect");
     let inspect: String = (&inspect).try_into().expect("failed to convert to string");
     eprintln!("{}", inspect);
@@ -449,11 +447,11 @@ fn test_mrb_inspect() -> Result<(), Box<dyn std::error::Error>> {
     let class_a = vm.define_class("A", None, None);
     let class_a = RObject::class(class_a, &mut vm);
     let obj_a = mrb_funcall(&mut vm, Some(Value::from_rc(class_a)), "new", &[])?;
-    let res = mrb_call_inspect(&mut vm, obj_a.to_rc()).unwrap();
+    let res = mrb_call_inspect(&mut vm, &obj_a).unwrap();
     let res_str: String = (&res).try_into().unwrap();
     assert_eq!(
         res_str,
-        "#<A:0x".to_string() + &format!("{:016x}", obj_a.to_rc().object_id.get()) + ">"
+        "#<A:0x".to_string() + &format!("{:016x}", obj_a.object_id()) + ">"
     );
 
     // assert not to brake registers

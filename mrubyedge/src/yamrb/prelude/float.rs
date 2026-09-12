@@ -63,8 +63,8 @@ pub(crate) fn initialize_float(vm: &mut VM) {
 
 pub fn mrb_float_to_i(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    match &this.value {
-        crate::yamrb::value::RValue::Float(f) => {
+    match &this {
+        Value::Float(f) => {
             let int_value = *f as i64;
             Ok(Value::Integer(int_value))
         }
@@ -76,8 +76,8 @@ pub fn mrb_float_to_i(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Err
 
 pub fn mrb_float_to_f(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(Value::Float(*f)),
+    match &this {
+        Value::Float(f) => Ok(Value::Float(*f)),
         _ => Err(Error::RuntimeError(
             "Float#to_f must be called on a Float".to_string(),
         )),
@@ -86,8 +86,8 @@ pub fn mrb_float_to_f(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Err
 
 pub fn mrb_float_finite(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(Value::Bool(f.is_finite())),
+    match &this {
+        Value::Float(f) => Ok(Value::Bool(f.is_finite())),
         _ => Err(Error::RuntimeError(
             "Float#finite? must be called on a Float".to_string(),
         )),
@@ -96,8 +96,8 @@ pub fn mrb_float_finite(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, E
 
 pub fn mrb_float_infinite(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(Value::Bool(f.is_infinite())),
+    match &this {
+        Value::Float(f) => Ok(Value::Bool(f.is_infinite())),
         _ => Err(Error::RuntimeError(
             "Float#infinite? must be called on a Float".to_string(),
         )),
@@ -106,8 +106,8 @@ pub fn mrb_float_infinite(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value,
 
 pub fn mrb_float_nan(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(Value::Bool(f.is_nan())),
+    match &this {
+        Value::Float(f) => Ok(Value::Bool(f.is_nan())),
         _ => Err(Error::RuntimeError(
             "Float#nan? must be called on a Float".to_string(),
         )),
@@ -116,8 +116,8 @@ pub fn mrb_float_nan(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Erro
 
 pub fn mrb_float_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    match &this.value {
-        crate::yamrb::value::RValue::Float(f) => {
+    match &this {
+        Value::Float(f) => {
             let s = format!("{}", f);
             Ok(Value::from_rc(RObject::string(s).to_refcount_assigned()))
         }
@@ -136,8 +136,8 @@ pub fn mrb_float_clamp(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Err
     }
 
     let this = vm.getself()?;
-    let this_float = match &this.value {
-        crate::yamrb::value::RValue::Float(f) => *f,
+    let this_float = match &this {
+        Value::Float(f) => *f,
         _ => {
             return Err(Error::RuntimeError(
                 "Float#clamp must be called on a Float".to_string(),
@@ -183,8 +183,8 @@ pub fn mrb_float_add(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
     }
 
     let this = vm.getself()?;
-    let this_float = match &this.value {
-        crate::yamrb::value::RValue::Float(f) => *f,
+    let this_float = match &this {
+        Value::Float(f) => *f,
         _ => {
             return Err(Error::RuntimeError(
                 "Float#+ must be called on a Float".to_string(),
@@ -209,8 +209,8 @@ pub fn mrb_float_sub(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
     }
 
     let this = vm.getself()?;
-    let this_float = match &this.value {
-        crate::yamrb::value::RValue::Float(f) => *f,
+    let this_float = match &this {
+        Value::Float(f) => *f,
         _ => {
             return Err(Error::RuntimeError(
                 "Float#- must be called on a Float".to_string(),
@@ -235,8 +235,8 @@ pub fn mrb_float_mul(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
     }
 
     let this = vm.getself()?;
-    let this_float = match &this.value {
-        crate::yamrb::value::RValue::Float(f) => *f,
+    let this_float = match &this {
+        Value::Float(f) => *f,
         _ => {
             return Err(Error::RuntimeError(
                 "Float#* must be called on a Float".to_string(),
@@ -261,8 +261,8 @@ pub fn mrb_float_div(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
     }
 
     let this = vm.getself()?;
-    let this_float = match &this.value {
-        crate::yamrb::value::RValue::Float(f) => *f,
+    let this_float = match &this {
+        Value::Float(f) => *f,
         _ => {
             return Err(Error::RuntimeError(
                 "Float#/ must be called on a Float".to_string(),
@@ -285,8 +285,8 @@ pub fn mrb_float_div(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
 
 pub fn mrb_float_positive(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(Value::Float(*f)),
+    match &this {
+        Value::Float(f) => Ok(Value::Float(*f)),
         _ => Err(Error::RuntimeError(
             "Float#+@ must be called on a Float".to_string(),
         )),
@@ -295,8 +295,8 @@ pub fn mrb_float_positive(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value,
 
 pub fn mrb_float_negative(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(Value::Float(-*f)),
+    match &this {
+        Value::Float(f) => Ok(Value::Float(-*f)),
         _ => Err(Error::RuntimeError(
             "Float#-@ must be called on a Float".to_string(),
         )),
@@ -311,8 +311,8 @@ pub fn mrb_float_power(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Err
     }
 
     let this = vm.getself()?;
-    let this_float = match &this.value {
-        crate::yamrb::value::RValue::Float(f) => *f,
+    let this_float = match &this {
+        Value::Float(f) => *f,
         _ => {
             return Err(Error::RuntimeError(
                 "Float#** must be called on a Float".to_string(),
@@ -331,8 +331,8 @@ pub fn mrb_float_power(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Err
 
 pub fn mrb_float_abs(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    match &this.value {
-        crate::yamrb::value::RValue::Float(f) => Ok(Value::Float(f.abs())),
+    match &this {
+        Value::Float(f) => Ok(Value::Float(f.abs())),
         _ => Err(Error::RuntimeError(
             "Float#abs must be called on a Float".to_string(),
         )),

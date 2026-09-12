@@ -218,7 +218,7 @@ pub(crate) fn initialize_string(vm: &mut VM) {
 }
 
 pub fn mrb_string_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(format!(
         "\"{}\"",
         this
@@ -268,10 +268,10 @@ fn bytes_of<const N: usize>(value: &[u8], cursor: usize) -> Result<[u8; N], Erro
 // for now.
 fn mrb_string_unpack(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let value: Vec<u8> = this.as_ref().try_into()?;
+    let value: Vec<u8> = (&this).try_into()?;
     let format: Vec<u8> = args[0].as_ref().unwrap().try_into()?;
     let mut cursor: usize = 0;
-    let result = Rc::new(RObject::array(Vec::new()));
+    let result = Value::from_rc(Rc::new(RObject::array(Vec::new())));
 
     for c in format.iter() {
         let value = match c {
@@ -323,10 +323,9 @@ fn mrb_string_unpack(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
                 return Err(Error::RuntimeError("Unsupported format".to_string()));
             }
         };
-        mrb_array_push(result.clone(), &[Value::Integer(value)])?;
+        mrb_array_push(&result, &[Value::Integer(value)])?;
     }
-
-    Ok(Value::from_rc(result))
+    Ok(result)
 }
 
 #[test]
@@ -354,8 +353,7 @@ fn test_mrb_string_unpack() {
 
     for (i, expected) in answers.iter().enumerate() {
         let args = vec![Value::Integer(i as i64)];
-        let value =
-            prelude::array::mrb_array_get_index(ret.to_rc(), &args).expect("getting index failed");
+        let value = prelude::array::mrb_array_get_index(&ret, &args).expect("getting index failed");
         let value: i64 = (&value).try_into().expect("value is not integer");
         assert_eq!(value, *expected);
     }
@@ -363,18 +361,18 @@ fn test_mrb_string_unpack() {
 
 fn mrb_string_size(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let value: Vec<u8> = this.as_ref().try_into()?;
+    let value: Vec<u8> = (&this).try_into()?;
     Ok(Value::Integer(value.len() as i64))
 }
 
 fn mrb_string_add(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     let other: String = args[0].as_ref().unwrap().try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(this + &other))))
 }
 
 fn mrb_string_mul(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     let times: i64 = args[0].as_ref().unwrap().try_into()?;
     if times < 0 {
         return Err(Error::ArgumentError("negative argument".to_string()));
@@ -389,11 +387,11 @@ fn mrb_string_append(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
     let other: String = args[0].as_ref().unwrap().try_into()?;
     this.string_borrow_mut()?
         .extend_from_slice(other.as_bytes());
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 fn mrb_string_slice(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     let chars: Vec<char> = this.chars().collect();
 
     if args.is_empty() {
@@ -427,7 +425,7 @@ fn mrb_string_slice(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error>
 
 fn mrb_string_slice_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let s: String = this.as_ref().try_into()?;
+    let s: String = (&this).try_into()?;
     let chars: Vec<char> = s.chars().collect();
 
     if args.is_empty() {
@@ -471,7 +469,7 @@ fn mrb_string_slice_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, E
 fn mrb_string_b(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
 
-    if let RValue::String(value, _) = &this.value {
+    if let Some(RValue::String(value, _)) = this.rvalue() {
         Ok(Value::from_rc(
             RObject::string_from_vec(value.borrow().to_owned()).to_refcount_assigned(),
         ))
@@ -483,11 +481,11 @@ fn mrb_string_b(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
 fn mrb_string_clear(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     this.string_borrow_mut()?.clear();
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 fn mrb_string_chomp(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     let result = this
         .strip_suffix("\r\n")
         .or_else(|| this.strip_suffix('\n'))
@@ -498,7 +496,7 @@ fn mrb_string_chomp(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error
 
 fn mrb_string_chomp_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let s: String = this.as_ref().try_into()?;
+    let s: String = (&this).try_into()?;
     let result = s
         .strip_suffix("\r\n")
         .or_else(|| s.strip_suffix('\n'))
@@ -507,24 +505,24 @@ fn mrb_string_chomp_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, 
 
     if result.len() != s.len() {
         *this.string_borrow_mut()? = result.as_bytes().to_vec();
-        Ok(Value::from_rc(this))
+        Ok(this)
     } else {
         Ok(Value::Nil)
     }
 }
 
 fn mrb_string_dup(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(this))))
 }
 
 fn mrb_string_empty(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     Ok(Value::Bool(this.is_empty()))
 }
 
 fn mrb_string_getbyte(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<u8> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<u8> = vm.getself()?.try_into()?;
     let index: i64 = args[0].as_ref().unwrap().try_into()?;
     let len = this.len() as i64;
     let idx = if index < 0 { len + index } else { index };
@@ -537,7 +535,7 @@ fn mrb_string_getbyte(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 
 fn mrb_string_setbyte(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let mut bytes: Vec<u8> = this.as_ref().try_into()?;
+    let mut bytes: Vec<u8> = (&this).try_into()?;
     let index: i64 = args[0].as_ref().unwrap().try_into()?;
     let value: i64 = args[1].as_ref().unwrap().try_into()?;
 
@@ -562,7 +560,7 @@ fn mrb_string_setbyte(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 }
 
 fn mrb_string_index(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     let search: String = args[0].as_ref().unwrap().try_into()?;
 
     match this.find(&search) {
@@ -572,7 +570,7 @@ fn mrb_string_index(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error>
 }
 
 fn mrb_string_ord(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     if let Some(ch) = this.chars().next() {
         Ok(Value::Integer(ch as i64))
     } else {
@@ -581,7 +579,7 @@ fn mrb_string_ord(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> 
 }
 
 fn mrb_string_split(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
 
     let result = if args.is_empty() {
         // Split by whitespace
@@ -599,7 +597,7 @@ fn mrb_string_split(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error>
 }
 
 fn mrb_string_lstrip(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(
         this.trim_start().to_string(),
     ))))
@@ -607,19 +605,19 @@ fn mrb_string_lstrip(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Erro
 
 fn mrb_string_lstrip_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let s: String = this.as_ref().try_into()?;
+    let s: String = (&this).try_into()?;
     let result = s.trim_start();
 
     if result.len() != s.len() {
         *this.string_borrow_mut()? = result.as_bytes().to_vec();
-        Ok(Value::from_rc(this))
+        Ok(this)
     } else {
         Ok(Value::Nil)
     }
 }
 
 fn mrb_string_rstrip(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(
         this.trim_end().to_string(),
     ))))
@@ -627,19 +625,19 @@ fn mrb_string_rstrip(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Erro
 
 fn mrb_string_rstrip_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let s: String = this.as_ref().try_into()?;
+    let s: String = (&this).try_into()?;
     let result = s.trim_end();
 
     if result.len() != s.len() {
         *this.string_borrow_mut()? = result.as_bytes().to_vec();
-        Ok(Value::from_rc(this))
+        Ok(this)
     } else {
         Ok(Value::Nil)
     }
 }
 
 fn mrb_string_strip(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(
         this.trim().to_string(),
     ))))
@@ -647,42 +645,42 @@ fn mrb_string_strip(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error
 
 fn mrb_string_strip_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let s: String = this.as_ref().try_into()?;
+    let s: String = (&this).try_into()?;
     let result = s.trim();
 
     if result.len() != s.len() {
         *this.string_borrow_mut()? = result.as_bytes().to_vec();
-        Ok(Value::from_rc(this))
+        Ok(this)
     } else {
         Ok(Value::Nil)
     }
 }
 
 fn mrb_string_to_sym(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     Ok(Value::from_rc(RObject::symbol_rc(&RSym::new(this))))
 }
 
 fn mrb_string_start_with(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     let prefix: String = args[0].as_ref().unwrap().try_into()?;
     Ok(Value::Bool(this.starts_with(&prefix)))
 }
 
 fn mrb_string_end_with(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     let suffix: String = args[0].as_ref().unwrap().try_into()?;
     Ok(Value::Bool(this.ends_with(&suffix)))
 }
 
 fn mrb_string_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     let search: String = args[0].as_ref().unwrap().try_into()?;
     Ok(Value::Bool(this.contains(&search)))
 }
 
 fn mrb_string_bytes(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<u8> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<u8> = vm.getself()?.try_into()?;
     let result: Vec<Value> = this.into_iter().map(|b| Value::Integer(b as i64)).collect();
     Ok(Value::from_rc(Rc::new(RObject::array(result))))
 }
@@ -695,7 +693,7 @@ fn mrb_string_chars(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error
 
     let is_utf8 = this.string_is_utf8()?;
 
-    let bytes: Vec<u8> = this.as_ref().try_into()?;
+    let bytes: Vec<u8> = (&this).try_into()?;
 
     let result: Vec<Value> = if is_utf8 {
         // Split by UTF-8 characters (runes)
@@ -715,7 +713,7 @@ fn mrb_string_chars(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error
 }
 
 fn mrb_string_upcase(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(
         this.to_uppercase(),
     ))))
@@ -723,19 +721,19 @@ fn mrb_string_upcase(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Erro
 
 fn mrb_string_upcase_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let s: String = this.as_ref().try_into()?;
+    let s: String = (&this).try_into()?;
     let result = s.to_uppercase();
 
     if result != s {
         *this.string_borrow_mut()? = result.as_bytes().to_vec();
-        Ok(Value::from_rc(this))
+        Ok(this)
     } else {
         Ok(Value::Nil)
     }
 }
 
 fn mrb_string_downcase(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(
         this.to_lowercase(),
     ))))
@@ -743,26 +741,26 @@ fn mrb_string_downcase(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Er
 
 fn mrb_string_downcase_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let s: String = this.as_ref().try_into()?;
+    let s: String = (&this).try_into()?;
     let result = s.to_lowercase();
 
     if result != s {
         *this.string_borrow_mut()? = result.as_bytes().to_vec();
-        Ok(Value::from_rc(this))
+        Ok(this)
     } else {
         Ok(Value::Nil)
     }
 }
 
 fn mrb_string_to_i(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     let trimmed = this.trim();
     let result = trimmed.parse::<i64>().unwrap_or(0);
     Ok(Value::Integer(result))
 }
 
 fn mrb_string_to_f(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: String = vm.getself()?.as_ref().try_into()?;
+    let this: String = vm.getself()?.try_into()?;
     let trimmed = this.trim();
     let result = trimmed.parse::<f64>().unwrap_or(0.0);
     Ok(Value::from_rc(Rc::new(RObject::float(result))))

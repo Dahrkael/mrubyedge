@@ -151,7 +151,7 @@ fn record_and_reraise_break(
     let rc_args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
     match mrb_call_block(vm, block, None, &rc_args, 0) {
         Err(Error::Break(v)) => {
-            *broken.borrow_mut() = Some(Value::from_rc(v.clone()));
+            *broken.borrow_mut() = Some(v.clone());
             vm.exception.take();
             Err(Error::Break(v))
         }
@@ -175,12 +175,7 @@ fn mrb_enumerable_to_a(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Er
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     Ok(results)
@@ -212,12 +207,7 @@ fn mrb_enumerable_map(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -259,12 +249,7 @@ fn mrb_enumerable_find(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Err
     });
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -302,12 +287,7 @@ fn mrb_enumerable_select(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, E
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -343,12 +323,7 @@ fn mrb_enumerable_all(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -384,12 +359,7 @@ fn mrb_enumerable_any(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -426,12 +396,7 @@ fn mrb_enumerable_delete_if(vm: &mut VM, args: &[Option<Value>]) -> Result<Value
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -475,24 +440,19 @@ fn mrb_enumerable_each_with_index(vm: &mut VM, args: &[Option<Value>]) -> Result
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
         return Ok(v);
     }
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 // Enumerable#sort: Returns an array with sorted elements
 fn mrb_enumerable_sort(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let array = mrb_funcall(vm, Some(Value::from_rc(this)), "to_a", &[])?;
+    let array = mrb_funcall(vm, Some(this), "to_a", &[])?;
     let mut collected: Vec<Value> = (&array).try_into()?;
 
     collected.sort_by(|a, b| {
@@ -526,7 +486,7 @@ fn mrb_enumerable_sort_by(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, 
 
     // Collect elements first using to_a
     let this = vm.getself()?;
-    let array = mrb_funcall(vm, Some(Value::from_rc(this)), "to_a", &[])?;
+    let array = mrb_funcall(vm, Some(this), "to_a", &[])?;
     let elements: Vec<Value> = (&array).try_into()?;
 
     // Collect keys by calling the block on each element
@@ -544,7 +504,7 @@ fn mrb_enumerable_sort_by(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, 
             Ok(k) => k,
             Err(Error::Break(v)) => {
                 vm.exception.take();
-                return Ok(Value::from_rc(v));
+                return Ok(v);
             }
             Err(e) => return Err(e),
         };
@@ -580,7 +540,7 @@ fn mrb_enumerable_sort_by(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, 
 // Enumerable#max: Returns the maximum element
 fn mrb_enumerable_max(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let array = mrb_funcall(vm, Some(Value::from_rc(this)), "to_a", &[])?;
+    let array = mrb_funcall(vm, Some(this), "to_a", &[])?;
     let collected: Vec<Value> = (&array).try_into()?;
 
     if collected.is_empty() {
@@ -604,7 +564,7 @@ fn mrb_enumerable_max(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Err
 // Enumerable#min: Returns the minimum element
 fn mrb_enumerable_min(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let array = mrb_funcall(vm, Some(Value::from_rc(this)), "to_a", &[])?;
+    let array = mrb_funcall(vm, Some(this), "to_a", &[])?;
     let collected: Vec<Value> = (&array).try_into()?;
 
     if collected.is_empty() {
@@ -628,7 +588,7 @@ fn mrb_enumerable_min(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Err
 // Enumerable#minmax: Returns a two-element array containing the minimum and maximum
 fn mrb_enumerable_minmax(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let array = mrb_funcall(vm, Some(Value::from_rc(this)), "to_a", &[])?;
+    let array = mrb_funcall(vm, Some(this), "to_a", &[])?;
     let collected: Vec<Value> = (&array).try_into()?;
 
     if collected.is_empty() {
@@ -683,12 +643,7 @@ fn mrb_enumerable_compact(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value,
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     Ok(results)
@@ -708,12 +663,7 @@ fn mrb_enumerable_count(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Er
 
         let this = vm.getself()?;
         let block = rproc_from_rust_block(vm, wrapping_block)?;
-        mrb_funcall(
-            vm,
-            Some(Value::from_rc(this.clone())),
-            "each",
-            &[Value::from_rc(block)],
-        )?;
+        mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
         vm.pop_fnblock()?;
     } else {
         // Count elements matching the block condition
@@ -737,12 +687,7 @@ fn mrb_enumerable_count(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Er
 
         let this = vm.getself()?;
         let block = rproc_from_rust_block(vm, wrapping_block)?;
-        mrb_funcall(
-            vm,
-            Some(Value::from_rc(this.clone())),
-            "each",
-            &[Value::from_rc(block)],
-        )?;
+        mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
         vm.pop_fnblock()?;
 
         if let Some(v) = broken.borrow_mut().take() {
@@ -756,7 +701,7 @@ fn mrb_enumerable_count(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Er
 // Enumerable#uniq: Returns a new array with duplicate values removed
 fn mrb_enumerable_uniq(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let array = mrb_funcall(vm, Some(Value::from_rc(this)), "to_a", &[])?;
+    let array = mrb_funcall(vm, Some(this), "to_a", &[])?;
     let collected: Vec<Value> = (&array).try_into()?;
 
     let mut result = Vec::new();
@@ -832,12 +777,7 @@ fn mrb_enumerable_reduce(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, E
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -883,12 +823,7 @@ fn mrb_enumerable_sum(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(
-        vm,
-        Some(Value::from_rc(this.clone())),
-        "each",
-        &[Value::from_rc(block)],
-    )?;
+    mrb_funcall(vm, Some(this.clone()), "each", &[Value::from_rc(block)])?;
     vm.pop_fnblock()?;
 
     // Return the final accumulator value

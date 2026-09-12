@@ -94,12 +94,12 @@ pub(crate) fn initialize_integer(vm: &mut VM) {
 }
 
 fn mrb_integer_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.as_ref().try_into()?;
+    let this: i64 = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::string(this.to_string()))))
 }
 
 fn mrb_integer_times(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.as_ref().try_into()?;
+    let this: i64 = vm.getself()?.try_into()?;
     for i in 0..this {
         let block = args[0].as_ref().unwrap().clone();
         let args = vec![Value::Integer(i)];
@@ -111,23 +111,23 @@ fn mrb_integer_times(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
             // re-fire as a phantom error in the enclosing loop.
             Err(Error::Break(v)) => {
                 vm.exception.take();
-                return Ok(Value::from_rc(v));
+                return Ok(v);
             }
             Err(e) => return Err(e),
         }
     }
-    vm.getself().map(Value::from_rc)
+    vm.getself()
 }
 
 fn mrb_integer_mod(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.as_ref().try_into()?;
+    let lhs: i64 = vm.getself()?.try_into()?;
     let rhs: i64 = args[0].as_ref().unwrap().try_into()?;
 
     Ok(Value::Integer(lhs % rhs))
 }
 
 fn mrb_integer_bitref(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.as_ref().try_into()?;
+    let this: i64 = vm.getself()?.try_into()?;
     let index: i64 = args[0].as_ref().unwrap().try_into()?;
 
     if index < 0 {
@@ -139,12 +139,12 @@ fn mrb_integer_bitref(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 }
 
 fn mrb_integer_negative(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.as_ref().try_into()?;
+    let this: i64 = vm.getself()?.try_into()?;
     Ok(Value::Integer(-this))
 }
 
 fn mrb_integer_add(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.as_ref().try_into()?;
+    let lhs: i64 = vm.getself()?.try_into()?;
     let rhs_obj = args[0].as_ref().unwrap();
 
     match rhs_obj {
@@ -155,7 +155,7 @@ fn mrb_integer_add(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> 
 }
 
 fn mrb_integer_sub(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.as_ref().try_into()?;
+    let lhs: i64 = vm.getself()?.try_into()?;
     let rhs_obj = args[0].as_ref().unwrap();
 
     match rhs_obj {
@@ -166,7 +166,7 @@ fn mrb_integer_sub(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> 
 }
 
 fn mrb_integer_power(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let base: i64 = vm.getself()?.as_ref().try_into()?;
+    let base: i64 = vm.getself()?.try_into()?;
     let exponent_obj = args[0].as_ref().unwrap();
 
     match exponent_obj {
@@ -191,30 +191,30 @@ fn mrb_integer_power(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
 }
 
 fn mrb_integer_and(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.as_ref().try_into()?;
+    let lhs: i64 = vm.getself()?.try_into()?;
     let rhs: i64 = args[0].as_ref().unwrap().try_into()?;
     Ok(Value::Integer(lhs & rhs))
 }
 
 fn mrb_integer_or(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.as_ref().try_into()?;
+    let lhs: i64 = vm.getself()?.try_into()?;
     let rhs: i64 = args[0].as_ref().unwrap().try_into()?;
     Ok(Value::Integer(lhs | rhs))
 }
 
 fn mrb_integer_xor(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.as_ref().try_into()?;
+    let lhs: i64 = vm.getself()?.try_into()?;
     let rhs: i64 = args[0].as_ref().unwrap().try_into()?;
     Ok(Value::Integer(lhs ^ rhs))
 }
 
 fn mrb_integer_not(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.as_ref().try_into()?;
+    let this: i64 = vm.getself()?.try_into()?;
     Ok(Value::Integer(!this))
 }
 
 fn mrb_integer_lshift(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.as_ref().try_into()?;
+    let lhs: i64 = vm.getself()?.try_into()?;
     let rhs: i64 = args[0].as_ref().unwrap().try_into()?;
 
     if rhs < 0 {
@@ -225,7 +225,7 @@ fn mrb_integer_lshift(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 }
 
 fn mrb_integer_rshift(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.as_ref().try_into()?;
+    let lhs: i64 = vm.getself()?.try_into()?;
     let rhs: i64 = args[0].as_ref().unwrap().try_into()?;
 
     if rhs < 0 {
@@ -236,21 +236,21 @@ fn mrb_integer_rshift(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 }
 
 fn mrb_integer_abs(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.as_ref().try_into()?;
+    let this: i64 = vm.getself()?.try_into()?;
     Ok(Value::Integer(this.abs()))
 }
 
 fn mrb_integer_to_i(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    vm.getself().map(Value::from_rc)
+    vm.getself()
 }
 
 fn mrb_integer_to_f(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.as_ref().try_into()?;
+    let this: i64 = vm.getself()?.try_into()?;
     Ok(Value::Float(this as f64))
 }
 
 fn mrb_integer_chr(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.as_ref().try_into()?;
+    let this: i64 = vm.getself()?.try_into()?;
 
     if !(0..=0x10FFFF).contains(&this) {
         return Err(Error::RangeError(format!("{} out of char range", this)));
@@ -270,7 +270,7 @@ fn mrb_integer_clamp(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
         )));
     }
 
-    let this: i64 = vm.getself()?.as_ref().try_into()?;
+    let this: i64 = vm.getself()?.try_into()?;
     let min: i64 = args[0].as_ref().unwrap().try_into()?;
     let max: i64 = args[1].as_ref().unwrap().try_into()?;
 

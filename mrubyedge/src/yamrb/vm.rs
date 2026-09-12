@@ -222,7 +222,7 @@ pub struct Breadcrumb {
 
 #[derive(Debug)]
 pub struct KArgs {
-    pub args: RefCell<RHashMap<RSym, Rc<RObject>>>,
+    pub args: RefCell<RHashMap<RSym, Value>>,
     pub kwrest_reg: Cell<usize>,
     pub upper: Option<Rc<KArgs>>,
 }
@@ -276,7 +276,7 @@ pub struct VM {
     // irep id of the script currently being evaluated. A block
     // return targeting it means there is no enclosing method (LocalJumpError).
     pub root_irep_id: Cell<Option<usize>>,
-    pub kargs: RefCell<Option<RHashMap<RSym, Rc<RObject>>>>,
+    pub kargs: RefCell<Option<RHashMap<RSym, Value>>>,
     pub current_kargs: RefCell<Option<Rc<KArgs>>>,
     pub target_class: TargetContext,
     pub exception: Option<Rc<RException>>,
@@ -872,7 +872,7 @@ impl VM {
                 {
                     // reached caller method's IREP, just return
                     let operand = insn::Fetched::B(16); // FIXME: just a bit far reg
-                    self.set_reg(16, v);
+                    self.set_reg_value(16, v);
                     self.exception.take();
                     op_return(self, &operand).expect("[bug]cannot return");
                     continue;
@@ -887,7 +887,7 @@ impl VM {
                             && !breadcrumb_stack_contains(&self.breadcrumbs.borrow(), *target_id)
                             && let Error::Break(brkval) = e.error_type.borrow().clone()
                         {
-                            self.set_reg(*treg, brkval);
+                            self.set_reg_value(*treg, brkval);
                             self.exception.take();
                             self.break_landing.take();
                         }
@@ -1035,22 +1035,23 @@ impl VM {
         self.current_regs()[i].replace(v)
     }
 
-    /// Returns the current `self` object from register 0, or an error if it has
+    /// Returns the current `self` value from register 0, or an error if it has
     /// not been initialized yet.
-    pub fn getself(&mut self) -> Result<Rc<RObject>, Error> {
-        self.get_current_regs_cloned(0)
+    pub fn getself(&mut self) -> Result<Value, Error> {
+        self.current_regs()[0]
+            .clone()
+            .ok_or_else(|| Error::internal("register 0 is not assigned"))
     }
 
     /// Retrieves `self` without error handling, panicking if register 0 is
     /// empty. Prefer [`VM::getself`] when the value may be absent.
-    pub fn must_getself(&mut self) -> Rc<RObject> {
+    pub fn must_getself(&mut self) -> Value {
         self.current_regs()[0]
             .clone()
             .expect("self is not assigned")
-            .to_rc()
     }
 
-    pub fn get_kwargs(&self) -> Option<RHashMap<String, Rc<RObject>>> {
+    pub fn get_kwargs(&self) -> Option<RHashMap<String, Value>> {
         let kwargs = self.current_kargs.borrow().clone();
         kwargs.map(|kargs| {
             kargs
@@ -1238,20 +1239,19 @@ impl VM {
             for i in 0..size {
                 let reg = self.regs.get(i).unwrap().clone();
                 if let Some(obj) = reg {
-                    let rc = obj.to_rc();
-                    let insp = mrb_call_inspect(self, rc.clone()).unwrap();
+                    let insp = mrb_call_inspect(self, &obj).unwrap();
                     let inspect: String = (&insp)
                         .try_into()
                         .unwrap_or_else(|_| "(uninspectable)".into());
                     if i < current_regs_offset {
-                        eprintln!("  R{}(--): {}(oid={})", i, inspect, rc.object_id.get());
+                        eprintln!("  R{}(--): {}(oid={})", i, inspect, obj.object_id());
                     } else {
                         eprintln!(
                             "  R{}(R{}): {}(oid={})",
                             i,
                             i - current_regs_offset,
                             inspect,
-                            rc.object_id.get()
+                            obj.object_id()
                         );
                     }
                 } else if i < 16 || i < current_regs_offset {

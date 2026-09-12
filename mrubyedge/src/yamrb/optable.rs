@@ -1461,9 +1461,7 @@ pub(crate) fn do_op_send(
             let key = vm
                 .get_current_regs_cloned(a as usize + n + i * 2 + 1)?
                 .intern()?;
-            let val = vm
-                .get_current_regs_cloned(a as usize + n + i * 2 + 2)?
-                .clone();
+            let val = vm.get_reg_value(a as usize + n + i * 2 + 2);
             map.insert(key, val);
         }
         vm.kargs.borrow_mut().replace(map);
@@ -1737,12 +1735,9 @@ fn unshift_method_name(vm: &mut VM, method_id: &RSym, a: usize, total_args: usiz
     for i in (a + 1..=a + total_args).rev() {
         let val = vm.current_regs().get(i).and_then(|r| r.as_ref().cloned());
         if let Some(v) = val.as_ref() {
-            let _ = mrb_call_inspect(vm, v.to_rc());
+            let _ = mrb_call_inspect(vm, v);
         }
-        vm.set_reg(
-            i + 1,
-            val.map(|v| v.to_rc()).unwrap_or_else(RObject::nil_rc),
-        );
+        vm.set_reg_value(i + 1, val.unwrap_or(Value::Nil));
     }
     vm.set_reg(a + 1, method_name);
 }
@@ -1850,8 +1845,8 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         args = reg_args(vm, (a + 1) as usize, arg_count, &mut buf, &mut tmp)?;
     }
 
-    let klass = match &recv.value {
-        RValue::Instance(ins) => ins.class.clone(),
+    let klass = match recv.rvalue() {
+        Some(RValue::Instance(ins)) => ins.class.clone(),
         _ => recv.initialize_or_get_singleton_class(vm),
     };
     let (next_owner, method) =
@@ -1909,7 +1904,7 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         Some(vm.pc.get().saturating_sub(1)),
     );
 
-    vm.set_reg(a as usize, recv.clone());
+    vm.set_reg_value(a as usize, recv.clone());
     push_callinfo(
         vm,
         method.sym_id.clone().unwrap(),
@@ -2079,7 +2074,7 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             .iter()
         {
             let k = Value::Symbol(RSym::new(k.clone()).id);
-            map.insert(k.as_hash_key()?, (k, Value::from_rc(v.clone())));
+            map.insert(k.as_hash_key()?, (k, v.clone()));
         }
 
         let kwrest = RObject::hash(map);
@@ -2119,7 +2114,7 @@ pub(crate) fn op_key_p(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
     if kwrest_pos != 0 {
         let kwrest = vm.get_current_regs_cloned(kwrest_pos)?;
-        mrb_hash_delete(kwrest, Value::from_rc(key_robj))?;
+        mrb_hash_delete(&Value::from_rc(kwrest), Value::from_rc(key_robj))?;
     }
 
     vm.set_reg(a as usize, val);
@@ -2156,7 +2151,7 @@ pub(crate) fn op_karg(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             Error::ArgumentError(format!("keyword argument '{}' not found", key.name))
         })?
     };
-    vm.set_reg(a as usize, val);
+    vm.set_reg_value(a as usize, val);
     Ok(())
 }
 
@@ -2240,7 +2235,7 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_return_blk(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    let val = vm.get_current_regs_cloned(a)?;
+    let val = vm.get_reg_value(a);
 
     // a plain method frame (return inside a while/until body)
     // carries no block environment; OP_RETURN_BLK is then just a local return.
@@ -2271,7 +2266,7 @@ pub(crate) fn op_return_blk(vm: &mut VM, operand: &Fetched) -> Result<(), Error>
 
 pub(crate) fn op_break(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
-    let val = vm.get_current_regs_cloned(a)?;
+    let val = vm.get_reg_value(a);
     // record where this break must land — the nearest
     // do_op_send crumb in the stack, captured BEFORE any unwinding or
     // intermediate error handling can pop crumbs. The crumb id stays valid

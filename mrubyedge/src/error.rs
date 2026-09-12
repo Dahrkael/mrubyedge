@@ -2,8 +2,7 @@ use std::error;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::yamrb::value::RClass;
-use crate::yamrb::value::RObject;
+use crate::yamrb::value::{RClass, Value};
 use crate::yamrb::vm::VM;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -23,8 +22,8 @@ pub enum Error {
 
     LocalJumpError(String),
 
-    Break(Rc<RObject>),
-    BlockReturn(usize, Rc<RObject>),
+    Break(Value),
+    BlockReturn(usize, Value),
 }
 
 impl fmt::Display for Error {

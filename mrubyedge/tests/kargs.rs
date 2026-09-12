@@ -113,8 +113,8 @@ fn keyword_args_c_definition_test() {
                 let c_obj = kargs.get("c").ok_or_else(|| {
                     Error::ArgumentError("missing keyword argument 'c'".to_string())
                 })?;
-                let b: i32 = b_obj.as_ref().try_into()?;
-                let c: i32 = c_obj.as_ref().try_into()?;
+                let b: i32 = i32::try_from(b_obj)?;
+                let c: i32 = i32::try_from(c_obj)?;
                 Ok(Value::Integer((a * b * c) as i64))
             }
             None => Err(Error::ArgumentError(

@@ -159,8 +159,8 @@ fn mrb_random_class_srand(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, 
 fn mrb_random_seed(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let self_obj = vm.getself()?;
 
-    let seed = match &self_obj.value {
-        RValue::Data(data) => {
+    let seed = match self_obj.rvalue() {
+        Some(RValue::Data(data)) => {
             let borrow = data.data.borrow();
             let any_ref = borrow
                 .as_ref()
@@ -186,8 +186,8 @@ fn mrb_random_rand(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> 
 
     let self_obj = vm.getself()?;
 
-    let result = match &self_obj.value {
-        RValue::Data(data) => {
+    let result = match self_obj.rvalue() {
+        Some(RValue::Data(data)) => {
             let mut borrow = data.data.borrow_mut();
             let any_ref = borrow
                 .as_mut()

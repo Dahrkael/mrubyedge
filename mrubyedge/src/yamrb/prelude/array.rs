@@ -137,7 +137,7 @@ pub(crate) fn initialize_array(vm: &mut VM) {
 
 pub fn mrb_array_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let array: Vec<Value> = this.as_ref().try_into()?;
+    let array: Vec<Value> = (&this).try_into()?;
     let mut s = String::new();
     s.push('[');
     for (i, elem) in array.iter().enumerate() {
@@ -189,27 +189,27 @@ pub fn mrb_array_new(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
 fn mrb_array_push_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     let args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
-    mrb_array_push(this, &args).map(Value::from_rc)
+    mrb_array_push(&this, &args)
 }
 
-pub fn mrb_array_push(this: Rc<RObject>, args: &[Value]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_array_push(this: &Value, args: &[Value]) -> Result<Value, Error> {
     let mut array = this.array_borrow_mut()?;
     for arg in args {
         array.push(arg.clone());
     }
     drop(array);
-    Ok(this)
+    Ok(this.clone())
 }
 
 fn mrb_array_get_index_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     let args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
-    mrb_array_get_index(this, &args)
+    mrb_array_get_index(&this, &args)
 }
 
-pub fn mrb_array_get_index(this: Rc<RObject>, args: &[Value]) -> Result<Value, Error> {
-    let array = match &this.value {
-        RValue::Array(a) => a.clone(),
+pub fn mrb_array_get_index(this: &Value, args: &[Value]) -> Result<Value, Error> {
+    let array = match this.rvalue() {
+        Some(RValue::Array(a)) => a.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Array#[] must be called on an Array".to_string(),
@@ -237,14 +237,14 @@ pub fn mrb_array_get_index(this: Rc<RObject>, args: &[Value]) -> Result<Value, E
 fn mrb_array_set_index_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     let args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
-    mrb_array_set_index(this, &args)
+    mrb_array_set_index(&this, &args)
 }
 
-pub fn mrb_array_set_index(this: Rc<RObject>, args: &[Value]) -> Result<Value, Error> {
+pub fn mrb_array_set_index(this: &Value, args: &[Value]) -> Result<Value, Error> {
     let index: i32 = (&args[0]).try_into()?;
     let value = &args[1];
-    match &this.value {
-        RValue::Array(a) => {
+    match this.rvalue() {
+        Some(RValue::Array(a)) => {
             let mut a = a.borrow_mut();
             let index = if index < 0 {
                 (a.len() as i32 + index) as usize
@@ -269,8 +269,8 @@ pub fn mrb_array_set_index(this: Rc<RObject>, args: &[Value]) -> Result<Value, E
 fn mrb_array_each(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     let block = args[0].as_ref().unwrap().clone();
-    match &this.value {
-        RValue::Array(a) => {
+    match this.rvalue() {
+        Some(RValue::Array(a)) => {
             let a = a.borrow();
             for elem in a.iter() {
                 let args = vec![elem.clone()];
@@ -281,7 +281,7 @@ fn mrb_array_each(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
                     // Consume the pending exception (see integer.rs note).
                     Err(Error::Break(v)) => {
                         vm.exception.take();
-                        return Ok(Value::from_rc(v));
+                        return Ok(v);
                     }
                     Err(e) => return Err(e),
                 }
@@ -293,15 +293,15 @@ fn mrb_array_each(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
             ));
         }
     };
-    Ok(Value::from_rc(this.clone()))
+    Ok(this.clone())
 }
 
 fn mrb_array_pack(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     let format: Vec<u8> = args[0].as_ref().unwrap().try_into()?;
     let mut buf = vec![];
-    match &this.value {
-        RValue::Array(a) => {
+    match this.rvalue() {
+        Some(RValue::Array(a)) => {
             let a = a.borrow();
             let mut index: usize = 0;
             for c in format.iter() {
@@ -376,15 +376,15 @@ fn test_mrb_array_push_and_index() {
     let mut vm = VM::empty();
     prelude::prelude(&mut vm);
 
-    let array = Rc::new(RObject::array(vec![]));
+    let array = Value::from_rc(Rc::new(RObject::array(vec![])));
     let args = vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)];
-    mrb_array_push(array.clone(), &args).expect("push failed");
+    mrb_array_push(&array, &args).expect("push failed");
 
     let answers = [1, 2, 3];
 
     for (i, expected) in answers.iter().enumerate() {
         let args = vec![Value::Integer(i as i64)];
-        let value = mrb_array_get_index(array.clone(), &args).expect("getting index failed");
+        let value = mrb_array_get_index(&array, &args).expect("getting index failed");
         let value: i64 = (&value).try_into().expect("value is not integer");
         assert_eq!(value, *expected);
     }
@@ -396,17 +396,17 @@ fn test_mrb_array_set_and_index() {
     let mut vm = VM::empty();
     prelude::prelude(&mut vm);
 
-    let array = Rc::new(RObject::array(vec![]));
+    let array = Value::from_rc(Rc::new(RObject::array(vec![])));
     let args = vec![Value::Nil, Value::Nil, Value::Integer(0)];
-    mrb_array_push(array.clone(), &args).expect("push failed");
+    mrb_array_push(&array, &args).expect("push failed");
 
     let upd_index = Value::Integer(2);
     let newval = Value::Integer(42);
     let args = vec![upd_index, newval];
 
-    mrb_array_set_index(array.clone(), &args).expect("set index failed");
+    mrb_array_set_index(&array, &args).expect("set index failed");
 
-    let value = mrb_array_get_index(array.clone(), &args).expect("getting index failed");
+    let value = mrb_array_get_index(&array, &args).expect("getting index failed");
     let value: i64 = (&value).try_into().expect("value is not integer");
     assert_eq!(value, 42);
 }
@@ -443,13 +443,13 @@ fn test_mrb_array_pack() {
 
 fn mrb_array_size(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let value: Vec<Value> = this.as_ref().try_into()?;
+    let value: Vec<Value> = (&this).try_into()?;
     Ok(Value::Integer(value.len() as i64))
 }
 
 // Array#+: Returns a new array containing elements from both arrays
 fn mrb_array_add(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<Value> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<Value> = vm.getself()?.try_into()?;
     let other: Vec<Value> = args[0].as_ref().unwrap().try_into()?;
     let mut result = this;
     result.extend(other);
@@ -460,7 +460,7 @@ fn mrb_array_add(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
 fn mrb_array_clear(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     this.array_borrow_mut()?.clear();
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 // Array#delete_at: Deletes the element at the specified index (destructive)
@@ -481,13 +481,13 @@ fn mrb_array_delete_at(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Err
 
 // Array#empty?: Returns true if the array contains no elements
 fn mrb_array_empty(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<Value> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<Value> = vm.getself()?.try_into()?;
     Ok(Value::Bool(this.is_empty()))
 }
 
 // Array#include?: Returns true if the array contains the given object
 fn mrb_array_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<Value> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<Value> = vm.getself()?.try_into()?;
     let search = args[0].as_ref().unwrap().clone();
 
     for elem in this.iter() {
@@ -500,7 +500,7 @@ fn mrb_array_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
 
 // Array#&: Set intersection - returns a new array containing elements common to both arrays
 fn mrb_array_and(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<Value> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<Value> = vm.getself()?.try_into()?;
     let other: Vec<Value> = args[0].as_ref().unwrap().try_into()?;
 
     let mut result = Vec::new();
@@ -517,7 +517,7 @@ fn mrb_array_and(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
 
 // Array#|: Set union - returns a new array by joining arrays, excluding duplicates
 fn mrb_array_or(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<Value> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<Value> = vm.getself()?.try_into()?;
     let other: Vec<Value> = args[0].as_ref().unwrap().try_into()?;
 
     let mut result = Vec::new();
@@ -532,7 +532,7 @@ fn mrb_array_or(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
 
 // Array#first: Returns the first element, or the first n elements
 fn mrb_array_first(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<Value> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<Value> = vm.getself()?.try_into()?;
 
     if args.is_empty() {
         Ok(this.first().cloned().unwrap_or(Value::Nil))
@@ -548,7 +548,7 @@ fn mrb_array_first(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> 
 
 // Array#last: Returns the last element, or the last n elements
 fn mrb_array_last(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<Value> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<Value> = vm.getself()?.try_into()?;
 
     if args.is_empty() {
         Ok(this.last().cloned().unwrap_or(Value::Nil))
@@ -591,21 +591,21 @@ fn mrb_array_unshift(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
         arr.insert(i, arg.as_ref().unwrap().clone());
     }
     drop(arr);
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 // Array#dup: Returns a shallow copy of the array
 fn mrb_array_dup(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<Value> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<Value> = vm.getself()?.try_into()?;
     Ok(Value::from_rc(Rc::new(RObject::array(this))))
 }
 
 // Array#uniq!: Removes duplicate elements from self (destructive)
 fn mrb_array_uniq_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let arr: Vec<Value> = this.as_ref().try_into()?;
+    let arr: Vec<Value> = (&this).try_into()?;
 
-    let unique: Vec<Value> = mrb_funcall(vm, Some(Value::from_rc(this.clone())), "uniq", &[])?
+    let unique: Vec<Value> = mrb_funcall(vm, Some(this.clone()), "uniq", &[])?
         .to_rc()
         .as_ref()
         .try_into()?;
@@ -615,90 +615,88 @@ fn mrb_array_uniq_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Er
     }
 
     *this.array_borrow_mut()? = unique;
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 // Array#map!: Invokes the given block once for each element, replacing the element with the value returned by the block (destructive)
 fn mrb_array_map_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     let args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
-    let mapped: Vec<Value> = mrb_funcall(vm, Some(Value::from_rc(this.clone())), "map", &args)?
+    let mapped: Vec<Value> = mrb_funcall(vm, Some(this.clone()), "map", &args)?
         .to_rc()
         .as_ref()
         .try_into()?;
 
     *this.array_borrow_mut()? = mapped;
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 // Array#select!: Invokes the given block for each element, keeping only elements for which the block returns true (destructive)
 fn mrb_array_select_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let arr: Vec<Value> = this.as_ref().try_into()?;
+    let arr: Vec<Value> = (&this).try_into()?;
     let args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
 
-    let selected: Vec<Value> =
-        mrb_funcall(vm, Some(Value::from_rc(this.clone())), "select", &args)?
-            .to_rc()
-            .as_ref()
-            .try_into()?;
+    let selected: Vec<Value> = mrb_funcall(vm, Some(this.clone()), "select", &args)?
+        .to_rc()
+        .as_ref()
+        .try_into()?;
 
     if selected.len() == arr.len() {
         return Ok(Value::Nil);
     }
 
     *this.array_borrow_mut()? = selected;
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 // Array#reject!: Invokes the given block for each element, removing elements for which the block returns true (destructive)
 fn mrb_array_reject_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let arr: Vec<Value> = this.as_ref().try_into()?;
+    let arr: Vec<Value> = (&this).try_into()?;
     let args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
 
-    let rejected: Vec<Value> =
-        mrb_funcall(vm, Some(Value::from_rc(this.clone())), "delete_if", &args)?
-            .to_rc()
-            .as_ref()
-            .try_into()?;
+    let rejected: Vec<Value> = mrb_funcall(vm, Some(this.clone()), "delete_if", &args)?
+        .to_rc()
+        .as_ref()
+        .try_into()?;
 
     if rejected.len() == arr.len() {
         return Ok(Value::Nil);
     }
 
     *this.array_borrow_mut()? = rejected;
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 // Array#sort!: Sorts the array in place (destructive)
 fn mrb_array_sort_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let sorted: Vec<Value> = mrb_funcall(vm, Some(Value::from_rc(this.clone())), "sort", &[])?
+    let sorted: Vec<Value> = mrb_funcall(vm, Some(this.clone()), "sort", &[])?
         .to_rc()
         .as_ref()
         .try_into()?;
 
     *this.array_borrow_mut()? = sorted;
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 // Array#sort_by!: Sorts the array in place by the result of the block (destructive)
 fn mrb_array_sort_by_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     let args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
-    let sorted: Vec<Value> = mrb_funcall(vm, Some(Value::from_rc(this.clone())), "sort_by", &args)?
+    let sorted: Vec<Value> = mrb_funcall(vm, Some(this.clone()), "sort_by", &args)?
         .to_rc()
         .as_ref()
         .try_into()?;
 
     *this.array_borrow_mut()? = sorted;
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 // Array#join: Returns a string created by converting each element to a string, separated by the given separator
 fn mrb_array_join(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<Value> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<Value> = vm.getself()?.try_into()?;
 
     let separator = if args.is_empty() {
         "".to_string()
@@ -721,7 +719,7 @@ fn mrb_array_join(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
 
 /// Array#flatten: Returns a new array that is a one-dimensional flattening of self (recursively)
 fn mrb_array_flatten(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: Vec<Value> = vm.getself()?.as_ref().try_into()?;
+    let this: Vec<Value> = vm.getself()?.try_into()?;
     let mut result = Vec::new();
     do_array_flatten_recursive(&this, &mut result);
     Ok(Value::from_rc(Rc::new(RObject::array(result))))
@@ -746,13 +744,12 @@ fn do_array_flatten_recursive(array: &[Value], result: &mut Vec<Value>) {
 /// Array#flatten!: Flattens self in place (recursively)
 fn mrb_array_flatten_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let arr: Vec<Value> = this.as_ref().try_into()?;
+    let arr: Vec<Value> = (&this).try_into()?;
 
-    let flattened: Vec<Value> =
-        mrb_funcall(vm, Some(Value::from_rc(this.clone())), "flatten", &[])?
-            .to_rc()
-            .as_ref()
-            .try_into()?;
+    let flattened: Vec<Value> = mrb_funcall(vm, Some(this.clone()), "flatten", &[])?
+        .to_rc()
+        .as_ref()
+        .try_into()?;
 
     // Return nil if no changes were made
     if flattened.len() == arr.len() {
@@ -770,7 +767,7 @@ fn mrb_array_flatten_self(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value,
     }
 
     *this.array_borrow_mut()? = flattened;
-    Ok(Value::from_rc(this))
+    Ok(this)
 }
 
 #[test]
@@ -779,18 +776,16 @@ fn test_mrb_array_size() {
 
     let mut vm = VM::empty();
 
-    let data = Rc::new(RObject::array(vec![]));
-    let ret = helpers::mrb_funcall(&mut vm, Some(Value::from_rc(data.clone())), "size", &[])
-        .expect("size failed");
+    let data = Value::from_rc(Rc::new(RObject::array(vec![])));
+    let ret = helpers::mrb_funcall(&mut vm, Some(data.clone()), "size", &[]).expect("size failed");
     let ret: i64 = (&ret).try_into().expect("size is not integer");
     assert_eq!(ret, 0);
 
-    mrb_array_push(data.clone(), &[Value::Integer(1)]).expect("push failed");
-    mrb_array_push(data.clone(), &[Value::Integer(2)]).expect("push failed");
-    mrb_array_push(data.clone(), &[Value::Integer(3)]).expect("push failed");
+    mrb_array_push(&data, &[Value::Integer(1)]).expect("push failed");
+    mrb_array_push(&data, &[Value::Integer(2)]).expect("push failed");
+    mrb_array_push(&data, &[Value::Integer(3)]).expect("push failed");
 
-    let ret = helpers::mrb_funcall(&mut vm, Some(Value::from_rc(data)), "size", &[])
-        .expect("size failed");
+    let ret = helpers::mrb_funcall(&mut vm, Some(data), "size", &[]).expect("size failed");
     let ret: i64 = (&ret).try_into().expect("size is not integer");
     assert_eq!(ret, 3);
 }

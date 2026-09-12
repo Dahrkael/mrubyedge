@@ -25,8 +25,8 @@ pub(crate) fn initialize_range(vm: &mut VM) {
 
 pub fn mrb_range_is_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    match &this.value {
-        RValue::Range(start, end, exclusive) => {
+    match this.rvalue() {
+        Some(RValue::Range(start, end, exclusive)) => {
             let obj = args[0].as_ref().unwrap().clone();
             match (start, end, &obj) {
                 (Value::Integer(s), Value::Integer(e), Value::Integer(o)) => {
@@ -58,8 +58,8 @@ pub fn mrb_range_is_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value
 pub fn mrb_range_each(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     let block = args[0].as_ref().unwrap().clone();
-    match &this.value {
-        RValue::Range(start, end, exclusive) => match (start, end) {
+    match this.rvalue() {
+        Some(RValue::Range(start, end, exclusive)) => match (start, end) {
             (Value::Integer(start), Value::Integer(end)) => {
                 let start = *start;
                 let mut end = *end;
@@ -75,7 +75,7 @@ pub fn mrb_range_each(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
                         // Consume the pending exception (see integer.rs note).
                         Err(Error::Break(v)) => {
                             vm.exception.take();
-                            return Ok(Value::from_rc(v));
+                            return Ok(v);
                         }
                         Err(e) => return Err(e),
                     }
@@ -93,5 +93,5 @@ pub fn mrb_range_each(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
             ));
         }
     }
-    Ok(Value::from_rc(this.clone()))
+    Ok(this.clone())
 }
