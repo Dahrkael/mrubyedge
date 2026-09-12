@@ -324,6 +324,10 @@ pub struct VM {
     /// include bumps it, so dispatch caches stamp entries with it and go cold
     /// when it moves. Wrapping after 2^64 bumps is accepted as unreachable.
     pub method_version: Cell<u64>,
+    /// Global constant-table version. Every constant definition or
+    /// replacement bumps it, so the per-call-site constant caches stamp
+    /// entries with it and go cold when a constant moves.
+    pub const_version: Cell<u64>,
     /// Name-keyed dispatch cache for `mrb_funcall` (no bytecode call site).
     pub method_name_cache: RefCell<MethodNameCache>,
     /// `func` index of the pristine Array#[] native, captured after the
@@ -484,6 +488,7 @@ impl VM {
             lines: Vec::new(),
             send_cache: RefCell::new(vec![None; 1]),
             attr_cache: RefCell::new(vec![None; 1]),
+            const_cache: RefCell::new(vec![None; 1]),
         };
         Self::new_by_raw_irep(irep)
     }
@@ -565,6 +570,7 @@ impl VM {
             builtin_class_table,
             class_object_table,
             method_version: Cell::new(0),
+            const_version: Cell::new(0),
             method_name_cache: RefCell::new(HashMap::new()),
             array_index_func: Cell::new(None),
             array_fast: Cell::new(None),
@@ -627,6 +633,14 @@ impl VM {
             .set(self.method_version.get().wrapping_add(1));
         self.method_name_cache.borrow_mut().clear();
         self.array_fast.set(None);
+    }
+
+    /// Invalidates every inline constant cache: any constant definition or
+    /// replacement may change what a `OP_GETCONST`/`OP_GETMCNST` site resolves
+    /// to.
+    pub fn bump_const_version(&self) {
+        self.const_version
+            .set(self.const_version.get().wrapping_add(1));
     }
 
     /// Resolves a method by (class, name) through the name-keyed cache used
@@ -1146,6 +1160,7 @@ impl VM {
                 .borrow_mut()
                 .insert(name.to_string(), object);
         }
+        self.bump_const_version();
         class
     }
 
@@ -1173,6 +1188,7 @@ impl VM {
             .consts
             .borrow_mut()
             .insert(name.to_string(), object);
+        self.bump_const_version();
         module
     }
 
@@ -1321,6 +1337,7 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
         lines: irep.lines.clone(),
         send_cache: RefCell::new(Vec::new()),
         attr_cache: RefCell::new(Vec::new()),
+        const_cache: RefCell::new(Vec::new()),
     };
     for sym in irep.syms.iter() {
         irep1
@@ -1372,6 +1389,7 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
     irep1.code = code;
     irep1.send_cache = RefCell::new(vec![None; irep1.code.len()]);
     irep1.attr_cache = RefCell::new(vec![None; irep1.code.len()]);
+    irep1.const_cache = RefCell::new(vec![None; irep1.code.len()]);
     (irep1, pos + 1)
 }
 
@@ -1418,6 +1436,10 @@ pub struct IREP {
     /// direct IvarMap read/write without entering `do_op_send`. Entries go
     /// stale with the method version, exactly like `send_cache`.
     pub attr_cache: RefCell<Vec<Option<AttrCacheEntry>>>,
+    /// Constant inline cache, one slot per instruction, parallel to
+    /// `send_cache`. `OP_GETCONST`/`OP_GETMCNST` fill their slot with the
+    /// resolved value; entries go stale with the constant-table version.
+    pub const_cache: RefCell<Vec<Option<ConstCacheEntry>>>,
 }
 
 /// One inline cache slot: the last method a bytecode send site resolved to
@@ -1440,6 +1462,18 @@ pub struct AttrCacheEntry {
     pub klass: Rc<RClass>,
     pub key: u32,
     pub is_set: bool,
+}
+
+/// Constant inline-cache slot: the value a `OP_GETCONST`/`OP_GETMCNST` site
+/// resolved to, stamped with the constant-table version and the namespace it
+/// was resolved in. A hit needs both stamps: the version guards redefinition,
+/// the namespace guards the same instruction seeing different lexical scopes
+/// (e.g. a method reused across classes that each define the constant).
+#[derive(Debug, Clone)]
+pub struct ConstCacheEntry {
+    pub version: u64,
+    pub ns: Option<Rc<RModule>>,
+    pub value: Value,
 }
 
 impl IREP {

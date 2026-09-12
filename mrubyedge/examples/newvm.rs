@@ -81,6 +81,7 @@ fn main() {
         lines: Vec::new(),
         send_cache: std::cell::RefCell::new(Vec::new()),
         attr_cache: std::cell::RefCell::new(Vec::new()),
+        const_cache: std::cell::RefCell::new(Vec::new()),
     };
     let mut vm = vm::VM::new_by_raw_irep(irep);
     let ret = vm.run().unwrap();

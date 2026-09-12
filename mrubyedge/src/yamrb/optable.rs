@@ -752,33 +752,62 @@ fn cvar_set(vm: &mut VM, name: &str, value: Rc<RObject>) {
 
 pub(crate) fn op_getconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    // Borrow the sym name (via the frozen irep snapshot) instead of cloning
-    // it; the name is only copied on the NameError path.
     let irep = vm.current_irep.clone();
     let name = &irep.syms[b as usize].name;
-    // Bare lookups start from the current namespace (module/class body). In
-    // an instance method there is no lexical cref, so fall back to the
-    // runtime class of self to reach constants defined in that class body.
-    let mut current = current_namespace(vm).or_else(|| {
+
+    // Inline constant cache: the site is the current pc (the loop advanced
+    // past this instruction). A hit needs both the constant-table version
+    // (guards redefinition) and the resolving namespace identity (guards the
+    // same instruction seeing different lexical scopes).
+    let site = vm.pc.get() - 1;
+    let version = vm.const_version.get();
+    let ns = current_namespace(vm).or_else(|| {
         let obj = vm.current_regs()[0].clone();
         obj.as_ref().map(|o| o.get_class(vm).module.clone())
     });
-
-    // Walk namespace chain upwards until found or reach top-level
-    while let Some(ns) = current.clone() {
-        if let Some(val) = ns.consts.borrow().get(name).cloned() {
-            vm.set_reg_value(a as usize, Value::from_rc(val));
-            return Ok(());
-        }
-        current = ns.parent.borrow().clone();
-    }
-
-    if let Some(val) = vm.consts.get(name).cloned() {
-        vm.set_reg_value(a as usize, Value::from_rc(val));
+    let cached = {
+        let caches = vm.current_irep.const_cache.borrow();
+        caches
+            .get(site)
+            .and_then(|slot| slot.as_ref())
+            .filter(|entry| {
+                entry.version == version
+                    && entry.ns.as_ref().map(Rc::as_ptr) == ns.as_ref().map(Rc::as_ptr)
+            })
+            .map(|entry| entry.value.clone())
+    };
+    if let Some(value) = cached {
+        vm.set_reg_value(a as usize, value);
         return Ok(());
     }
 
-    Err(Error::NameError(name.clone()))
+    // Miss: walk the namespace chain upwards until found, then the global
+    // table.
+    let mut resolved: Option<Value> = None;
+    let mut current = ns.clone();
+    while let Some(cur) = current.clone() {
+        if let Some(val) = cur.consts.borrow().get(name).cloned() {
+            resolved = Some(Value::from_rc(val));
+            break;
+        }
+        current = cur.parent.borrow().clone();
+    }
+    if resolved.is_none()
+        && let Some(val) = vm.consts.get(name).cloned()
+    {
+        resolved = Some(Value::from_rc(val));
+    }
+    let value = resolved.ok_or_else(|| Error::NameError(name.clone()))?;
+
+    if let Some(slot) = vm.current_irep.const_cache.borrow_mut().get_mut(site) {
+        *slot = Some(ConstCacheEntry {
+            version,
+            ns,
+            value: value.clone(),
+        });
+    }
+    vm.set_reg_value(a as usize, value);
+    Ok(())
 }
 
 pub(crate) fn op_setconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
@@ -800,29 +829,62 @@ pub(crate) fn op_setconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             vm.object_class.consts.borrow_mut().insert(name, val);
         }
     }
+    vm.bump_const_version();
     Ok(())
 }
 
 pub(crate) fn op_getmcnst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let recv = vm.get_current_regs_cloned(a as usize)?;
+    let recv = vm.get_reg_value(a as usize);
     let irep = vm.current_irep.clone();
     let name = &irep.syms[b as usize].name;
-    let mut module = match &recv.value {
+    let module = recv.rvalue().and_then(|rv| match rv {
         RValue::Class(klass) => Some(klass.module.clone()),
         RValue::Module(module) => Some(module.clone()),
         _ => None,
-    };
+    });
 
-    while let Some(current) = module.clone() {
-        if let Some(val) = current.consts.borrow().get(name).cloned() {
-            vm.set_reg(a as usize, val);
-            return Ok(());
-        }
-        module = current.parent.borrow().clone();
+    // Inline constant cache keyed by the receiver module: qualified reads are
+    // independent of the lexical scope, so only the receiver and the constant
+    // version identify the resolution.
+    let site = vm.pc.get() - 1;
+    let version = vm.const_version.get();
+    let cached = {
+        let caches = vm.current_irep.const_cache.borrow();
+        caches
+            .get(site)
+            .and_then(|slot| slot.as_ref())
+            .filter(|entry| {
+                entry.version == version
+                    && entry.ns.as_ref().map(Rc::as_ptr) == module.as_ref().map(Rc::as_ptr)
+            })
+            .map(|entry| entry.value.clone())
+    };
+    if let Some(value) = cached {
+        vm.set_reg_value(a as usize, value);
+        return Ok(());
     }
 
-    Err(Error::NameError(name.clone()))
+    let mut current = module.clone();
+    let mut resolved: Option<Value> = None;
+    while let Some(cur) = current.clone() {
+        if let Some(val) = cur.consts.borrow().get(name).cloned() {
+            resolved = Some(Value::from_rc(val));
+            break;
+        }
+        current = cur.parent.borrow().clone();
+    }
+    let value = resolved.ok_or_else(|| Error::NameError(name.clone()))?;
+
+    if let Some(slot) = vm.current_irep.const_cache.borrow_mut().get_mut(site) {
+        *slot = Some(ConstCacheEntry {
+            version,
+            ns: module,
+            value: value.clone(),
+        });
+    }
+    vm.set_reg_value(a as usize, value);
+    Ok(())
 }
 
 // Quirk (documented): operand layout is value in R[a], module in R[a+1]
@@ -845,6 +907,7 @@ pub(crate) fn op_setmcnst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             return Err(Error::TypeMismatch);
         }
     }
+    vm.bump_const_version();
     Ok(())
 }
 
@@ -2986,6 +3049,7 @@ pub(crate) fn op_class(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
                 cur.consts
                     .borrow_mut()
                     .insert(lookup_key.clone(), existing.clone());
+                vm.bump_const_version();
             }
             reused = Some(existing);
             break;
