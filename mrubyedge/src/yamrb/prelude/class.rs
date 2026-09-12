@@ -83,9 +83,11 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
         match arg.value {
             RValue::Symbol(ref sym) => {
                 let sym_id: &'static str = sym.name.clone().leak();
+                // Build the ivar key once; get_ivar borrows it per call so
+                // property reads never allocate.
+                let key = format!("@{}", sym_id);
                 let method = move |vm: &mut VM, _args: &[Rc<RObject>]| {
                     let this = vm.getself()?;
-                    let key = format!("@{}", sym_id);
                     Ok(this.get_ivar(&key))
                 };
                 mrb_define_cmethod(vm, class.clone(), sym_id, Box::new(method));
@@ -117,15 +119,17 @@ fn mrb_class_attr_writer(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
         match arg.value {
             RValue::Symbol(ref sym) => {
                 let sym_id: &'static str = sym.name.clone().leak();
+                // Shared Rc<str> key built once; set_ivar stores it as-is so
+                // property writes never copy the key bytes.
+                let key: Rc<str> = format!("@{}", sym_id).into();
                 let method = move |vm: &mut VM, args: &[Rc<RObject>]| {
                     let this = vm.getself()?;
-                    let key = format!("@{}", sym_id);
                     let value = args[0].clone();
-                    this.set_ivar(&key, value.clone());
+                    this.set_ivar(key.clone(), value.clone());
                     Ok(value)
                 };
-                let sym_id = format!("{}=", sym_id);
-                mrb_define_cmethod(vm, class.clone(), &sym_id, Box::new(method));
+                let method_name = format!("{}=", sym_id);
+                mrb_define_cmethod(vm, class.clone(), &method_name, Box::new(method));
             }
             RValue::Nil => {
                 // skip

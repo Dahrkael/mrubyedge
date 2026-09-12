@@ -121,7 +121,7 @@ pub struct RObject {
 
     pub singleton_class: RefCell<Option<Rc<RClass>>>,
 
-    pub ivar: RefCell<RHashMap<String, Rc<RObject>>>,
+    pub ivar: RefCell<RHashMap<Rc<str>, Rc<RObject>>>,
 }
 
 const UNSET_OBJECT_ID: u64 = u64::MAX;
@@ -402,8 +402,10 @@ impl RObject {
         self.object_id.get() == 0
     }
 
-    pub fn set_ivar(&self, key: &str, value: Rc<RObject>) {
-        self.ivar.borrow_mut().insert(key.to_string(), value);
+    /// Stores an ivar. `key` may be an already-shared `Rc<str>` (zero copy,
+    /// used by the attr_accessor hot path) or a plain `&str` (copied once).
+    pub fn set_ivar(&self, key: impl Into<Rc<str>>, value: Rc<RObject>) {
+        self.ivar.borrow_mut().insert(key.into(), value);
     }
 
     pub fn get_ivar(&self, key: &str) -> Rc<RObject> {

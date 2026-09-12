@@ -615,11 +615,13 @@ pub(crate) fn op_loadf(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_getgv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let val = vm.current_irep.syms[b as usize].clone();
+    // Borrow the sym name instead of cloning it; globals hashes it
+    // transiently and never stores the key by value.
+    let name = &vm.current_irep.syms[b as usize].name;
     let val = vm
         .globals
-        .get(&val.name)
-        .ok_or_else(|| Error::internal(format!("global variable not found {}", val.name)))?
+        .get(name)
+        .ok_or_else(|| Error::internal(format!("global variable not found {name}")))?
         .clone();
     vm.current_regs()[a as usize].replace(val);
     Ok(())
@@ -628,8 +630,9 @@ pub(crate) fn op_getgv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_setgv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let val = vm.get_current_regs_cloned(a as usize)?;
-    let sym = vm.current_irep.syms[b as usize].clone();
-    vm.globals.insert(sym.name.clone(), val);
+    // Clone only the key; the intermediate RSym clone was redundant.
+    vm.globals
+        .insert(vm.current_irep.syms[b as usize].name.clone(), val);
     Ok(())
 }
 
@@ -654,7 +657,10 @@ pub(crate) fn op_setiv(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val = vm.get_current_regs_cloned(a as usize)?;
     // Borrow the sym name instead of cloning it; the ivar map hashes it
     // transiently and never stores the key by value.
-    this.set_ivar(&vm.current_irep.syms[b as usize].name, val.clone());
+    this.set_ivar(
+        vm.current_irep.syms[b as usize].name.as_str(),
+        val.clone(),
+    );
     Ok(())
 }
 
@@ -720,18 +726,24 @@ fn cvar_set(vm: &mut VM, name: &str, value: Rc<RObject>) {
     while let Some(klass) = current.clone() {
         let wrapper = RObject::class(klass.clone(), vm);
         if wrapper.ivar.borrow().contains_key(name) {
-            wrapper.ivar.borrow_mut().insert(name.to_string(), value);
+            wrapper
+                .ivar
+                .borrow_mut()
+                .insert(Rc::from(name), value);
             return;
         }
         current = klass.super_class.clone();
     }
     let wrapper = RObject::class(cls, vm);
-    wrapper.ivar.borrow_mut().insert(name.to_string(), value);
+    wrapper.ivar.borrow_mut().insert(Rc::from(name), value);
 }
 
 pub(crate) fn op_getconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let name = vm.current_irep.syms[b as usize].name.clone();
+    // Borrow the sym name (via the frozen irep snapshot) instead of cloning
+    // it; the name is only copied on the NameError path.
+    let irep = vm.current_irep.clone();
+    let name = &irep.syms[b as usize].name;
     // Bare lookups start from the current namespace (module/class body). In
     // an instance method there is no lexical cref, so fall back to the
     // runtime class of self to reach constants defined in that class body.
@@ -742,19 +754,19 @@ pub(crate) fn op_getconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
     // Walk namespace chain upwards until found or reach top-level
     while let Some(ns) = current.clone() {
-        if let Some(val) = ns.consts.borrow().get(&name).cloned() {
+        if let Some(val) = ns.consts.borrow().get(name).cloned() {
             vm.current_regs()[a as usize].replace(val);
             return Ok(());
         }
         current = ns.parent.borrow().clone();
     }
 
-    if let Some(val) = vm.consts.get(&name).cloned() {
+    if let Some(val) = vm.consts.get(name).cloned() {
         vm.current_regs()[a as usize].replace(val);
         return Ok(());
     }
 
-    Err(Error::NameError(name))
+    Err(Error::NameError(name.clone()))
 }
 
 pub(crate) fn op_setconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
@@ -785,7 +797,8 @@ pub(crate) fn op_setconst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_getmcnst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let recv = vm.get_current_regs_cloned(a as usize)?;
-    let name = vm.current_irep.syms[b as usize].name.clone();
+    let irep = vm.current_irep.clone();
+    let name = &irep.syms[b as usize].name;
     let mut module = match &recv.value {
         RValue::Class(klass) => Some(klass.module.clone()),
         RValue::Module(module) => Some(module.clone()),
@@ -793,7 +806,7 @@ pub(crate) fn op_getmcnst(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     };
 
     while let Some(current) = module.clone() {
-        if let Some(val) = current.consts.borrow().get(&name).cloned() {
+        if let Some(val) = current.consts.borrow().get(name).cloned() {
             vm.current_regs()[a as usize].replace(val);
             return Ok(());
         }
