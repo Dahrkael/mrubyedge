@@ -637,7 +637,7 @@ fn mrb_string_strip_self(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObjec
 
 fn mrb_string_to_sym(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
     let this: String = vm.getself()?.as_ref().try_into()?;
-    Ok(Rc::new(RObject::symbol(RSym::new(this))))
+    Ok(RObject::symbol_rc(&RSym::new(this)))
 }
 
 fn mrb_string_start_with(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {

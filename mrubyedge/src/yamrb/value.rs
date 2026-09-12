@@ -136,6 +136,10 @@ thread_local! {
     static FALSE: Rc<RObject> = Rc::new(RObject::boolean(false));
     static SMALL_INTS: Vec<Rc<RObject>> =
         (0..=255).map(|n| Rc::new(RObject::integer(n))).collect();
+    // One shared RObject per distinct symbol name, so loading a `:foo`
+    // literal does not allocate a new object per occurrence.
+    static SYMBOL_OBJECTS: RefCell<RHashMap<String, Rc<RObject>>> =
+        RefCell::new(RHashMap::default());
 }
 
 impl RObject {
@@ -359,6 +363,21 @@ impl RObject {
         } else {
             Rc::new(RObject::integer(n))
         }
+    }
+
+    /// Shared RObject for a symbol name: loading `:foo` reuses one instance
+    /// instead of allocating a new object (and RSym clone) per literal.
+    pub fn symbol_rc(sym: &RSym) -> Rc<Self> {
+        SYMBOL_OBJECTS.with(|cache| {
+            // Read path only borrows; the cache is mutated only on a miss.
+            if let Some(o) = cache.borrow().get(sym.name.as_str()) {
+                return o.clone();
+            }
+            let mut cache = cache.borrow_mut();
+            let o = Rc::new(RObject::symbol(sym.clone()));
+            cache.insert(sym.name.clone(), o.clone());
+            o
+        })
     }
 
     pub fn is_falsy(&self) -> bool {

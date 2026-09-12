@@ -193,7 +193,7 @@ pub fn mrb_funcall(
                 ));
             }
 
-            let mut mm_args = vec![Rc::new(RObject::symbol(RSym::new(name.to_string())))];
+            let mut mm_args = vec![RObject::symbol_rc(&RSym::new(name.to_string()))];
             mm_args.extend_from_slice(args);
             return mrb_funcall(vm, top_self, "method_missing", &mm_args);
         }

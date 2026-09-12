@@ -1213,6 +1213,9 @@ pub struct CALLINFO {
     pub return_reg: usize,
     pub method_owner: Option<Rc<RModule>>,
     pub has_block: Cell<bool>,
+    // whether op_enter pushed a KArgs frame for this call, so
+    // op_return only pops one when it was actually pushed.
+    pub kargs_pushed: Cell<bool>,
 }
 
 #[derive(Debug, Clone)]

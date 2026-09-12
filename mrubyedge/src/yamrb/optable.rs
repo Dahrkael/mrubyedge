@@ -496,6 +496,7 @@ pub(crate) fn push_callinfo(
         target_class: vm.target_class.clone(),
         method_owner,
         has_block: Cell::new(false),
+        kargs_pushed: Cell::new(false),
     };
     vm.current_callinfo = Some(Rc::new(callinfo));
 }
@@ -583,8 +584,10 @@ pub(crate) fn op_loadineg(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_loadsym(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let val = vm.current_irep.syms[b as usize].clone();
-    vm.current_regs()[a as usize].replace(Rc::new(RObject::symbol(val)));
+    // Shared symbol instance: no RSym clone, no object allocation per literal.
+    let sym = &vm.current_irep.syms[b as usize];
+    let val = RObject::symbol_rc(sym);
+    vm.current_regs()[a as usize].replace(val);
     Ok(())
 }
 
@@ -1141,12 +1144,6 @@ pub(crate) fn do_op_send(
     } else {
         vm.get_current_regs_cloned(recv_index)?
     };
-    let mut args = (0..n)
-        .map(|i| {
-            vm.get_current_regs_cloned(a as usize + i + 1)
-                .expect("args too short for required")
-        })
-        .collect::<Vec<_>>();
 
     if k > 0 {
         let mut map = RHashMap::default();
@@ -1167,13 +1164,16 @@ pub(crate) fn do_op_send(
         vm.kargs.borrow_mut().replace(RHashMap::default());
     }
 
+    // The block value is captured here but only appended to the argument
+    // vector for native calls; Ruby callees read it from the registers.
+    let mut block_val: Option<Rc<RObject>> = None;
     if let Some(blk_index) = blk_index {
         let blk_val = vm.get_current_regs_cloned(blk_index)?;
         if matches!(blk_val.tt, RType::Symbol) {
             let proc_val = mrb_funcall(vm, Some(blk_val), "to_proc", &[])?;
-            args.push(proc_val);
+            block_val = Some(proc_val);
         } else {
-            args.push(blk_val);
+            block_val = Some(blk_val);
         }
     } else {
         // When no block is provided, do not push a nil placeholder
@@ -1189,7 +1189,7 @@ pub(crate) fn do_op_send(
     let mut via_method_missing = false;
     let (owner_module, method) = resolve_method(&klass, &method_id.name)
         .or_else(|| {
-            unshift_method_name(vm, &mut args, method_id, a as usize, n + k * 2 + 1);
+            unshift_method_name(vm, method_id, a as usize, n + k * 2 + 1);
             n += 1;
             via_method_missing = true;
             resolve_method(&klass, "method_missing")
@@ -1231,6 +1231,29 @@ pub(crate) fn do_op_send(
 
     vm.current_regs()[a as usize].replace(recv.clone());
     if !method.is_rb_func {
+        // Build the argument vector only for native calls (Ruby callees read
+        // the registers directly). After method_missing the name sits at
+        // a+1 and the original args were shifted up by one. Both this build
+        // and get_fn run before the KArgs frame, so an error path cannot
+        // leave an unpopped frame.
+        let mm = via_method_missing;
+        let native_n = n - mm as usize;
+        let first_arg = a as usize + 1 + mm as usize;
+        let mut args = Vec::with_capacity(native_n + mm as usize + block_val.is_some() as usize);
+        if mm {
+            args.push(vm.get_current_regs_cloned(a as usize + 1)?);
+        }
+        for i in 0..native_n {
+            args.push(vm.get_current_regs_cloned(first_arg + i)?);
+        }
+        if let Some(blk) = block_val {
+            args.push(blk);
+        }
+
+        let func = vm
+            .get_fn(method.func.unwrap())
+            .ok_or_else(|| Error::internal("function not found"))?;
+
         // no keyword arguments means no KArgs frame. Note
         // that a native method inside a Ruby method with live kwargs then
         // reads the outer KArgs via get_kwargs() instead of an empty one;
@@ -1238,10 +1261,6 @@ pub(crate) fn do_op_send(
         if k > 0 {
             kwarg_op_enter(vm, 0);
         }
-
-        let func = vm
-            .get_fn(method.func.unwrap())
-            .ok_or_else(|| Error::internal("function not found"))?;
         vm.current_regs_offset += a as usize;
 
         let res = func(vm, &args);
@@ -1303,20 +1322,13 @@ pub(crate) fn do_op_send(
     Ok(())
 }
 
-fn unshift_method_name(
-    vm: &mut VM,
-    args: &mut Vec<Rc<RObject>>,
-    method_id: &RSym,
-    a: usize,
-    total_args: usize,
-) {
-    let method_name = RObject::symbol(method_id.clone()).to_refcount_assigned();
+fn unshift_method_name(vm: &mut VM, method_id: &RSym, a: usize, total_args: usize) {
+    let method_name = RObject::symbol_rc(method_id);
     for i in (a + 1..=a + total_args).rev() {
         let val = vm.current_regs().get(i).and_then(|r| r.as_ref().cloned());
         val.as_ref().cloned().map(|v| mrb_call_inspect(vm, v));
         vm.current_regs()[i + 1].replace(val.unwrap_or_else(|| RObject::nil_rc()));
     }
-    args.insert(0, method_name.clone());
     vm.current_regs()[a + 1].replace(method_name);
 }
 
@@ -1539,7 +1551,19 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     } else {
         0
     };
-    kwarg_op_enter(vm, kwrest_pos);
+    // only push a KArgs frame when the callee actually
+    // accepts keyword arguments; methods without them never read
+    // current_kargs, so the frame would be pure overhead.
+    // Note: when the callinfo is hidden (mrb_funcall/call_block take it),
+    // kargs_pushed cannot be recorded and the None-ci op_return never pops
+    // such a frame. Pre-existing and dormant (no engine call passes kwargs
+    // through mrb_funcall); revisit with the callinfo machinery.
+    if arg_info.k > 0 || kwrest_arg == 1 {
+        kwarg_op_enter(vm, kwrest_pos);
+        if let Some(ci) = vm.current_callinfo.as_ref() {
+            ci.kargs_pushed.set(true);
+        }
+    }
     if kwrest_arg == 1 {
         let mut map = RHashMap::default();
         for (k, v) in vm
@@ -1547,7 +1571,7 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             .ok_or_else(|| Error::RuntimeError("kwargs not defined".to_string()))?
             .iter()
         {
-            let k = RObject::symbol(RSym::new(k.clone())).to_refcount_assigned();
+            let k = RObject::symbol_rc(&RSym::new(k.clone()));
             map.insert(k.as_hash_key()?, (k, v.clone()));
         }
 
@@ -1560,8 +1584,8 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_key_p(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
-    let key = vm.current_irep.syms[b as usize].clone();
-    let key_robj = RObject::symbol(key.clone()).to_refcount_assigned();
+    let key = &vm.current_irep.syms[b as usize];
+    let key_robj = RObject::symbol_rc(key);
 
     let (val, kwrest_pos) = {
         let kargs = vm.current_kargs.borrow();
@@ -1572,7 +1596,7 @@ pub(crate) fn op_key_p(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         let kwrest_pos = kargs.kwrest_reg.get();
 
         (
-            RObject::boolean_rc(kargs.args.borrow().contains_key(&key)),
+            RObject::boolean_rc(kargs.args.borrow().contains_key(key)),
             kwrest_pos,
         )
     };
@@ -1691,7 +1715,9 @@ pub(crate) fn op_return(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         unreachable!("debug");
     }
 
-    kwarg_op_return(vm);
+    if ci.kargs_pushed.get() {
+        kwarg_op_return(vm);
+    }
 
     let cur = vm.current_breadcrumb.take().expect("not found breadcrumb");
     if let Some(upper) = &cur.as_ref().upper {
@@ -2104,8 +2130,8 @@ pub(crate) fn op_symbol(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let symstr = vm.current_irep.pool[b as usize].as_str().to_string();
     let sym = RSym::new(symstr);
-    let val = RObject::symbol(sym);
-    vm.current_regs()[a as usize].replace(val.to_refcount_assigned());
+    let val = RObject::symbol_rc(&sym);
+    vm.current_regs()[a as usize].replace(val);
     Ok(())
 }
 
