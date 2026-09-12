@@ -126,6 +126,19 @@ impl Value {
         matches!(self, Value::Nil)
     }
 
+    /// Ruby truthiness: everything except `nil` and `false` is truthy.
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Value::Nil => false,
+            Value::Bool(b) => *b,
+            _ => true,
+        }
+    }
+
+    pub fn is_falsy(&self) -> bool {
+        !self.is_truthy()
+    }
+
     /// Runtime class of the value, using the VM's cached builtin classes for
     /// immediates so no box is created just to resolve the class.
     pub fn get_class(&self, vm: &crate::yamrb::vm::VM) -> Rc<RClass> {
@@ -283,14 +296,17 @@ impl IvarMap {
         if cap == 0 {
             return None;
         }
-        let mut i = (hash as usize) % cap;
+        // Capacity is always a power of two (grow starts at 4 and doubles), so
+        // the mask replaces a runtime division in the probe loop.
+        let mask = cap - 1;
+        let mut i = (hash as usize) & mask;
         loop {
             match &self.slots[i] {
                 Some((k, h, v)) if *h == hash && **k == *key => return Some(v),
                 None => return None,
                 Some(_) => {
-                    i = (i + 1) % cap;
-                    if i == (hash as usize) % cap {
+                    i = (i + 1) & mask;
+                    if i == (hash as usize) & mask {
                         return None;
                     }
                 }
