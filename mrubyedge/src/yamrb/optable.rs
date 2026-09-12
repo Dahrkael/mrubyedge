@@ -1349,10 +1349,6 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         }
     }
     let optional_arg = arg_info.o as usize;
-    #[cfg(debug_assertions)]
-    if optional_arg > 0 {
-        eprintln!("[dbg-enter] m1={m1_argc} o={optional_arg} argc={argc}");
-    }
     if optional_arg > 0 {
         let m2_argc = arg_info.m2 as usize;
         let total_preset_args = argc.saturating_sub(m1_argc + m2_argc);
@@ -2075,16 +2071,23 @@ pub(crate) fn op_class(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         vec![current_namespace(vm), Some(vm.object_class.module.clone())];
     for scope in scopes.drain(..) {
         if let Some(ns) = scope {
-            if let Some(existing) = ns.consts.borrow().get(&lookup_key).cloned() {
-                if let RValue::Class(_) = existing.value {
-                    if let Some(cur) = current_namespace(vm) {
-                        cur.consts
-                            .borrow_mut()
-                            .insert(lookup_key.clone(), existing.clone());
-                    }
-                    reused = Some(existing);
-                    break;
+            // Clone out and drop the Ref guard before any borrow_mut on the
+            // same consts: reopening an existing class hits this path with
+            // cur == ns.
+            let found = ns
+                .consts
+                .borrow()
+                .get(&lookup_key)
+                .cloned()
+                .filter(|v| matches!(v.value, RValue::Class(_)));
+            if let Some(existing) = found {
+                if let Some(cur) = current_namespace(vm) {
+                    cur.consts
+                        .borrow_mut()
+                        .insert(lookup_key.clone(), existing.clone());
                 }
+                reused = Some(existing);
+                break;
             }
         }
     }
