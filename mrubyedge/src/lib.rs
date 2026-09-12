@@ -13,7 +13,7 @@
 //!
 //! Basic initialization follows the pattern shown in `examples/newvm.rs`:
 //!
-//! ```no_run
+//! ```
 //! use mrubyedge::yamrb::{op, vm, value::RSym};
 //! use mrubyedge::rite::insn::{Fetched, OpCode};
 //!
@@ -62,18 +62,17 @@
 //! A `SharedMemory` class unique to mruby/edge provides zero-copy access to
 //! WASM linear memory.
 //!
-//! Loading a precompiled `*.mrb` produced by `mrbc` is also straightforward
-//! using `include_bytes!`:
+//! Loading a `*.mrb` produced by mruby 4.0's `mrbc` is also straightforward.
+//! A chunk whose header does not say `RITE0400` is refused, so mruby 3.x
+//! bytecode has to be recompiled:
 //!
 //! ```no_run
 //! use mrubyedge::rite;
 //! use mrubyedge::yamrb::vm;
 //!
-//! // Bundle the compiled script at build time.
-//! const SCRIPT: &[u8] = include_bytes!("../examples/simple.mrb");
-//!
 //! fn run_embedded() -> Result<(), Box<dyn std::error::Error>> {
-//!     let mut rite = rite::load(SCRIPT)?;
+//!     let script = std::fs::read("script.mrb")?;
+//!     let mut rite = rite::load(&script)?;
 //!     let mut vm = vm::VM::open(&mut rite);
 //!     let value = vm.run()?;
 //!     println!("{:?}", value);
