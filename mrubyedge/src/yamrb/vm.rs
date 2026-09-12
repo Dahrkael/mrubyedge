@@ -506,7 +506,11 @@ impl VM {
         let last_error_stack = RefCell::new(Vec::new());
         let break_landing = RefCell::new(None);
         let root_irep_id = Cell::new(None);
-        let breadcrumbs = RefCell::new(Vec::new());
+        // Frame depth is bounded by the register file (each frame consumes at
+        // least one of `MAX_REGS_SIZE` slots), and a funcall pushes up to a
+        // few crumbs, so this capacity covers the worst case and keeps the
+        // breadcrumb stack allocation-free for the whole run.
+        let breadcrumbs = RefCell::new(Vec::with_capacity(MAX_REGS_SIZE * 2));
         let crumb_seq = Cell::new(0);
         let kargs = RefCell::new(None);
         let current_kargs = RefCell::new(None);
@@ -1463,7 +1467,9 @@ impl IREP {
 #[derive(Debug, Clone)]
 pub struct CALLINFO {
     pub prev: Option<Rc<CALLINFO>>,
-    pub method_id: RSym,
+    /// Interned method id; resolving the name is only needed for `super` or a
+    /// backtrace, so no per-call name string is retained.
+    pub method_id: u32,
     pub pc_irep: Rc<IREP>,
     pub pc: usize,
     pub current_regs_offset: usize,

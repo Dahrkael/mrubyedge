@@ -6,7 +6,7 @@ use crate::Error;
 use super::{
     optable::push_callinfo,
     value::{
-        FastOp, RClass, RFn, RHashMap, RModule, RObject, RProc, RSym, RValue, Value, intern_symbol,
+        FastOp, RClass, RFn, RHashMap, RModule, RObject, RProc, RValue, Value, intern_symbol,
         resolve_method,
     },
     vm::{CallerLabel, CallerReceiver, VM, arg_buf, value_args},
@@ -17,12 +17,12 @@ fn call_block(
     block: RProc,
     recv: Value,
     args: &[Value],
-    method_info: Option<(RSym, Rc<RModule>)>,
+    method_info: Option<(u32, Rc<RModule>)>,
     return_register: usize,
 ) -> Result<Value, Error> {
     let (method_id, method_owner) = match method_info {
         Some((id, owner)) => (id, Some(owner)),
-        None => (RSym::new("<block>".to_string()), None),
+        None => (intern_symbol("<block>"), None),
     };
 
     // the callee gets its own register window above the
@@ -211,11 +211,7 @@ pub fn mrb_funcall(
     };
     // Resolve the frame name to an interned id now; the string is only
     // materialized if this frame ever appears in a backtrace.
-    let label_method = method
-        .sym_id
-        .as_ref()
-        .map(|s| s.id)
-        .unwrap_or_else(|| intern_symbol(name));
+    let label_method = method.sym_id.unwrap_or_else(|| intern_symbol(name));
     vm.push_breadcrumb(
         "funcall",
         Some(CallerLabel::Named {
@@ -228,10 +224,7 @@ pub fn mrb_funcall(
     );
 
     let res = if method.is_rb_func {
-        let method_id = method
-            .sym_id
-            .clone()
-            .unwrap_or_else(|| RSym::new(name.to_string()));
+        let method_id = method.sym_id.unwrap_or_else(|| intern_symbol(name));
         call_block(
             vm,
             method,
@@ -264,10 +257,7 @@ pub fn mrb_call_inspect(vm: &mut VM, recv: &Value) -> Result<Value, Error> {
     let (owner_module, method) = resolve_method(&binding, "inspect")
         .ok_or_else(|| Error::NoMethodError("inspect".to_string()))?;
     if method.is_rb_func {
-        let method_id = method
-            .sym_id
-            .clone()
-            .unwrap_or_else(|| RSym::new("inspect".to_string()));
+        let method_id = method.sym_id.unwrap_or_else(|| intern_symbol("inspect"));
         call_block(
             vm,
             method,
@@ -310,7 +300,7 @@ fn register_cmethod(
     let method = RProc {
         is_rb_func: false,
         is_fnblock: false,
-        sym_id: Some(RSym::new(name.to_string())),
+        sym_id: Some(intern_symbol(name)),
         next: None,
         irep: None,
         func: Some(index),

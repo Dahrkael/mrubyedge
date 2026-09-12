@@ -480,7 +480,7 @@ pub(crate) fn consume_expr(
 
 pub(crate) fn push_callinfo(
     vm: &mut VM,
-    method_id: RSym,
+    method_id: u32,
     n_args: usize,
     method_owner: Option<Rc<RModule>>,
     return_reg: usize,
@@ -1768,14 +1768,7 @@ pub(crate) fn do_op_send(
         return Ok(());
     }
 
-    push_callinfo(
-        vm,
-        method_id.clone(),
-        n,
-        Some(owner_module),
-        a as usize,
-        false,
-    );
+    push_callinfo(vm, method_id.id, n, Some(owner_module), a as usize, false);
 
     // Set has_block flag based on whether a block was provided
     if let Some(ci) = vm.current_callinfo.as_ref() {
@@ -1834,7 +1827,7 @@ pub(crate) fn op_call(vm: &mut VM, _operand: &Fetched) -> Result<(), Error> {
         Some(vm.current_irep.clone()),
         Some(vm.pc.get().saturating_sub(1)),
     );
-    push_callinfo(vm, "<tailcall>".into(), 0, None, 0, false);
+    push_callinfo(vm, intern_symbol("<tailcall>"), 0, None, 0, false);
 
     vm.pc.set(0);
     let proc = vm.current_regs()[0]
@@ -1865,8 +1858,8 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         .current_callinfo
         .as_ref()
         .ok_or_else(|| Error::internal("no current callinfo"))?;
-    let sym_id = callinfo.method_id.name.clone();
-    let super_method_id = callinfo.method_id.id;
+    let sym_id = symbol_name(callinfo.method_id);
+    let super_method_id = callinfo.method_id;
     let owner_module = callinfo
         .method_owner
         .clone()
@@ -1968,7 +1961,7 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     vm.set_reg_value(a as usize, recv.clone());
     push_callinfo(
         vm,
-        method.sym_id.clone().unwrap(),
+        method.sym_id.unwrap(),
         b as usize,
         Some(next_owner),
         a as usize,
@@ -2911,7 +2904,7 @@ pub(crate) fn op_lambda(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             irep,
             is_rb_func: true,
             is_fnblock: false,
-            sym_id: Some("<lambda>".into()),
+            sym_id: Some(intern_symbol("<lambda>")),
             next: None,
             func: None,
             environ: Some(environ),
@@ -2949,7 +2942,7 @@ pub(crate) fn op_block(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             irep,
             is_rb_func: true,
             is_fnblock: false,
-            sym_id: Some("<block>".into()),
+            sym_id: Some(intern_symbol("<block>")),
             next: None,
             func: None,
             environ: Some(environ),
@@ -3155,7 +3148,7 @@ pub(crate) fn op_exec(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         Some(vm.current_irep.clone()),
         Some(vm.pc.get().saturating_sub(1)),
     );
-    push_callinfo(vm, "<exec>".into(), 0, None, a as usize, false);
+    push_callinfo(vm, intern_symbol("<exec>"), 0, None, a as usize, false);
 
     vm.pc.set(0);
     vm.current_irep = irep;
@@ -3183,7 +3176,7 @@ pub(crate) fn op_def(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         RValue::Proc(proc) => {
             let mut method = proc.clone();
             method.environ = None; // method cannot trace the upper environment
-            method.sym_id = Some(sym.clone());
+            method.sym_id = Some(sym.id);
             Ok(method)
         }
         _ => Err(Error::ArgumentError(
@@ -3243,7 +3236,7 @@ pub(crate) fn op_alias(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     };
 
     let mut new_method = method.clone();
-    new_method.sym_id = Some(new_name.clone());
+    new_method.sym_id = Some(new_name.id);
 
     let mut procs = owner_module.procs.borrow_mut();
     procs.insert(new_name.id, new_method);

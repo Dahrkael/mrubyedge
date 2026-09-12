@@ -1867,7 +1867,7 @@ pub struct RData {
 pub struct RProc {
     pub is_rb_func: bool,
     pub is_fnblock: bool,
-    pub sym_id: Option<RSym>,
+    pub sym_id: Option<u32>,
     pub next: Option<Rc<RProc>>,
     pub irep: Option<Rc<IREP>>,
     pub func: Option<usize>,
