@@ -77,6 +77,9 @@ pub struct VM {
     pub regs: [Option<Rc<RObject>>; MAX_REGS_SIZE],
     pub current_regs_offset: usize,
     pub current_callinfo: Option<Rc<CALLINFO>>,
+    // n_args of the running frame; call_block hides the
+    // callinfo, and op_enter needs the count for optional arguments.
+    pub current_n_args: Cell<usize>,
     pub current_breadcrumb: Option<Rc<Breadcrumb>>,
     // call stack of the last raised exception, captured at
     // raise time from the breadcrumb chain before unwinding destroys it.
@@ -258,6 +261,7 @@ impl VM {
         let regs: [Option<Rc<RObject>>; MAX_REGS_SIZE] = [const { None }; MAX_REGS_SIZE];
         let current_regs_offset = 0;
         let current_callinfo = None;
+        let current_n_args = Cell::new(0);
         let last_error_stack = RefCell::new(Vec::new());
         let current_breadcrumb = Some(Rc::new(Breadcrumb {
             upper: None,
@@ -298,6 +302,7 @@ impl VM {
             regs,
             current_regs_offset,
             current_callinfo,
+            current_n_args,
             last_error_stack,
             current_breadcrumb,
             kargs,

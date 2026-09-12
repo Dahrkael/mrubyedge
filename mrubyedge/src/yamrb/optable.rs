@@ -484,6 +484,7 @@ pub(crate) fn push_callinfo(
     method_owner: Option<Rc<RModule>>,
     return_reg: usize,
 ) {
+    vm.current_n_args.set(n_args);
     let callinfo = CALLINFO {
         prev: vm.current_callinfo.clone(),
         method_id,
@@ -1330,7 +1331,10 @@ impl From<u32> for EnterArgInfo {
 
 pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_w()?;
-    let argc = vm.current_callinfo.as_ref().map_or(0, |ci| ci.n_args);
+    // n_args lives on the VM because call_block hides the
+    // current callinfo while the callee runs, which made every optional
+    // argument fall back to its default for funcall-invoked methods.
+    let argc = vm.current_n_args.get();
     let arg_info = EnterArgInfo::from(a);
     let m1_argc = arg_info.m1 as usize;
     for i in 0..m1_argc {
@@ -1345,6 +1349,10 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         }
     }
     let optional_arg = arg_info.o as usize;
+    #[cfg(debug_assertions)]
+    if optional_arg > 0 {
+        eprintln!("[dbg-enter] m1={m1_argc} o={optional_arg} argc={argc}");
+    }
     if optional_arg > 0 {
         let m2_argc = arg_info.m2 as usize;
         let total_preset_args = argc.saturating_sub(m1_argc + m2_argc);
@@ -2058,24 +2066,31 @@ pub(crate) fn op_class(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
     // Local patch: reuse existing class wrapper instead of replacing it.
     // This preserves singleton methods registered by native code.
+    // Scope chain only (current namespace, then top level): a same-named
+    // class in an unrelated module must not hijack this definition, and a
+    // cross-scope reuse must also bind the constant in the current one.
     let lookup_key = name.name.clone();
-    let search_scopes: Vec<Option<Rc<RModule>>> =
+    let mut reused: Option<Rc<RObject>> = None;
+    let mut scopes: Vec<Option<Rc<RModule>>> =
         vec![current_namespace(vm), Some(vm.object_class.module.clone())];
-    for scope in &search_scopes {
+    for scope in scopes.drain(..) {
         if let Some(ns) = scope {
             if let Some(existing) = ns.consts.borrow().get(&lookup_key).cloned() {
-                if let RValue::Class(ref klass) = existing.value {
-                    vm.current_regs()[a as usize].replace(existing);
-                    return Ok(());
+                if let RValue::Class(_) = existing.value {
+                    if let Some(cur) = current_namespace(vm) {
+                        cur.consts
+                            .borrow_mut()
+                            .insert(lookup_key.clone(), existing.clone());
+                    }
+                    reused = Some(existing);
+                    break;
                 }
             }
         }
     }
-    if let Some(existing) = vm.get_const_by_name(&lookup_key) {
-        if let RValue::Class(_) = existing.value {
-            vm.current_regs()[a as usize].replace(existing);
-            return Ok(());
-        }
+    if let Some(existing) = reused {
+        vm.current_regs()[a as usize].replace(existing);
+        return Ok(());
     }
 
     let superclass = match superclass {
