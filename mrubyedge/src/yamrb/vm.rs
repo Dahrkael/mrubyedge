@@ -478,6 +478,19 @@ impl VM {
         frames
     }
 
+    /// rejects a frame whose register window would overflow
+    /// the fixed register array with a Ruby SystemStackError instead of a
+    /// Rust panic (e.g. unbounded method_missing recursion).
+    pub(crate) fn check_frame_window(&self, extra: usize, nregs: usize) -> Result<(), Error> {
+        if self.current_regs_offset + extra + nregs > MAX_REGS_SIZE {
+            return Err(Error::TaggedError(
+                "SystemStackError",
+                "stack level too deep".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     fn __run(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
         let class = self.object_class.clone();
         // Insert top_self

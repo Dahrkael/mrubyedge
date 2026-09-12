@@ -1095,6 +1095,11 @@ pub(crate) fn do_op_send(
     } else {
         method_id.name.as_str()
     };
+    // guard the callee's register window before pushing its
+    // frame; unbounded recursion must raise SystemStackError, not panic.
+    if let Some(irep) = method.irep.as_ref() {
+        vm.check_frame_window(a as usize, irep.nregs)?;
+    }
     let upper = vm.current_breadcrumb.take();
     let new_breadcrumb = Rc::new(Breadcrumb {
         upper,
@@ -1292,6 +1297,12 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
             }
         }
         return Ok(());
+    }
+
+    // guard the callee's register window before pushing its
+    // frame; unbounded recursion must raise SystemStackError, not panic.
+    if let Some(irep) = method.irep.as_ref() {
+        vm.check_frame_window(a as usize, irep.nregs)?;
     }
 
     let upper = vm.current_breadcrumb.take();
@@ -2244,6 +2255,10 @@ pub(crate) fn op_module(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_exec(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let recv = vm.get_current_regs_cloned(a as usize)?;
+    // guard the child irep's register window before pushing
+    // its frame; unbounded recursion must raise SystemStackError, not panic.
+    let irep = vm.current_irep.reps[b as usize].clone();
+    vm.check_frame_window(a as usize, irep.nregs)?;
 
     let upper = vm.current_breadcrumb.take();
     let new_breadcrumb = Rc::new(Breadcrumb {
@@ -2258,7 +2273,6 @@ pub(crate) fn op_exec(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     push_callinfo(vm, "<exec>".into(), 0, None, a as usize);
 
     vm.pc.set(0);
-    let irep = vm.current_irep.reps[b as usize].clone();
     vm.current_irep = irep;
     vm.current_regs_offset += a as usize;
 

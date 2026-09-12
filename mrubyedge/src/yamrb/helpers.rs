@@ -5,7 +5,7 @@ use crate::{Error, yamrb::vm::Breadcrumb};
 use super::{
     optable::push_callinfo,
     value::{RClass, RFn, RModule, RObject, RProc, RSym, RValue, resolve_method},
-    vm::{MAX_REGS_SIZE, VM},
+    vm::VM,
 };
 
 /// backtrace-friendly label for a call frame, e.g.
@@ -38,11 +38,10 @@ fn call_block(
     // native code clobber in-flight caller registers.
     let saved_offset = vm.current_regs_offset;
     let caller_frame_size = vm.current_irep.nregs;
+    // unbounded recursion raises SystemStackError instead of
+    // overflowing the register array.
+    vm.check_frame_window(caller_frame_size, 32)?;
     vm.current_regs_offset = saved_offset + caller_frame_size;
-    if vm.current_regs_offset + 32 >= MAX_REGS_SIZE {
-        vm.current_regs_offset = saved_offset;
-        return Err(Error::Internal("register window exhausted".into()));
-    }
 
     push_callinfo(vm, method_id, args.len(), method_owner, return_register);
 
