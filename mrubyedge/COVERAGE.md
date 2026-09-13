@@ -449,74 +449,266 @@ Uses the Rust `regex` crate.
 
 ## Ruby stdlib compatibility layer `[feature: ruby-compat]`
 
-`src/compat/` — implemented in Rust on top of the public VM API. Enable the
+`compat/*.rs` — implemented in Rust on top of the public VM API. Enable the
 `ruby-compat` feature and call `mrubyedge::compat::register(&mut vm)`.
 
 ### Array
 
-`#delete`, `#index` (alias: `#find_index`), `#rindex`, `#insert`, `#first`,
-`#last`, `#reverse`, `#reverse!`, `#reverse_each`, `#rotate`, `#take`,
-`#drop`, `#values_at`, `#dig`, `#each_with_object`, `#compact!`, `#product`,
-`#zip`, `#shuffle` `[feature: mruby-random]`, `#sample` `[feature: mruby-random]`,
-`#reject`, `#reject!`, `#concat`, `#fill`, `#<=>`
+`compat/array.rs`
+
+| Method | Notes |
+|---|---|
+| `#<=>` | lexicographic; `nil` for non-Array or incomparable elements |
+| `#concat` | |
+| `#fill` | |
+| `#delete` | |
+| `#index` | alias: `#find_index` |
+| `#rindex` | |
+| `#insert` | |
+| `#reject` | |
+| `#first` | optional count |
+| `#last` | optional count |
+| `#reverse` | |
+| `#reverse!` | |
+| `#reverse_each` | |
+| `#rotate` | negative and overflow offsets |
+| `#take` | |
+| `#drop` | |
+| `#values_at` | |
+| `#dig` | negative indices; `nil` short-circuit |
+| `#each_with_object` | |
+| `#compact!` | returns self or `nil` |
+| `#product` | n-ary cartesian combinations |
+| `#zip` | `nil` padding |
+| `#shuffle` | `[feature: mruby-random]` |
+| `#sample` | `[feature: mruby-random]` |
+| `#reject!` | returns self or `nil` |
 
 ### Comparable
 
-`#<`, `#<=`, `#>`, `#>=`, `#==`, `#between?`, `#clamp` (included in `Integer`,
-`Float`, `String`, `Symbol`)
+`compat/comparable.rs`
+
+| Method | Notes |
+|---|---|
+| `#<` | derived from `<=>` |
+| `#<=` | derived from `<=>` |
+| `#>` | derived from `<=>` |
+| `#>=` | derived from `<=>` |
+| `#==` | derived from `<=>` |
+| `#between?` | |
+| `#clamp` | |
+
+Included in `Integer`, `Float`, `String` and `Symbol`.
 
 ### Hash
 
-`#fetch`, `#key?` (alias: `#member?`), `#value?`, `#dig`, `#values_at`,
-`#transform_values`, `#transform_keys`, `#invert`, `#store`, `#each_pair`,
-`#merge`, `#merge!`, `#keep_if`
+`compat/hash.rs`
 
-### Integer / Float
+| Method | Notes |
+|---|---|
+| `#fetch` | |
+| `#key?` | alias: `#member?` |
+| `#value?` | |
+| `#dig` | |
+| `#values_at` | |
+| `#transform_values` | |
+| `#transform_keys` | |
+| `#invert` | |
+| `#store` | |
+| `#each_pair` | |
+| `#merge` | conflict block supported |
+| `#merge!` | conflict block supported |
+| `#keep_if` | |
 
-`#upto`, `#downto`, `#step`, `#even?`, `#odd?`, `#zero?`, `#positive?`,
-`#negative?`, `#succ`, `#pred`, `#divmod`, `#%` (alias: `#modulo`), `#fdiv`,
-`#div`, `#pow`, `#digits`, `#gcd`, `#lcm`, `#bit_length`, `#coerce`, `#round`,
-`#remainder`, `#floor`, `#ceil`, `#truncate`
+### Integer
+
+`compat/numeric.rs`
+
+| Method | Notes |
+|---|---|
+| `#upto` | |
+| `#downto` | |
+| `#step` | |
+| `#even?` | |
+| `#odd?` | |
+| `#zero?` | |
+| `#positive?` | |
+| `#negative?` | |
+| `#succ` | overflow-guarded |
+| `#pred` | overflow-guarded |
+| `#divmod` | remainder follows the divisor's sign |
+| `#%` | alias: `#modulo`; floored semantics |
+| `#fdiv` | |
+| `#div` | |
+| `#pow` | |
+| `#digits` | |
+| `#gcd` | |
+| `#lcm` | |
+| `#bit_length` | |
+| `#coerce` | |
+| `#round` | negative digit counts |
+
+### Float
+
+`compat/numeric.rs`
+
+| Method | Notes |
+|---|---|
+| `#step` | |
+| `#coerce` | |
+| `#%` | alias: `#modulo`; floored semantics |
+| `#divmod` | |
+| `#remainder` | |
+| `#round` | negative digit counts |
+| `#floor` | negative digit counts |
+| `#ceil` | negative digit counts |
+| `#truncate` | negative digit counts |
 
 ### Math
 
-`.sin`, `.cos`, `.tan`, `.asin`, `.acos`, `.atan`, `.atan2`, `.sinh`, `.cosh`,
-`.tanh`, `.sqrt`, `.cbrt`, `.exp`, `.log`, `.log2`, `.log10`, `.hypot`, `.pow`,
-`.abs`; constants `PI`, `E`
+`compat/math.rs`
+
+| Method | Notes |
+|---|---|
+| `.sin` | |
+| `.cos` | |
+| `.tan` | |
+| `.asin` | |
+| `.acos` | |
+| `.atan` | |
+| `.atan2` | |
+| `.sinh` | |
+| `.cosh` | |
+| `.tanh` | |
+| `.sqrt` | |
+| `.cbrt` | |
+| `.exp` | |
+| `.log` | optional base |
+| `.log2` | |
+| `.log10` | |
+| `.hypot` | |
+| `.pow` | |
+| `.abs` | |
+| `PI` | constant |
+| `E` | constant |
 
 ### Object / Kernel
 
-`#instance_variable_get`, `#instance_variable_set`, `#instance_variable_defined?`,
-`#instance_variables`, `#tap`, `#then` (alias: `#yield_self`), `#send`
-(alias: `#__send__`), `#eql?`, `#hash`, `#freeze`, `#frozen?`, `#print`,
-`#Integer`, `#Float`, `#String`; `Class#new` constructs native exceptions
+`compat/object_ext.rs`
+
+| Method | Notes |
+|---|---|
+| `#instance_variable_get` | accepts `"x"`, `"@x"` or `:x` |
+| `#instance_variable_set` | accepts bare or `@`-prefixed names |
+| `#instance_variable_defined?` | |
+| `#instance_variables` | |
+| `#tap` | |
+| `#then` | alias: `#yield_self` |
+| `#send` | alias: `#__send__` |
+| `#eql?` | |
+| `#hash` | |
+| `#freeze` | |
+| `#frozen?` | |
+| `#print` | |
+| `#Integer` | conversion |
+| `#Float` | conversion |
+| `#String` | conversion |
+| `Class.new` | constructs native exceptions for `Exception` subclasses |
 
 ### Proc
 
-`#===`, `#to_proc`, `#arity`
+`compat/proc_ext.rs`
+
+| Method | Notes |
+|---|---|
+| `#===` | alias of `#call`; case/when dispatch |
+| `#to_proc` | identity |
+| `#arity` | |
 
 ### Range
 
-`#begin`, `#end`, `#first`, `#last`, `#exclude_end?`, `#cover?` (alias: `#===`),
-`#size`, `#step`
+`compat/range_extras.rs`
+
+| Method | Notes |
+|---|---|
+| `#begin` | |
+| `#end` | |
+| `#first` | optional count; exclusive ends honored |
+| `#last` | optional count; exclusive ends honored |
+| `#exclude_end?` | |
+| `#cover?` | alias: `#===` |
+| `#size` | |
+| `#step` | overflow-guarded |
 
 ### String
 
-`#%`, `#gsub`, `#sub`, `#tr`, `#delete`, `#squeeze`, `#count`, `#reverse`,
-`#ljust`, `#rjust`, `#center`, `#swapcase`, `#capitalize`, `#casecmp`,
-`#casecmp?`, `#<=>`, `#chop`, `#prepend`, `#replace`, `#concat`, `#partition`,
-`#each_char`, `#each_byte`, `#each_line`, `#lines`, `#hex`, `#oct`, `#succ`;
-`Kernel#sprintf` / `#format`
+`compat/string.rs`
+
+| Method | Notes |
+|---|---|
+| `#%` | |
+| `#gsub` | literal pattern and block replacement |
+| `#sub` | literal pattern and block replacement |
+| `#tr` | character sets with ranges |
+| `#delete` | character sets with ranges |
+| `#squeeze` | character sets with ranges |
+| `#count` | character sets with ranges |
+| `#reverse` | UTF-8 safe |
+| `#ljust` | |
+| `#rjust` | |
+| `#center` | |
+| `#swapcase` | |
+| `#capitalize` | |
+| `#casecmp` | |
+| `#casecmp?` | |
+| `#<=>` | byte ordering |
+| `#chop` | |
+| `#prepend` | |
+| `#replace` | |
+| `#concat` | |
+| `#partition` | |
+| `#each_char` | |
+| `#each_byte` | |
+| `#each_line` | |
+| `#lines` | |
+| `#hex` | |
+| `#oct` | |
+| `#succ` | |
+| `Kernel#sprintf` | alias: `#format` |
 
 ### Symbol
 
-`#length`, `#size`, `#upcase`, `#downcase`, `#capitalize`, `#swapcase`,
-`#succ`, `#empty?`, `#[]`, `#<=>`, `#casecmp`
+`compat/symbol_ext.rs`
+
+| Method | Notes |
+|---|---|
+| `#length` | alias: `#size` |
+| `#upcase` | |
+| `#downcase` | |
+| `#capitalize` | |
+| `#swapcase` | |
+| `#succ` | |
+| `#empty?` | |
+| `#[]` | |
+| `#<=>` | |
+| `#casecmp` | |
 
 ### Exceptions
 
-`Exception#initialize`, `#message`, `#to_s`, `#inspect`; classes `KeyError`,
-`IndexError`, `StopIteration`, `LocalJumpError`, `FrozenError`, `IOError`
+`compat/exceptions.rs`
+
+| Class / Method | Notes |
+|---|---|
+| `KeyError` | `StandardError` subclass |
+| `IndexError` | `StandardError` subclass |
+| `StopIteration` | `StandardError` subclass |
+| `LocalJumpError` | `StandardError` subclass |
+| `FrozenError` | `StandardError` subclass |
+| `IOError` | `StandardError` subclass |
+| `Exception#initialize` | stores the message |
+| `Exception#message` | |
+| `Exception#to_s` | |
+| `Exception#inspect` | |
 
 ---
 

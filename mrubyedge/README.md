@@ -15,6 +15,81 @@ lines) and a Ruby standard-library compatibility layer on top of the upstream
 - Divergences from upstream: [PATCHES.md](./PATCHES.md).
 - Ruby compatibility coverage: [COVERAGE.md](./COVERAGE.md).
 
+## What this fork adds
+
+Everything below is on top of the upstream base (`master`). See
+[PATCHES.md](./PATCHES.md) for the full list.
+
+### Language flow and semantics
+
+- `break value` from a block/iterator stops the yielding method and returns the
+  value (landing pads anchored to the send that yielded).
+- `return` unwinds to the enclosing method or the nearest lambda, raising
+  `LocalJumpError` when unmatched.
+- Comparison opcodes fall back to `<=>` dispatch instead of panicking on
+  non-numeric operands.
+- `Comparable` derives `< <= > >= == between? clamp` from `<=>` and is included
+  in `Integer`, `Float`, `String` and `Symbol`.
+
+### Definitions and object model
+
+- Singleton classes are anchored to module/class identity: `def self.m`,
+  `class << self` and explicit module receivers work, and duplicate wrappers
+  share singleton state.
+- `class`/`module` reopen reuses the canonical wrapper; same-named classes in
+  different modules no longer collide.
+- Constants are scoped to the defining module/class; top-level constants mirror
+  into `Object`, so `Module::CONST` resolves.
+- Missing exception classes (`KeyError`, `IndexError`, `StopIteration`,
+  `LocalJumpError`, `FrozenError`, `IOError`) plus real
+  `Exception#message`/`to_s`/`inspect` storage.
+- New opcodes: `ARYPUSH`, `ARYSPLAT`, `HASHADD`, `HASHCAT`, `SETMCNST`,
+  `GETCV`, `SETCV` (large array/hash literals, `return *x` and `**` splats,
+  module constants and class variables).
+
+### Diagnostics
+
+- MRI-style backtraces with `Class#method:line` frames and a synthetic `<main>`.
+- Deep recursion raises `SystemStackError` instead of a Rust panic, and native
+  failures no longer leak breadcrumbs into later traces.
+
+### Fixes
+
+- `String#+` no longer mutates the left operand.
+- `Array.new(size)` yields each index to a block and supports a default value;
+  out-of-range `Array#[]`/`#at` return `nil`.
+- `call_block` restores the caller's upper environment, so upvar chains survive
+  native-to-Ruby calls.
+- Globally unique irep ids across scripts, and a fixed per-frame register leak
+  on method return.
+
+### New feature: `ruby-compat`
+
+An optional standard-library compatibility layer (`ruby-compat` feature) adds
+`Math`, extra `Array`/`Hash`/`String`/`Integer`/`Float`/`Range`/`Symbol`
+methods, `Enumerable` extras, `Kernel` conversions and the missing exception
+classes. Enable the feature and call `mrubyedge::compat::register(&mut vm)`.
+The full list lives in [COVERAGE.md](./COVERAGE.md).
+
+## Performance
+
+The fork keeps the same behavior while replacing the interpreter's hot paths:
+
+- Unboxed `Value` immediates for numbers, booleans, symbols and `nil`, with the
+  register file and containers storing values directly.
+- Symbols interned to `u32` ids; methods, ivars and attribute caches keyed by id.
+- Inline caches for method, attribute and constant dispatch, plus inline numeric
+  send fast paths.
+- Pooled call frames and a preallocated breadcrumb stack (no per-call `Rc`).
+- Flyweight singletons for `nil`/`true`/`false` and small integers.
+- Pristine `Hash#[]`/`Hash#[]=` run inline without deep-cloning the table.
+
+On a 16-workload pure-Ruby benchmark suite (arithmetic, method dispatch,
+attribute access, hashes, strings, grid reads/writes, `fib`), the fork is
+**about 6.5x faster than upstream `master`** (geomean), and **within ~1.5x of
+mruby C** — faster than the C VM on attribute-heavy and numeric-integration
+workloads.
+
 ## Overview
 
 mruby/edge is an mruby-compatible virtual machine implementation written in
