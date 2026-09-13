@@ -71,9 +71,20 @@ Behind the optional `ruby-compat` feature under `src/compat/`, registered with
 
 ## Performance
 
-The 3.x line's interpreter optimizations (unboxed `Value`, symbol ids, inline
-caches, pooled call frames, flyweights) are ported onto this branch during the
-`nextgen40` work.
+The 3.x line's interpreter optimizations are ported onto this branch: unboxed
+`Value` immediates, symbol ids, method/attribute/constant inline caches, pooled
+call frames, a preallocated breadcrumb stack, flyweight singletons and inline
+`Hash#[]`/`Hash#[]=`.
+
+## Known issues
+
+- `instance_method_constant_assignment_is_not_lexically_scoped` is `#[ignore]`d:
+  mruby 4.0's compiler rejects a dynamic constant assignment at compile time, so
+  the runtime limitation it documented on the 3.x line cannot be exercised.
+- The `rite` DBG-section parser (backtrace line numbers) is ported from the 3.x
+  line. The fork's own test build uses an unpatched `mruby-compiler2-sys 0.5.0`,
+  which does not emit DBG, so the parser is validated end to end only with the
+  debug-info-enabled compiler used by the consuming engine.
 
 ## Building and testing
 
