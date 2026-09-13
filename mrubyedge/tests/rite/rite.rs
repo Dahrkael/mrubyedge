@@ -28,6 +28,16 @@ fn test_rite_parse_hello_world() {
 }
 
 #[test]
+fn test_rite_rejects_non_3x_chunk() {
+    let binary = mrbc_compile("version_guard", "1 + 1");
+    let mut header = binary.clone();
+    // RITE header layout: ident[4], major_version[2], minor_version[2], ...
+    header[4..6].copy_from_slice(b"04");
+    let err = mrubyedge::rite::load(&header).unwrap_err();
+    assert_eq!(err, mrubyedge::rite::Error::UnsupportedVersion(*b"04"));
+}
+
+#[test]
 fn test_rite_parse_with_local_variables() {
     let code = r#"
     def greet(name)
