@@ -28,17 +28,17 @@ mrubyedge = "1.0"
 
 ### Running Precompiled Bytecode
 
-Load and execute a precompiled `*.mrb` file produced by `mrbc`:
+Load and execute a `*.mrb` file produced by mruby 4.0's `mrbc`. A chunk whose
+header does not say `RITE0400` is refused, so mruby 3.x bytecode has to be
+recompiled:
 
 ```rust
 use mrubyedge::rite;
 use mrubyedge::yamrb::vm;
 
-// Bundle the compiled script at build time
-const SCRIPT: &[u8] = include_bytes!("./examples/simple.mrb");
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut rite = rite::load(SCRIPT)?;
+    let script = std::fs::read("script.mrb")?;
+    let mut rite = rite::load(&script)?;
     let mut vm = vm::VM::open(&mut rite);
     let value = vm.run()?;
     println!("{:?}", value);

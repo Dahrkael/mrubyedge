@@ -152,6 +152,7 @@ use super::{helpers::mrb_funcall, value::*, vm::*};
 // }
 //
 
+const ENTER_N1_MASK: u32 = 0b1 << 23;
 const ENTER_M1_MASK: u32 = 0b11111 << 18;
 const ENTER_O_MASK: u32 = 0b11111 << 13;
 const ENTER_R_MASK: u32 = 0b1 << 12;
@@ -1386,6 +1387,7 @@ pub(crate) fn op_super(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct EnterArgInfo {
+    pub n1: u32,
     pub m1: u32,
     pub o: u32,
     pub r: u32,
@@ -1398,6 +1400,7 @@ pub(crate) struct EnterArgInfo {
 impl From<u32> for EnterArgInfo {
     fn from(val: u32) -> Self {
         EnterArgInfo {
+            n1: (val & ENTER_N1_MASK) >> 23,
             m1: (val & ENTER_M1_MASK) >> 18,
             o: (val & ENTER_O_MASK) >> 13,
             r: (val & ENTER_R_MASK) >> 12,
@@ -1413,6 +1416,14 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_w()?;
     let argc = vm.current_callinfo.as_ref().map_or(0, |ci| ci.n_args);
     let arg_info = EnterArgInfo::from(a);
+    // proc.h MRB_ASPEC_NOBLOCK: n1 (bit 23) refuses a block argument.
+    let has_block = vm
+        .current_callinfo
+        .as_ref()
+        .is_some_and(|ci| ci.has_block.get());
+    if arg_info.n1 == 1 && has_block {
+        return Err(Error::ArgumentError("no block accepted".to_string()));
+    }
     let m1_argc = arg_info.m1 as usize;
     for i in 0..m1_argc {
         match vm.current_regs()[i + 1].as_ref() {
