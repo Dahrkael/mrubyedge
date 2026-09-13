@@ -1378,53 +1378,61 @@ pub(crate) fn op_ssendb(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     do_op_send(vm, 0, Some(a as usize + n + k * 2 + 1), a, b, c)
 }
 
+/// Attribute inline cache shared by the SEND/SSEND0/SEND0 handlers: when this
+/// site last resolved to an attr_accessor closure for this receiver class and
+/// the method version has not moved, the get/set runs directly on the
+/// receiver's IvarMap — no dispatch machinery. A redefinition bumps the
+/// version, and a receiver with a singleton method resolves to a different
+/// class identity (same one the fill used), so the entry goes cold.
+///
+/// Returns `true` when the access was served inline.
+fn try_attr_cache(vm: &mut VM, recv_index: usize, result_index: usize) -> Result<bool, Error> {
+    let site = vm.pc.get() - 1;
+    let version = vm.method_version.get();
+    let recv = vm.current_regs()[recv_index].clone();
+    // Attr accessors are instance methods, so the receiver must be an object;
+    // an immediate (or unassigned) receiver falls through.
+    if let Some(Value::Object(recv_obj)) = &recv {
+        // Snapshot the cache entry as Copy fields (+ the class pointer) so the
+        // borrow ends before `singleton_or_this_class` needs `&mut vm`.
+        let cached = {
+            let cache = vm.current_irep.attr_cache.borrow();
+            cache
+                .get(site)
+                .and_then(|slot| slot.as_ref())
+                .map(|e| (e.version, Rc::as_ptr(&e.klass) as usize, e.key, e.is_set))
+        };
+        if let Some((cached_version, cached_klass, key, is_set)) = cached
+            && cached_version == version
+            && cached_klass == Rc::as_ptr(&recv_obj.singleton_or_this_class(vm)) as usize
+        {
+            if is_set {
+                let value = vm.current_regs()[recv_index + 1].clone();
+                if let Some(value) = value {
+                    recv_obj.set_ivar_by_id(key, value.clone());
+                    vm.current_regs()[result_index].replace(value);
+                    vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
+                    vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
+                    return Ok(true);
+                }
+            } else {
+                let val = recv_obj.get_ivar_by_id(key);
+                vm.current_regs()[result_index].replace(val);
+                vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
+                vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 pub(crate) fn op_send(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b, c) = operand.as_bbb()?;
 
-    // Attribute inline cache: when this site last resolved to an attr_accessor
-    // closure for this receiver class and the method version has not moved,
-    // the get/set runs directly on the receiver's IvarMap — no do_op_send, no
-    // dispatch machinery. A redefinition bumps the version, and a receiver with
-    // a singleton method resolves to a different class identity (same one the
-    // fill used), so the entry goes cold and the normal send re-resolves.
-    if (c & 0x0f) <= 1 && (c >> 4) == 0 {
-        let site = vm.pc.get() - 1;
-        let version = vm.method_version.get();
-        let recv = vm.current_regs()[a as usize].clone();
-        // Attr accessors are instance methods, so the receiver must be an
-        // object; an immediate (or unassigned) receiver falls through.
-        if let Some(Value::Object(recv_obj)) = &recv {
-            // Snapshot the cache entry as Copy fields (+ the class pointer) so
-            // the borrow ends before `singleton_or_this_class` needs `&mut vm`.
-            let cached = {
-                let cache = vm.current_irep.attr_cache.borrow();
-                cache
-                    .get(site)
-                    .and_then(|slot| slot.as_ref())
-                    .map(|e| (e.version, Rc::as_ptr(&e.klass) as usize, e.key, e.is_set))
-            };
-            if let Some((cached_version, cached_klass, key, is_set)) = cached
-                && cached_version == version
-                && cached_klass == Rc::as_ptr(&recv_obj.singleton_or_this_class(vm)) as usize
-            {
-                if is_set {
-                    let value = vm.current_regs()[a as usize + 1].clone();
-                    if let Some(value) = value {
-                        recv_obj.set_ivar_by_id(key, value.clone());
-                        vm.current_regs()[a as usize].replace(value);
-                        vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
-                        vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
-                        return Ok(());
-                    }
-                } else {
-                    let val = recv_obj.get_ivar_by_id(key);
-                    vm.current_regs()[a as usize].replace(val);
-                    vm.fast_native_hits.set(vm.fast_native_hits.get() + 1);
-                    vm.attr_cache_hits.set(vm.attr_cache_hits.get() + 1);
-                    return Ok(());
-                }
-            }
-        }
+    // Attribute inline cache: only a get/set arity reaches it.
+    if (c & 0x0f) <= 1 && (c >> 4) == 0 && try_attr_cache(vm, a as usize, a as usize)? {
+        return Ok(());
     }
 
     do_op_send(vm, a as usize, None, a, b, c)
@@ -1439,11 +1447,17 @@ pub(crate) fn op_sendb(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 pub(crate) fn op_ssend0(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
+    if try_attr_cache(vm, 0, a as usize)? {
+        return Ok(());
+    }
     do_op_send(vm, 0, None, a, b, 0)
 }
 
 pub(crate) fn op_send0(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
+    if try_attr_cache(vm, a as usize, a as usize)? {
+        return Ok(());
+    }
     do_op_send(vm, a as usize, None, a, b, 0)
 }
 
