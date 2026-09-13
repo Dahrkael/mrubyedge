@@ -570,18 +570,6 @@ dependencies = [
 
 [[package]]
 name = "mruby-compiler2-sys"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e57b6bea7a439d4a48c5e2d680104b99855404caa0e24a30febe5bbee176f25"
-dependencies = [
- "bindgen",
- "cc",
- "glob",
- "libc",
-]
-
-[[package]]
-name = "mruby-compiler2-sys"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b5de1d76937c97e0df5d670363dc737f5295c3e3ef8ddf886e20c1b7029c77c"
@@ -598,7 +586,7 @@ version = "2.0.0"
 dependencies = [
  "criterion",
  "fnv",
- "mruby-compiler2-sys 0.5.0",
+ "mruby-compiler2-sys",
  "once_cell",
  "plain",
  "rand_core 0.10.0",
@@ -622,12 +610,12 @@ dependencies = [
 
 [[package]]
 name = "mrubyedge-cli"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "askama",
  "clap",
  "crossterm",
- "mruby-compiler2-sys 0.3.0",
+ "mruby-compiler2-sys",
  "mrubyedge 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "mrubyedge-math",
  "mrubyedge-time",
@@ -640,7 +628,7 @@ dependencies = [
 name = "mrubyedge-math"
 version = "0.2.0"
 dependencies = [
- "mruby-compiler2-sys 0.5.0",
+ "mruby-compiler2-sys",
  "mrubyedge 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -648,7 +636,7 @@ dependencies = [
 name = "mrubyedge-serde-json"
 version = "0.2.0"
 dependencies = [
- "mruby-compiler2-sys 0.5.0",
+ "mruby-compiler2-sys",
  "mrubyedge 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
@@ -659,7 +647,7 @@ name = "mrubyedge-time"
 version = "0.2.0"
 dependencies = [
  "libc",
- "mruby-compiler2-sys 0.5.0",
+ "mruby-compiler2-sys",
  "mrubyedge 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
