@@ -56,8 +56,8 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-mruby-math = "0.1.0"
-mrubyedge = "1.1.1"
+mruby-math = "0.2.0"
+mrubyedge = "2.0.0"
 ```
 
 Initialize the Math module in your VM:

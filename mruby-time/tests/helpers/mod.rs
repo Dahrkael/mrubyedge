@@ -1,66 +1,16 @@
 #![allow(dead_code)]
 
-use std::{ffi::CStr, fs::File, io::Write};
-
-pub fn mrbc_compile(fname: &'static str, code: &str) -> Vec<u8> {
-    let mut src = std::env::temp_dir();
-    src.push(format!("{}.{}.rb", fname, std::process::id()));
-    let mut f = File::create(&src).expect("cannot open src file");
-    f.write_all(code.as_bytes())
-        .expect("cannot create src file");
-    f.flush().unwrap();
-
-    let mut src0 = src.as_os_str().to_string_lossy().into_owned();
-    src0.push('\0');
-
-    let mut dest = std::env::temp_dir();
-    dest.push(format!("{}.{}.mrb", fname, std::process::id()));
-    let mut dest0 = dest.as_os_str().to_string_lossy().into_owned();
-    dest0.push('\0');
-
-    let args = [
-        c"mrbc".as_ptr(),
-        c"-o".as_ptr(),
-        CStr::from_bytes_with_nul(dest0.as_bytes())
-            .unwrap()
-            .as_ptr(),
-        CStr::from_bytes_with_nul(src0.as_bytes()).unwrap().as_ptr(),
-    ];
+pub fn mrbc_compile(_fname: &'static str, code: &str) -> Vec<u8> {
     unsafe {
-        mec_mrbc_sys::mrbc_main(args.len() as i32, args.as_ptr() as *mut *mut i8);
+        let mut context = mruby_compiler2_sys::MRubyCompiler2Context::new();
+        context.compile(code).unwrap()
     }
-
-    std::fs::read(dest).unwrap()
 }
 
-pub fn mrbc_compile_debug(fname: &'static str, code: &str) -> Vec<u8> {
-    let mut src = std::env::temp_dir();
-    src.push(format!("{}.{}.rb", fname, std::process::id()));
-    let mut f = File::create(&src).expect("cannot open src file");
-    f.write_all(code.as_bytes())
-        .expect("cannot create src file");
-    f.flush().unwrap();
-
-    let mut src0 = src.as_os_str().to_string_lossy().into_owned();
-    src0.push('\0');
-
-    let mut dest = std::env::temp_dir();
-    dest.push(format!("{}.{}.mrb", fname, std::process::id()));
-    let mut dest0 = dest.as_os_str().to_string_lossy().into_owned();
-    dest0.push('\0');
-
-    let args = [
-        c"mrbc".as_ptr(),
-        c"-v".as_ptr(),
-        c"-o".as_ptr(),
-        CStr::from_bytes_with_nul(dest0.as_bytes())
-            .unwrap()
-            .as_ptr(),
-        CStr::from_bytes_with_nul(src0.as_bytes()).unwrap().as_ptr(),
-    ];
+pub fn mrbc_compile_debug(_fname: &'static str, code: &str) -> Vec<u8> {
     unsafe {
-        mec_mrbc_sys::mrbc_main(args.len() as i32, args.as_ptr() as *mut *mut i8);
+        let mut context = mruby_compiler2_sys::MRubyCompiler2Context::new();
+        context.dump_bytecode(code).unwrap();
+        context.compile(code).unwrap()
     }
-
-    std::fs::read(dest).unwrap()
 }

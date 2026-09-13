@@ -21,7 +21,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-mrubyedge = "1.0"
+mrubyedge = "2.0.0"
 ```
 
 ## Usage
