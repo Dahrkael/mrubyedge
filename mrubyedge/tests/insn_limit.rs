@@ -24,7 +24,6 @@ fn insn_limit_basic_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_simple", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 3);
@@ -74,7 +73,6 @@ fn insn_limit_reset_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_count", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 45);
@@ -88,7 +86,6 @@ fn insn_limit_reset_test() {
     // Second call should work after reset
     let result: i32 = mrb_funcall(&mut vm, None, "test_count", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 45);

@@ -22,7 +22,7 @@ run
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, "boom");
@@ -45,7 +45,7 @@ run
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 2);
@@ -71,7 +71,7 @@ $log
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, "ensured");
@@ -98,7 +98,7 @@ run + \"/\" + $log
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, "rescued/ensured");
@@ -152,7 +152,7 @@ run
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, "inner:inner");
@@ -206,7 +206,7 @@ outer
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, "caught:deep");
@@ -237,7 +237,7 @@ end
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, "p:from ensure");

@@ -1,10 +1,8 @@
 extern crate mrubyedge;
 
 mod helpers;
-use std::rc::Rc;
 
 use helpers::*;
-use mrubyedge::yamrb::value::RObject;
 
 #[test]
 fn object_test() {
@@ -29,7 +27,6 @@ fn object_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_main", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 1);
@@ -68,13 +65,13 @@ fn object_extend_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_extend", &args).unwrap();
-    let arr: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
     assert_eq!(
-        TryInto::<String>::try_into(arr[0].as_ref()).unwrap(),
+        TryInto::<String>::try_into(&arr[0]).unwrap(),
         "Hello from module"
     );
     assert_eq!(
-        TryInto::<String>::try_into(arr[1].as_ref()).unwrap(),
+        TryInto::<String>::try_into(&arr[1]).unwrap(),
         "Goodbye from module"
     );
 }
@@ -107,15 +104,9 @@ fn object_extend_multiple_modules_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_extend_multiple", &args).unwrap();
-    let arr: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
-    assert_eq!(
-        TryInto::<String>::try_into(arr[0].as_ref()).unwrap(),
-        "from M1"
-    );
-    assert_eq!(
-        TryInto::<String>::try_into(arr[1].as_ref()).unwrap(),
-        "from M2"
-    );
+    let arr: Vec<Value> = result.try_into().unwrap();
+    assert_eq!(TryInto::<String>::try_into(&arr[0]).unwrap(), "from M1");
+    assert_eq!(TryInto::<String>::try_into(&arr[1]).unwrap(), "from M2");
 }
 
 #[test]
@@ -146,7 +137,7 @@ fn object_extend_overrides_class_method_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_extend_override", &args).unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(result_str, "from module");
 }
 
@@ -177,7 +168,7 @@ fn object_extend_singleton_method_priority_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_singleton_priority", &args).unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(result_str, "from singleton");
 }
 
@@ -223,19 +214,10 @@ fn object_extend_multiple_priority_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_multiple_priority", &args).unwrap();
-    let arr: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
-    assert_eq!(
-        TryInto::<String>::try_into(arr[0].as_ref()).unwrap(),
-        "from M1"
-    );
-    assert_eq!(
-        TryInto::<String>::try_into(arr[1].as_ref()).unwrap(),
-        "from M2"
-    );
-    assert_eq!(
-        TryInto::<String>::try_into(arr[2].as_ref()).unwrap(),
-        "from M3"
-    );
+    let arr: Vec<Value> = result.try_into().unwrap();
+    assert_eq!(TryInto::<String>::try_into(&arr[0]).unwrap(), "from M1");
+    assert_eq!(TryInto::<String>::try_into(&arr[1]).unwrap(), "from M2");
+    assert_eq!(TryInto::<String>::try_into(&arr[2]).unwrap(), "from M3");
 }
 
 #[test]
@@ -275,20 +257,11 @@ fn object_extend_multiple_arguments_priority_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_args_priority", &args).unwrap();
-    let arr: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
     // M1 is extended last, so greet calls M1's method
-    assert_eq!(
-        TryInto::<String>::try_into(arr[0].as_ref()).unwrap(),
-        "from M1"
-    );
-    assert_eq!(
-        TryInto::<String>::try_into(arr[1].as_ref()).unwrap(),
-        "M1 only"
-    );
-    assert_eq!(
-        TryInto::<String>::try_into(arr[2].as_ref()).unwrap(),
-        "M2 only"
-    );
+    assert_eq!(TryInto::<String>::try_into(&arr[0]).unwrap(), "from M1");
+    assert_eq!(TryInto::<String>::try_into(&arr[1]).unwrap(), "M1 only");
+    assert_eq!(TryInto::<String>::try_into(&arr[2]).unwrap(), "M2 only");
 }
 
 #[test]
@@ -311,7 +284,6 @@ fn object_loop_basic_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_loop", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5);
@@ -336,10 +308,9 @@ fn object_block_given_with_block_test() {
     let args = vec![];
     let result: bool = mrb_funcall(&mut vm, None, "test_block_given_with_block", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -361,10 +332,9 @@ fn object_block_given_without_block_test() {
     let args = vec![];
     let result: bool = mrb_funcall(&mut vm, None, "test_block_given_without_block", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
-    assert_eq!(result, false);
+    assert!(!result);
 }
 
 #[test]
@@ -386,10 +356,9 @@ fn object_block_given_with_args_and_block_test() {
     let args = vec![];
     let result: bool = mrb_funcall(&mut vm, None, "test_block_given_with_args_and_block", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -416,10 +385,9 @@ fn object_block_given_with_args_without_block_test() {
         &args,
     )
     .unwrap()
-    .as_ref()
     .try_into()
     .unwrap();
-    assert_eq!(result, false);
+    assert!(!result);
 }
 
 #[test]
@@ -438,10 +406,9 @@ fn object_respond_to_existing_method_test() {
     let args = vec![];
     let result: bool = mrb_funcall(&mut vm, None, "test_respond_to_existing", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -460,10 +427,9 @@ fn object_respond_to_non_existing_method_test() {
     let args = vec![];
     let result: bool = mrb_funcall(&mut vm, None, "test_respond_to_non_existing", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
-    assert_eq!(result, false);
+    assert!(!result);
 }
 
 #[test]
@@ -488,7 +454,6 @@ fn object_public_send_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_public_send", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, "Hello, World!");
@@ -516,7 +481,6 @@ fn object_public_send_no_args_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_public_send_no_args", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, "Hi!");

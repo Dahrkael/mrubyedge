@@ -12,7 +12,7 @@ x
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 6);
@@ -29,7 +29,7 @@ x
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 6);
@@ -46,7 +46,7 @@ x
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: f64 = result.as_ref().try_into().unwrap();
+    let result: f64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 3.5);
@@ -69,7 +69,7 @@ x
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 105);
@@ -92,7 +92,7 @@ x
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 105);
@@ -117,7 +117,7 @@ b += 5
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, "1-105-3");

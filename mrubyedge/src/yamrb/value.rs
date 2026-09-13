@@ -35,13 +35,13 @@ pub type RHashMap<K, V> = fnv::FnvHashMap<K, V>;
 #[cfg(feature = "mruby-hash-fnv")]
 pub type RHashSet<K> = fnv::FnvHashSet<K>;
 #[cfg(feature = "mruby-hash-fnv")]
-pub type RHash = fnv::FnvHashMap<ValueHasher, (Rc<RObject>, Rc<RObject>)>;
+pub type RHash = fnv::FnvHashMap<ValueHasher, (Value, Value)>;
 #[cfg(not(feature = "mruby-hash-fnv"))]
 pub type RHashMap<K, V> = std::collections::HashMap<K, V>;
 #[cfg(not(feature = "mruby-hash-fnv"))]
 pub type RHashSet<K> = std::collections::HashSet<K>;
 #[cfg(not(feature = "mruby-hash-fnv"))]
-pub type RHash = std::collections::HashMap<ValueHasher, (Rc<RObject>, Rc<RObject>)>;
+pub type RHash = std::collections::HashMap<ValueHasher, (Value, Value)>;
 
 /// Actual storage for Ruby values, including boxed objects and immediates.
 #[derive(Debug, Clone)]
@@ -54,16 +54,287 @@ pub enum RValue {
     Module(Rc<RModule>),
     Instance(RInstance),
     Proc(RProc),
-    Array(RefCell<Vec<Rc<RObject>>>),
+    Array(RefCell<Vec<Value>>),
     Hash(RefCell<RHash>),
     /// (bytes, is_utf8)
     /// FIXME: currently, we compare strings by bytes only, so is_utf8 is unused.
     String(RefCell<Vec<u8>>, Cell<bool>),
-    Range(Rc<RObject>, Rc<RObject>, bool),
+    Range(Value, Value, bool),
     SharedMemory(Rc<RefCell<SharedMemory>>),
     Data(Rc<RData>),
     Exception(Rc<RException>),
     Nil,
+}
+
+/// Register-file value: the immediates (nil, bool, symbol, integer, float) are
+/// stored inline so arithmetic and ivar traffic never allocate or touch
+/// refcounts. Objects remain behind `Rc`, exactly as `RValue` holds them.
+/// The enum is 16 bytes; a register slot is `Option<Value>` so "unassigned"
+/// stays distinct from an assigned nil.
+#[derive(Debug, Clone)]
+pub enum Value {
+    Nil,
+    Bool(bool),
+    Symbol(u32),
+    Integer(i64),
+    Float(f64),
+    Object(Rc<RObject>),
+}
+
+impl Value {
+    /// Boxes the value back into a heap `RObject`, sharing the flyweight
+    /// instances (nil, booleans, small ints, symbols) where the VM has them.
+    pub fn to_rc(&self) -> Rc<RObject> {
+        match self {
+            Value::Nil => RObject::nil_rc(),
+            Value::Bool(b) => RObject::boolean_rc(*b),
+            Value::Symbol(id) => symbol_object(*id),
+            Value::Integer(i) => RObject::integer_rc(*i),
+            Value::Float(f) => Rc::new(RObject::float(*f)),
+            Value::Object(o) => o.clone(),
+        }
+    }
+
+    /// Unboxes a heap `RObject`: immediates are freed and stored inline, so a
+    /// register never keeps a numeric value boxed. Objects are kept by Rc.
+    pub fn from_rc(rc: Rc<RObject>) -> Self {
+        // Dispatch on the Copy `tt` so the object arm can move `rc` without a
+        // lingering borrow of its `value` field.
+        match rc.tt {
+            RType::Nil => Value::Nil,
+            RType::Bool => match &rc.value {
+                RValue::Bool(b) => Value::Bool(*b),
+                _ => unreachable!("Bool RObject without Bool value"),
+            },
+            RType::Symbol => match &rc.value {
+                RValue::Symbol(s) => Value::Symbol(s.id),
+                _ => unreachable!("Symbol RObject without Symbol value"),
+            },
+            RType::Integer => match &rc.value {
+                RValue::Integer(i) => Value::Integer(*i),
+                _ => unreachable!("Integer RObject without Integer value"),
+            },
+            RType::Float => match &rc.value {
+                RValue::Float(f) => Value::Float(*f),
+                _ => unreachable!("Float RObject without Float value"),
+            },
+            _ => Value::Object(rc),
+        }
+    }
+
+    pub fn is_nil(&self) -> bool {
+        matches!(self, Value::Nil)
+    }
+
+    /// Ruby truthiness: everything except `nil` and `false` is truthy.
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Value::Nil => false,
+            Value::Bool(b) => *b,
+            _ => true,
+        }
+    }
+
+    pub fn is_falsy(&self) -> bool {
+        !self.is_truthy()
+    }
+
+    /// Runtime class of the value, using the VM's cached builtin classes for
+    /// immediates so no box is created just to resolve the class.
+    pub fn get_class(&self, vm: &crate::yamrb::vm::VM) -> Rc<RClass> {
+        match self {
+            Value::Nil => vm.nil_class.clone(),
+            Value::Bool(true) => vm.true_class.clone(),
+            Value::Bool(false) => vm.false_class.clone(),
+            Value::Symbol(_) => vm.symbol_class.clone(),
+            Value::Integer(_) => vm.integer_class.clone(),
+            Value::Float(_) => vm.float_class.clone(),
+            Value::Object(o) => o.get_class(vm),
+        }
+    }
+
+    /// Class identity used by the dispatch caches: the singleton class when
+    /// one exists, otherwise the runtime class. Immediates never carry a
+    /// singleton, so they resolve directly to their builtin class.
+    pub fn singleton_or_this_class(&self, vm: &mut crate::yamrb::vm::VM) -> Rc<RClass> {
+        match self {
+            Value::Object(o) => o.singleton_or_this_class(vm),
+            _ => self.get_class(vm),
+        }
+    }
+
+    /// Hash key for a value; immediates never box.
+    pub fn as_hash_key(&self) -> Result<ValueHasher, Error> {
+        match self {
+            Value::Bool(b) => Ok(ValueHasher::Bool(*b)),
+            Value::Integer(i) => Ok(ValueHasher::Integer(*i)),
+            Value::Float(f) => Ok(ValueHasher::Float(f.to_be_bytes().to_vec())),
+            Value::Symbol(id) => Ok(ValueHasher::Symbol(*id)),
+            Value::Object(o) => o.as_hash_key(),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+
+    /// Normalized equality form for a value; immediates never box.
+    pub fn as_eq_value(&self) -> ValueEquality {
+        match self {
+            Value::Bool(b) => ValueEquality::Bool(*b),
+            Value::Integer(i) => ValueEquality::Integer(*i),
+            Value::Float(f) => ValueEquality::Float(*f),
+            Value::Symbol(id) => ValueEquality::Symbol(*id),
+            Value::Nil => ValueEquality::Nil,
+            Value::Object(o) => o.as_eq_value(),
+        }
+    }
+
+    /// Borrows the object's `RValue`; `None` for immediates. Lets methods that
+    /// only ever run on a given heap class inspect the receiver without boxing.
+    pub fn rvalue(&self) -> Option<&RValue> {
+        match self {
+            Value::Object(o) => Some(&o.value),
+            _ => None,
+        }
+    }
+
+    /// Identity of the receiver; immediates resolve through their flyweight.
+    pub fn object_id(&self) -> u64 {
+        match self {
+            Value::Object(o) => o.object_id.get(),
+            _ => self.to_rc().object_id.get(),
+        }
+    }
+
+    pub fn is_main(&self) -> bool {
+        match self {
+            Value::Object(o) => o.is_main(),
+            _ => false,
+        }
+    }
+
+    /// MRI immediates share one instance across the process, so they must
+    /// never carry per-instance state (ivars, singleton class).
+    pub fn is_immediate(&self) -> bool {
+        !matches!(self, Value::Object(_))
+    }
+
+    /// error for writing per-instance state to an immediate,
+    /// which MRI rejects with FrozenError.
+    pub fn frozen_immediate_error(&self, vm: &crate::yamrb::vm::VM) -> Error {
+        self.to_rc().frozen_immediate_error(vm)
+    }
+
+    pub fn get_ivar_by_id(&self, key: u32) -> Value {
+        self.to_rc().get_ivar_by_id(key)
+    }
+
+    pub fn set_ivar_by_id(&self, key: u32, value: Value) {
+        self.to_rc().set_ivar_by_id(key, value);
+    }
+
+    pub fn get_ivar(&self, name: &str) -> Value {
+        self.to_rc().get_ivar(name)
+    }
+
+    pub fn set_ivar(&self, name: &str, value: Value) {
+        self.to_rc().set_ivar(name, value);
+    }
+
+    pub fn initialize_or_get_singleton_class(&self, vm: &mut crate::yamrb::vm::VM) -> Rc<RClass> {
+        self.to_rc().initialize_or_get_singleton_class(vm)
+    }
+
+    pub fn string_borrow_mut(&self) -> Result<std::cell::RefMut<'_, Vec<u8>>, Error> {
+        match self {
+            Value::Object(o) => o.string_borrow_mut(),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+
+    pub fn array_borrow_mut(&self) -> Result<std::cell::RefMut<'_, Vec<Value>>, Error> {
+        match self {
+            Value::Object(o) => o.array_borrow_mut(),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+
+    pub fn hash_borrow_mut(&self) -> Result<std::cell::RefMut<'_, RHash>, Error> {
+        match self {
+            Value::Object(o) => o.hash_borrow_mut(),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+
+    pub fn string_is_utf8(&self) -> Result<bool, Error> {
+        match self {
+            Value::Object(o) => o.string_is_utf8(),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_eq_value() == other.as_eq_value()
+    }
+}
+
+/// Numeric operations that the send dispatch can execute inline, skipping the
+/// native-call machinery. One variant per concrete closure registered through
+/// the fast path, so the inline code replicates that closure's exact semantics
+/// (e.g. floored vs truncated modulo). Variants are identity-tagged onto a
+/// method's `func` at registration and read back through the dispatch cache:
+/// a redefinition replaces the method, bumps the method version, and forces a
+/// fresh resolve, so a stale entry can never fast-path through an old tag.
+///
+/// Only closures whose behavior has no dynamic component are tagged: modulo,
+/// power, `<=>` and `!=` operate purely on operand values. The Comparable
+/// family (`<`, `<=`, ...) deliberately is NOT tagged because it calls `<=>`
+/// dynamically, and a user `<=>` override would otherwise be bypassed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FastOp {
+    /// Integer#% as registered by the prelude: Rust-style truncated modulo,
+    /// divisor must be a non-zero Integer.
+    IntModTrunc,
+    /// Integer#% as registered by the engine compat layer: floored modulo,
+    /// result carries the divisor's sign; Float divisor yields a Float.
+    IntModFloored,
+    /// Float#% as registered by the engine compat layer: floored modulo.
+    FloatModFloored,
+    /// Integer#** — positive exponent stays Integer, negative or Float
+    /// exponent promotes to Float (prelude semantics).
+    IntPow,
+    /// Float#** (prelude semantics).
+    FloatPow,
+    /// Object#<=> restricted to numeric operands (prelude semantics).
+    NumSpaceship,
+    /// Object#!= on same-kind numeric operands (value inequality).
+    NumNe,
+    /// attr_accessor getter: direct IvarMap read on the receiver, no call.
+    /// The ivar key lives on the tagged [`RProc`](crate::yamrb::value::RProc).
+    AttrGet,
+    /// attr_accessor setter: direct IvarMap write, returns the assigned value.
+    AttrSet,
+}
+
+/// Ruby's floored modulo: the result carries the divisor's sign. Shared by the
+/// engine compat layer and the send fast path so they cannot drift apart.
+pub fn rubylike_mod_f64(a: f64, b: f64) -> f64 {
+    let r = a % b;
+    if r != 0.0 && (r < 0.0) != (b < 0.0) {
+        r + b
+    } else {
+        r
+    }
+}
+
+/// Ruby's floored modulo for integers; see [`rubylike_mod_f64`].
+pub fn rubylike_mod_i64(a: i64, b: i64) -> i64 {
+    let r = a % b;
+    if r != 0 && (r < 0) != (b < 0) {
+        r + b
+    } else {
+        r
+    }
 }
 
 /// Canonical representation used when Ruby objects serve as Hash keys.
@@ -73,7 +344,7 @@ pub enum ValueHasher {
     Bool(bool),
     Integer(i64),
     Float(Vec<u8>),
-    Symbol(String),
+    Symbol(u32),
     String(Vec<u8>),
     Class(String),
 }
@@ -84,7 +355,7 @@ pub enum ValueEquality {
     Bool(bool),
     Integer(i64),
     Float(f64),
-    Symbol(String),
+    Symbol(u32),
     String(Vec<u8>),
     Class(String),
     Range(Box<ValueEquality>, Box<ValueEquality>, bool),
@@ -112,6 +383,109 @@ impl PartialEq for ValueEqualityForKeyValue {
     }
 }
 
+/// Open-addressing ivar table with stored FNV hashes. Ivar sets are tiny and
+/// never delete entries, so linear probing with load-factor growth is fast
+/// and simple, and reads can skip re-hashing by passing a precomputed hash
+/// (the attr accessors compute each key's hash once).
+#[derive(Debug, Clone)]
+pub struct IvarMap {
+    slots: Vec<Option<(u32, Value)>>,
+    len: usize,
+}
+
+/// Spreads sequential symbol ids across the power-of-two probe table.
+fn mix_ivar_key(key: u32) -> usize {
+    (key as u64).wrapping_mul(0x9E3779B97F4A7C15) as usize
+}
+
+impl IvarMap {
+    pub fn new() -> Self {
+        Self {
+            slots: Vec::new(),
+            len: 0,
+        }
+    }
+
+    pub fn get(&self, key: u32) -> Option<&Value> {
+        let cap = self.slots.len();
+        if cap == 0 {
+            return None;
+        }
+        // Capacity is always a power of two (grow starts at 4 and doubles), so
+        // the mask replaces a runtime division in the probe loop.
+        let mask = cap - 1;
+        let start = mix_ivar_key(key) & mask;
+        let mut i = start;
+        loop {
+            match &self.slots[i] {
+                Some((k, v)) if *k == key => return Some(v),
+                None => return None,
+                Some(_) => {
+                    i = (i + 1) & mask;
+                    if i == start {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn contains_key(&self, key: u32) -> bool {
+        self.get(key).is_some()
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = u32> {
+        self.slots
+            .iter()
+            .filter_map(|s| s.as_ref().map(|(k, _)| *k))
+    }
+
+    pub fn insert(&mut self, key: u32, value: Value) {
+        if self.slots.is_empty() || (self.len + 1) * 10 >= self.slots.len() * 7 {
+            self.grow();
+        }
+        let cap = self.slots.len();
+        let start = mix_ivar_key(key) % cap;
+        let mut i = start;
+        loop {
+            match &self.slots[i] {
+                Some((k, _)) if *k == key => {
+                    self.slots[i] = Some((key, value));
+                    return;
+                }
+                None => {
+                    self.slots[i] = Some((key, value));
+                    self.len += 1;
+                    return;
+                }
+                Some(_) => {
+                    i = (i + 1) % cap;
+                }
+            }
+        }
+    }
+
+    fn grow(&mut self) {
+        let new_cap = if self.slots.is_empty() {
+            4
+        } else {
+            self.slots.len() * 2
+        };
+        let old = std::mem::replace(&mut self.slots, (0..new_cap).map(|_| None).collect());
+        self.len = 0;
+        for slot in old.into_iter().flatten() {
+            let (k, v) = slot;
+            self.insert(k, v);
+        }
+    }
+}
+
+impl Default for IvarMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Heap-allocated Ruby object wrapper containing type tag, value, and object id.
 #[derive(Debug, Clone)]
 pub struct RObject {
@@ -121,10 +495,71 @@ pub struct RObject {
 
     pub singleton_class: RefCell<Option<Rc<RClass>>>,
 
-    pub ivar: RefCell<RHashMap<String, Rc<RObject>>>,
+    pub ivar: RefCell<IvarMap>,
 }
 
 const UNSET_OBJECT_ID: u64 = u64::MAX;
+
+// Shared instances for MRI immediates: nil, true, false and small integers.
+// Their object_id is value-derived (4, 20, 0, n*2+1), so sharing never
+// changes identity semantics, and F3A guards prevent per-instance writes.
+// Per-thread because Rc<RObject> is !Sync.
+thread_local! {
+    static NIL: Rc<RObject> = Rc::new(RObject::nil());
+    static TRUE: Rc<RObject> = Rc::new(RObject::boolean(true));
+    static FALSE: Rc<RObject> = Rc::new(RObject::boolean(false));
+    static SMALL_INTS: Vec<Rc<RObject>> =
+        (0..=255).map(|n| Rc::new(RObject::integer(n))).collect();
+    // One shared RObject per distinct symbol name, so loading a `:foo`
+    // literal does not allocate a new object per occurrence.
+    static SYMBOL_OBJECTS: RefCell<RHashMap<String, Rc<RObject>>> =
+        RefCell::new(RHashMap::default());
+    // Symbol interning: every distinct name gets a stable u32 id carried by
+    // Value::Symbol and the method-dispatch key, so registers and caches
+    // hold integers instead of Rc<RSym>. One flyweight RObject per id.
+    static SYMBOL_IDS: RefCell<RHashMap<String, u32>> = RefCell::new(RHashMap::default());
+    static SYMBOL_BY_ID: RefCell<Vec<Rc<RObject>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Interns `name`, returning its stable symbol id (created on first use).
+pub fn intern_symbol(name: &str) -> u32 {
+    SYMBOL_IDS.with(|ids| {
+        let mut ids = ids.borrow_mut();
+        if let Some(id) = ids.get(name) {
+            return *id;
+        }
+        let id = SYMBOL_BY_ID.with(|by_id| by_id.borrow().len()) as u32;
+        let sym = RSym {
+            name: name.to_string(),
+            id,
+        };
+        let obj = Rc::new(RObject::symbol(sym));
+        SYMBOL_BY_ID.with(|by_id| by_id.borrow_mut().push(obj));
+        ids.insert(name.to_string(), id);
+        id
+    })
+}
+
+/// Shared flyweight RObject for a symbol id stored in `Value::Symbol`.
+pub fn symbol_object(id: u32) -> Rc<RObject> {
+    SYMBOL_BY_ID.with(|by_id| by_id.borrow()[id as usize].clone())
+}
+
+/// RSym (name + id) for a symbol id.
+pub fn symbol_rsym(id: u32) -> Rc<RSym> {
+    match &symbol_object(id).value {
+        RValue::Symbol(s) => Rc::new(s.clone()),
+        _ => unreachable!("symbol object"),
+    }
+}
+
+/// Name of a symbol id.
+pub fn symbol_name(id: u32) -> String {
+    match &symbol_object(id).value {
+        RValue::Symbol(s) => s.name.clone(),
+        _ => unreachable!("symbol object"),
+    }
+}
 
 impl RObject {
     pub fn nil() -> Self {
@@ -133,7 +568,7 @@ impl RObject {
             value: RValue::Nil,
             object_id: 4.into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -143,7 +578,7 @@ impl RObject {
             value: RValue::Bool(b),
             object_id: (if b { 20 } else { 0 }).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -153,7 +588,7 @@ impl RObject {
             value: RValue::Symbol(sym),
             object_id: 2.into(), // TODO: calc the same id for the same symbol
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -169,7 +604,7 @@ impl RObject {
             value: RValue::Integer(n),
             object_id: object_id.into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -179,7 +614,7 @@ impl RObject {
             value: RValue::Float(f),
             object_id: f.to_bits().into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -189,7 +624,7 @@ impl RObject {
             value: RValue::String(RefCell::new(s.into_bytes()), Cell::new(true)),
             object_id: (UNSET_OBJECT_ID).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -199,17 +634,17 @@ impl RObject {
             value: RValue::String(RefCell::new(v), Cell::new(false)),
             object_id: (UNSET_OBJECT_ID).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
-    pub fn array(v: Vec<Rc<RObject>>) -> Self {
+    pub fn array(v: Vec<Value>) -> Self {
         RObject {
             tt: RType::Array,
             value: RValue::Array(RefCell::new(v)),
             object_id: (UNSET_OBJECT_ID).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -219,17 +654,17 @@ impl RObject {
             value: RValue::Hash(RefCell::new(h)),
             object_id: (UNSET_OBJECT_ID).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
-    pub fn range(start: Rc<RObject>, end: Rc<RObject>, exclusive: bool) -> Self {
+    pub fn range(start: Value, end: Value, exclusive: bool) -> Self {
         RObject {
             tt: RType::Range,
             value: RValue::Range(start, end, exclusive),
             object_id: (UNSET_OBJECT_ID).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -250,7 +685,7 @@ impl RObject {
             value: RValue::Class(c),
             object_id: (UNSET_OBJECT_ID).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
         .to_refcount_assigned()
     }
@@ -266,7 +701,7 @@ impl RObject {
             value: RValue::Module(m),
             object_id: (UNSET_OBJECT_ID).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -292,7 +727,7 @@ impl RObject {
             }),
             object_id: (UNSET_OBJECT_ID).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -302,7 +737,7 @@ impl RObject {
             value: RValue::Proc(p),
             object_id: (UNSET_OBJECT_ID).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -312,7 +747,7 @@ impl RObject {
             value: RValue::Exception(e),
             object_id: (UNSET_OBJECT_ID).into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
     }
 
@@ -323,6 +758,45 @@ impl RObject {
             rc.object_id.set(id);
         }
         rc
+    }
+
+    /// Shared instance for nil (object_id 4).
+    pub fn nil_rc() -> Rc<Self> {
+        NIL.with(|n| n.clone())
+    }
+
+    /// Shared instance for true (object_id 20) or false (object_id 0).
+    pub fn boolean_rc(b: bool) -> Rc<Self> {
+        if b {
+            TRUE.with(|t| t.clone())
+        } else {
+            FALSE.with(|f| f.clone())
+        }
+    }
+
+    /// Shared instance for small integers 0..=255 (object_id n*2+1); larger
+    /// values allocate a fresh instance as before.
+    pub fn integer_rc(n: i64) -> Rc<Self> {
+        if (0..=255).contains(&n) {
+            SMALL_INTS.with(|v| v[n as usize].clone())
+        } else {
+            Rc::new(RObject::integer(n))
+        }
+    }
+
+    /// Shared RObject for a symbol name: loading `:foo` reuses one instance
+    /// instead of allocating a new object (and RSym clone) per literal.
+    pub fn symbol_rc(sym: &RSym) -> Rc<Self> {
+        SYMBOL_OBJECTS.with(|cache| {
+            // Read path only borrows; the cache is mutated only on a miss.
+            if let Some(o) = cache.borrow().get(sym.name.as_str()) {
+                return o.clone();
+            }
+            let mut cache = cache.borrow_mut();
+            let o = Rc::new(RObject::symbol(sym.clone()));
+            cache.insert(sym.name.clone(), o.clone());
+            o
+        })
     }
 
     pub fn is_falsy(&self) -> bool {
@@ -344,21 +818,51 @@ impl RObject {
         matches!(self.tt, RType::Nil)
     }
 
+    /// MRI immediates share one instance across the process, so they must
+    /// never carry per-instance state (ivars, singleton class).
+    pub fn is_immediate(&self) -> bool {
+        matches!(
+            self.tt,
+            RType::Integer | RType::Float | RType::Bool | RType::Nil | RType::Symbol
+        )
+    }
+
+    /// error for writing per-instance state to an immediate,
+    /// which MRI rejects with FrozenError.
+    pub fn frozen_immediate_error(&self, vm: &VM) -> Error {
+        Error::TaggedError(
+            "FrozenError".to_string(),
+            format!("can't modify frozen {}", self.get_class(vm).full_name()),
+        )
+    }
+
     pub fn is_main(&self) -> bool {
         self.object_id.get() == 0
     }
 
-    pub fn set_ivar(&self, key: &str, value: Rc<RObject>) {
-        self.ivar.borrow_mut().insert(key.to_string(), value);
+    /// Stores an ivar. `key` is interned; the attr hot path uses the by-id
+    /// variants to skip the interning lookup.
+    pub fn set_ivar(&self, key: &str, value: Value) {
+        self.ivar.borrow_mut().insert(intern_symbol(key), value);
     }
 
-    pub fn get_ivar(&self, key: &str) -> Rc<RObject> {
+    pub fn get_ivar(&self, key: &str) -> Value {
         self.ivar
             .borrow()
-            .get(key)
+            .get(intern_symbol(key))
             .cloned()
-            .or_else(|| Some(RObject::nil().to_refcount_assigned()))
-            .unwrap()
+            .unwrap_or(Value::Nil)
+    }
+
+    /// Ivar read keyed by symbol id, so the attr accessors never touch a
+    /// string key or an interning lookup per read.
+    pub fn get_ivar_by_id(&self, key: u32) -> Value {
+        self.ivar.borrow().get(key).cloned().unwrap_or(Value::Nil)
+    }
+
+    /// Ivar write keyed by symbol id; see [`Self::get_ivar_by_id`].
+    pub fn set_ivar_by_id(&self, key: u32, value: Value) {
+        self.ivar.borrow_mut().insert(key, value);
     }
 
     // TODO: implment Object#hash
@@ -367,7 +871,7 @@ impl RObject {
             RValue::Bool(b) => Ok(ValueHasher::Bool(*b)),
             RValue::Integer(i) => Ok(ValueHasher::Integer(*i)),
             RValue::Float(f) => Ok(ValueHasher::Float(f.to_be_bytes().to_vec())),
-            RValue::Symbol(s) => Ok(ValueHasher::Symbol(s.name.clone())),
+            RValue::Symbol(s) => Ok(ValueHasher::Symbol(s.id)),
             RValue::String(s, _) => Ok(ValueHasher::String(s.borrow().clone())),
             RValue::Class(c) => Ok(ValueHasher::Class(c.sym_id.name.clone())),
             _ => Err(Error::TypeMismatch),
@@ -379,14 +883,16 @@ impl RObject {
             RValue::Bool(b) => ValueEquality::Bool(*b),
             RValue::Integer(i) => ValueEquality::Integer(*i),
             RValue::Float(f) => ValueEquality::Float(*f),
-            RValue::Symbol(s) => ValueEquality::Symbol(s.name.clone()),
+            RValue::Symbol(s) => ValueEquality::Symbol(s.id),
             RValue::String(s, _) => ValueEquality::String(s.borrow().clone()),
             RValue::Class(c) => ValueEquality::Class(c.sym_id.name.clone()),
-            RValue::Range(s, e, ex) => {
-                ValueEquality::Range(Box::new(s.as_eq_value()), Box::new(e.as_eq_value()), *ex)
-            }
+            RValue::Range(s, e, ex) => ValueEquality::Range(
+                Box::new(s.to_rc().as_eq_value()),
+                Box::new(e.to_rc().as_eq_value()),
+                *ex,
+            ),
             RValue::Array(a) => {
-                let arr = a.borrow().iter().map(|v| v.as_eq_value()).collect();
+                let arr = a.borrow().iter().map(|v| v.to_rc().as_eq_value()).collect();
                 ValueEquality::Array(arr)
             }
             RValue::Hash(ha) => {
@@ -395,7 +901,7 @@ impl RObject {
                     keys,
                     ha.borrow()
                         .iter()
-                        .map(|(k, (_, v))| (k.clone(), v.as_ref().as_eq_value()))
+                        .map(|(k, (_, v))| (k.clone(), v.to_rc().as_eq_value()))
                         .collect(),
                 ))
             }
@@ -406,41 +912,77 @@ impl RObject {
 
     pub fn get_class(&self, vm: &VM) -> Rc<RClass> {
         match &self.value {
-            RValue::Class(_) => vm.get_class_by_name("Class"),
-            RValue::Module(_) => vm.get_class_by_name("Module"),
+            RValue::Class(_) => vm.class_class.clone(),
+            RValue::Module(_) => vm.module_class.clone(),
             RValue::Instance(i) => i.class.clone(),
             RValue::Bool(b) => {
                 if *b {
-                    vm.get_class_by_name("TrueClass")
+                    vm.true_class.clone()
                 } else {
-                    vm.get_class_by_name("FalseClass")
+                    vm.false_class.clone()
                 }
             }
-            RValue::Symbol(_) => vm.get_class_by_name("Symbol"),
-            RValue::Integer(_) => vm.get_class_by_name("Integer"),
-            RValue::Float(_) => vm.get_class_by_name("Float"),
-            RValue::Proc(_) => vm.get_class_by_name("Proc"),
-            RValue::Array(_) => vm.get_class_by_name("Array"),
-            RValue::Hash(_) => vm.get_class_by_name("Hash"),
-            RValue::String(_, _) => vm.get_class_by_name("String"),
-            RValue::Range(_, _, _) => vm.get_class_by_name("Range"),
-            RValue::SharedMemory(_) => vm.get_class_by_name("SharedMemory"),
+            RValue::Symbol(_) => vm.symbol_class.clone(),
+            RValue::Integer(_) => vm.integer_class.clone(),
+            RValue::Float(_) => vm.float_class.clone(),
+            RValue::Proc(_) => vm.proc_class.clone(),
+            RValue::Array(_) => vm.array_class.clone(),
+            RValue::Hash(_) => vm.hash_class.clone(),
+            RValue::String(_, _) => vm.string_class.clone(),
+            RValue::Range(_, _, _) => vm.range_class.clone(),
+            RValue::SharedMemory(_) => vm.shared_memory_class.clone(),
             RValue::Data(d) => d.class.clone(),
             RValue::Exception(e) => e.class.clone(),
-            RValue::Nil => vm.get_class_by_name("NilClass"),
+            RValue::Nil => vm.nil_class.clone(),
         }
     }
 
-    pub(crate) fn initialize_or_get_singleton_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
-        if let Some(sclass) = self.singleton_class.borrow().as_ref() {
-            return sclass.clone();
+    // singleton classes are stored per object identity.
+    // Classes and modules route to their underlying RModule so wrapper
+    // duplicates (op_tclass, ad hoc RObject::module) share one cell.
+    pub(crate) fn get_singleton_class(&self) -> Option<Rc<RClass>> {
+        match &self.value {
+            RValue::Class(c) => c.module.singleton_class.borrow().clone(),
+            RValue::Module(m) => m.singleton_class.borrow().clone(),
+            _ => self.singleton_class.borrow().clone(),
         }
+    }
 
+    pub(crate) fn set_singleton_class(&self, sclass: Option<Rc<RClass>>) {
+        match &self.value {
+            RValue::Class(c) => {
+                c.module.singleton_class.replace(sclass);
+            }
+            RValue::Module(m) => {
+                m.singleton_class.replace(sclass);
+            }
+            _ => {
+                self.singleton_class.replace(sclass);
+            }
+        };
+    }
+
+    pub(crate) fn initialize_or_get_singleton_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
+        // immediates are shared flyweights; caching a singleton
+        // class on one would leak to every instance of that value. Build a
+        // throwaway class instead (callers mutating it only affect that
+        // transient class, never the value's own cell).
+        if self.is_immediate() {
+            return self.build_singleton_class(vm);
+        }
+        if let Some(sclass) = self.get_singleton_class() {
+            return sclass;
+        }
+        let sclass = self.build_singleton_class(vm);
+        self.set_singleton_class(Some(sclass.clone()));
+        sclass
+    }
+
+    fn build_singleton_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
         let class_name = {
-            let inspect = mrb_call_inspect(vm, self.clone());
+            let inspect = mrb_call_inspect(vm, &Value::from_rc(self.clone()));
             match inspect {
-                Ok(inspect) => inspect
-                    .as_ref()
+                Ok(inspect) => (&inspect)
                     .try_into()
                     .unwrap_or_else(|_| "<Singleton Class - unknown inspect type>".to_string()),
                 Err(e) => format!("<Singleton Class - inspect error: {:?}>", e),
@@ -454,8 +996,6 @@ impl RObject {
             parent_module.clone(),
         ));
         sclass.update_module_weakref();
-
-        self.singleton_class.replace(Some(sclass.clone()));
         sclass
     }
 
@@ -463,13 +1003,25 @@ impl RObject {
         self: &Rc<Self>,
         vm: &mut VM,
     ) -> Rc<RClass> {
-        if self.singleton_class.borrow().is_some() {
-            return self.singleton_class.borrow().as_ref().unwrap().clone();
+        if let Some(sclass) = self.get_singleton_class() {
+            return sclass;
         }
 
         let class = match &self.value {
             RValue::Class(c) => c.clone(),
-            _ => panic!("Not called on a class"),
+            RValue::Module(m) => {
+                // Metaclass chain: singleton(Module), mirroring how class
+                // singletons chain to their superclass metaclass.
+                let module_class = vm.get_class_by_name("Module");
+                let parent_obj = RObject::class(module_class.clone(), vm);
+                let super_class = parent_obj.initialize_or_get_singleton_class_for_class(vm);
+                let class_name = format!("#<Module:{}>", m.sym_id.name);
+                let sclass = Rc::new(RClass::new_singleton(&class_name, Some(super_class), None));
+                sclass.update_module_weakref();
+                self.set_singleton_class(Some(sclass.clone()));
+                return sclass;
+            }
+            _ => panic!("Not called on a class or module"),
         };
         let class_name = format!("#<Class:{}>", class.full_name());
         let super_class = match &class.super_class {
@@ -481,6 +1033,9 @@ impl RObject {
         };
 
         let parent_module = self.get_class(vm).parent.borrow().clone();
+        // Note: get_class returns placeholder cache fields during prelude
+        // (before the VM class cache is filled); both Object and Class have
+        // no parent module, so singleton wiring is identical either way.
         let sclass = Rc::new(RClass::new_singleton(
             &class_name,
             Some(super_class),
@@ -488,7 +1043,7 @@ impl RObject {
         ));
         sclass.update_module_weakref();
 
-        self.singleton_class.replace(Some(sclass.clone()));
+        self.set_singleton_class(Some(sclass.clone()));
         class
             .singleton_class_ref
             .borrow_mut()
@@ -497,8 +1052,8 @@ impl RObject {
     }
 
     pub fn singleton_or_this_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
-        if let Some(sclass) = self.singleton_class.borrow().as_ref() {
-            return sclass.clone();
+        if let Some(sclass) = self.get_singleton_class() {
+            return sclass;
         }
         self.get_class(vm)
     }
@@ -518,9 +1073,7 @@ impl RObject {
         }
     }
 
-    pub(crate) fn array_borrow_mut(
-        &self,
-    ) -> Result<std::cell::RefMut<'_, Vec<Rc<RObject>>>, Error> {
+    pub(crate) fn array_borrow_mut(&self) -> Result<std::cell::RefMut<'_, Vec<Value>>, Error> {
         match &self.value {
             RValue::Array(arr) => Ok(arr.borrow_mut()),
             _ => Err(Error::TypeMismatch),
@@ -541,7 +1094,7 @@ impl RObject {
         }
     }
 
-    pub fn as_vec_owned(&self) -> Result<Vec<Rc<RObject>>, Error> {
+    pub fn as_vec_owned(&self) -> Result<Vec<Value>, Error> {
         match &self.value {
             RValue::Array(arr) => Ok(arr.borrow().to_owned()),
             _ => Err(Error::TypeMismatch),
@@ -580,8 +1133,8 @@ impl TryFrom<&RObject> for (i32, i32) {
                         "expected array of length 2".to_string(),
                     ));
                 }
-                let first: i32 = vec[0].as_ref().try_into()?;
-                let second: i32 = vec[1].as_ref().try_into()?;
+                let first: i32 = (&vec[0]).try_into()?;
+                let second: i32 = (&vec[1]).try_into()?;
                 Ok((first, second))
             }
             _ => Err(Error::TypeMismatch),
@@ -601,9 +1154,9 @@ impl TryFrom<&RObject> for (i32, i32, i32) {
                         "expected array of length 3".to_string(),
                     ));
                 }
-                let first: i32 = vec[0].as_ref().try_into()?;
-                let second: i32 = vec[1].as_ref().try_into()?;
-                let third: i32 = vec[2].as_ref().try_into()?;
+                let first: i32 = (&vec[0]).try_into()?;
+                let second: i32 = (&vec[1]).try_into()?;
+                let third: i32 = (&vec[2]).try_into()?;
                 Ok((first, second, third))
             }
             _ => Err(Error::TypeMismatch),
@@ -623,10 +1176,10 @@ impl TryFrom<&RObject> for (i32, i32, i32, i32) {
                         "expected array of length 4".to_string(),
                     ));
                 }
-                let first: i32 = vec[0].as_ref().try_into()?;
-                let second: i32 = vec[1].as_ref().try_into()?;
-                let third: i32 = vec[2].as_ref().try_into()?;
-                let fourth: i32 = vec[3].as_ref().try_into()?;
+                let first: i32 = (&vec[0]).try_into()?;
+                let second: i32 = (&vec[1]).try_into()?;
+                let third: i32 = (&vec[2]).try_into()?;
+                let fourth: i32 = (&vec[3]).try_into()?;
                 Ok((first, second, third, fourth))
             }
             _ => Err(Error::TypeMismatch),
@@ -646,8 +1199,8 @@ impl TryFrom<&RObject> for (i64, u32) {
                         "expected array of at least length 2".to_string(),
                     ));
                 }
-                let first: i64 = vec[0].as_ref().try_into()?;
-                let second: u32 = vec[1].as_ref().try_into()?;
+                let first: i64 = (&vec[0]).try_into()?;
+                let second: u32 = (&vec[1]).try_into()?;
                 Ok((first, second))
             }
             _ => Err(Error::TypeMismatch),
@@ -667,9 +1220,9 @@ impl TryFrom<&RObject> for (i64, u32, i32) {
                         "expected array of at least length 3".to_string(),
                     ));
                 }
-                let first: i64 = vec[0].as_ref().try_into()?;
-                let second: u32 = vec[1].as_ref().try_into()?;
-                let third: i64 = vec[2].as_ref().try_into()?;
+                let first: i64 = (&vec[0]).try_into()?;
+                let second: u32 = (&vec[1]).try_into()?;
+                let third: i64 = (&vec[2]).try_into()?;
                 Ok((first, second, third as i32))
             }
             _ => Err(Error::TypeMismatch),
@@ -804,6 +1357,102 @@ impl TryFrom<&RObject> for bool {
     }
 }
 
+// Numeric coercions over unboxed `Value`: mirror the `&RObject` impls above
+// exactly so native methods reading `Option<Value>` args behave identically.
+// The `Object` arm delegates to the boxed impl for values produced by old
+// paths (a boxed numeric returned by legacy code).
+
+macro_rules! value_numeric_try_from {
+    ($t:ty, $int:expr, $f:expr) => {
+        impl TryFrom<&Value> for $t {
+            type Error = Error;
+
+            fn try_from(value: &Value) -> Result<Self, Self::Error> {
+                match value {
+                    Value::Integer(i) => Ok($int(*i)),
+                    Value::Float(f) => Ok($f(*f)),
+                    // 1/0 become i64 then $int (real cast), so a plain integer
+                    // literal never triggers an unnecessary_cast lint.
+                    Value::Bool(b) => Ok($int(if *b { 1i64 } else { 0i64 })),
+                    Value::Object(o) => <$t>::try_from(o.as_ref()),
+                    Value::Nil | Value::Symbol(_) => Err(Error::TypeMismatch),
+                }
+            }
+        }
+
+        impl TryFrom<Value> for $t {
+            type Error = Error;
+
+            fn try_from(value: Value) -> Result<Self, Self::Error> {
+                <$t>::try_from(&value)
+            }
+        }
+    };
+}
+
+value_numeric_try_from!(i32, |i| i as i32, |f| f as i32);
+value_numeric_try_from!(u32, |i| i as u32, |f| f as u32);
+value_numeric_try_from!(i64, |i| i, |f| f as i64);
+value_numeric_try_from!(u64, |i| i as u64, |f| f as u64);
+value_numeric_try_from!(usize, |i| i as usize, |f| f as usize);
+value_numeric_try_from!(f32, |i| i as f32, |f| f as f32);
+value_numeric_try_from!(f64, |i| i as f64, |f| f);
+
+impl TryFrom<&Value> for bool {
+    type Error = Error;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Bool(b) => Ok(*b),
+            Value::Integer(i) => Ok(*i != 0),
+            Value::Nil => Ok(false),
+            Value::Object(o) => bool::try_from(o.as_ref()),
+            Value::Float(_) | Value::Symbol(_) => Err(Error::TypeMismatch),
+        }
+    }
+}
+
+impl TryFrom<Value> for bool {
+    type Error = Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        bool::try_from(&value)
+    }
+}
+
+// Object coercions over `Value` delegate to the boxed impl, boxing only when
+// the value is an immediate. Semantics match `TryFrom<&RObject>` exactly.
+macro_rules! value_obj_try_from {
+    ($t:ty) => {
+        impl TryFrom<&Value> for $t {
+            type Error = Error;
+
+            fn try_from(value: &Value) -> Result<Self, Self::Error> {
+                <$t>::try_from(value.to_rc().as_ref())
+            }
+        }
+
+        impl TryFrom<Value> for $t {
+            type Error = Error;
+
+            fn try_from(value: Value) -> Result<Self, Self::Error> {
+                <$t>::try_from(&value)
+            }
+        }
+    };
+}
+
+value_obj_try_from!(String);
+value_obj_try_from!(Vec<u8>);
+value_obj_try_from!(Vec<Value>);
+value_obj_try_from!(Vec<(Value, Value)>);
+value_obj_try_from!((i32, i32));
+value_obj_try_from!((i32, i32, i32));
+value_obj_try_from!((i32, i32, i32, i32));
+value_obj_try_from!((i64, u32));
+value_obj_try_from!((i64, u32, i32));
+value_obj_try_from!(*mut u8);
+
 impl TryFrom<&RObject> for String {
     type Error = Error;
 
@@ -811,8 +1460,33 @@ impl TryFrom<&RObject> for String {
         match &value.value {
             RValue::String(s, _) => Ok(String::from_utf8_lossy(&s.borrow()).to_string()),
             RValue::Symbol(sym) => Ok(sym.name.clone()),
-            v => Ok(format!("{:?}", v)),
+            // Render flat representations: walking the cyclic
+            // class -> module -> procs -> proc graph with {:?}
+            // overflows the stack.
+            RValue::Exception(e) => Ok(e.message.clone()),
+            RValue::Integer(n) => Ok(n.to_string()),
+            RValue::Float(f) => Ok(f.to_string()),
+            RValue::Bool(b) => Ok(b.to_string()),
+            RValue::Nil => Ok(String::new()),
+            other => Ok(format!("#<{}>", flat_type_name(other))),
         }
+    }
+}
+
+/// Cycle-free label for values whose Ruby inspect needs the interpreter.
+fn flat_type_name(v: &RValue) -> &'static str {
+    match v {
+        RValue::Array(_) => "Array",
+        RValue::Hash(_) => "Hash",
+        RValue::Range(..) => "Range",
+        RValue::Proc(_) => "Proc",
+        RValue::Instance(_) => "Instance",
+        RValue::Class(_) => "Class",
+        RValue::Module(_) => "Module",
+        RValue::Exception(_) => "Exception",
+        RValue::SharedMemory(_) => "SharedMemory",
+        RValue::Data(_) => "Data",
+        _ => "Object",
     }
 }
 
@@ -827,7 +1501,7 @@ impl TryFrom<&RObject> for Vec<u8> {
     }
 }
 
-impl TryFrom<&RObject> for Vec<Rc<RObject>> {
+impl TryFrom<&RObject> for Vec<Value> {
     type Error = Error;
 
     fn try_from(value: &RObject) -> Result<Self, Self::Error> {
@@ -838,7 +1512,7 @@ impl TryFrom<&RObject> for Vec<Rc<RObject>> {
     }
 }
 
-impl TryFrom<&RObject> for Vec<(Rc<RObject>, Rc<RObject>)> {
+impl TryFrom<&RObject> for Vec<(Value, Value)> {
     type Error = Error;
 
     fn try_from(value: &RObject) -> Result<Self, Self::Error> {
@@ -857,6 +1531,14 @@ impl TryFrom<&RObject> for () {
     type Error = Error;
 
     fn try_from(_: &RObject) -> Result<Self, Self::Error> {
+        Ok(())
+    }
+}
+
+impl TryFrom<Value> for () {
+    type Error = Error;
+
+    fn try_from(_: Value) -> Result<Self, Self::Error> {
         Ok(())
     }
 }
@@ -882,10 +1564,13 @@ impl PartialEq for RObject {
 #[derive(Debug, Clone)]
 pub struct RModule {
     pub sym_id: RSym,
-    pub procs: RefCell<RHashMap<String, RProc>>,
+    pub procs: RefCell<RHashMap<u32, RProc>>,
     pub consts: RefCell<RHashMap<String, Rc<RObject>>>,
     pub mixed_in_modules: RefCell<Vec<Rc<RModule>>>,
     pub parent: RefCell<Option<Rc<RModule>>>,
+    // singleton class anchored to module identity so every
+    // wrapper over this RModule observes the same singleton state.
+    pub singleton_class: RefCell<Option<Rc<RClass>>>,
 
     pub underlying: RefCell<Option<Weak<RClass>>>,
 }
@@ -899,6 +1584,7 @@ impl RModule {
             consts: RefCell::new(RHashMap::default()),
             mixed_in_modules: RefCell::new(Vec::new()),
             parent: RefCell::new(None),
+            singleton_class: RefCell::new(None),
             underlying: RefCell::new(None),
         }
     }
@@ -915,8 +1601,9 @@ impl RModule {
 
     pub fn find_method(&self, name: &str) -> Option<RProc> {
         // First check this module's methods
+        let id = intern_symbol(name);
         let procs = self.procs.borrow();
-        if let Some(p) = procs.get(name) {
+        if let Some(p) = procs.get(&id) {
             return Some(p.clone());
         }
         drop(procs);
@@ -1108,8 +1795,21 @@ pub(crate) fn build_module_lookup_chain(module: &Rc<RModule>) -> Vec<Rc<RModule>
 }
 
 pub(crate) fn resolve_method(self_class: &Rc<RClass>, name: &str) -> Option<(Rc<RModule>, RProc)> {
+    let id = intern_symbol(name);
     for module in build_lookup_chain(self_class) {
-        if let Some(proc) = module.procs.borrow().get(name) {
+        if let Some(proc) = module.procs.borrow().get(&id) {
+            return Some((module.clone(), proc.clone()));
+        }
+    }
+    None
+}
+
+pub(crate) fn resolve_method_by_id(
+    self_class: &Rc<RClass>,
+    id: u32,
+) -> Option<(Rc<RModule>, RProc)> {
+    for module in build_lookup_chain(self_class) {
+        if let Some(proc) = module.procs.borrow().get(&id) {
             return Some((module.clone(), proc.clone()));
         }
     }
@@ -1122,6 +1822,7 @@ pub(crate) fn resolve_next_method(
     current_owner: &Rc<RModule>,
 ) -> Option<(Rc<RModule>, RProc)> {
     let mut passed = false;
+    let id = intern_symbol(name);
     for module in build_lookup_chain(self_class) {
         if !passed {
             if Rc::ptr_eq(&module, current_owner) {
@@ -1129,7 +1830,7 @@ pub(crate) fn resolve_next_method(
             }
             continue;
         }
-        if let Some(proc) = module.procs.borrow().get(name) {
+        if let Some(proc) = module.procs.borrow().get(&id) {
             return Some((module.clone(), proc.clone()));
         }
     }
@@ -1166,32 +1867,48 @@ pub struct RData {
 pub struct RProc {
     pub is_rb_func: bool,
     pub is_fnblock: bool,
-    pub sym_id: Option<RSym>,
+    pub sym_id: Option<u32>,
     pub next: Option<Rc<RProc>>,
     pub irep: Option<Rc<IREP>>,
     pub func: Option<usize>,
     pub environ: Option<Rc<ENV>>,
-    pub block_self: Option<Rc<RObject>>,
+    pub block_self: Option<Value>,
+    /// Inline numeric operation this native implements, if tagged via
+    /// `mrb_define_cmethod_fast`. Travels with the proc so the send fast path
+    /// never consults a side table; a redefinition replaces the proc and the
+    /// tag together.
+    pub fast_op: Option<FastOp>,
+    /// Ivar key backing an `attr_accessor` closure, if tagged via
+    /// `mrb_define_cmethod_attr`. See [`Self::fast_op`].
+    pub attr_key: Option<u32>,
 }
 
 /// Native Rust callable used to implement Ruby methods in the VM.
-pub type RFn = Box<dyn Fn(&mut VM, &[Rc<RObject>]) -> Result<Rc<RObject>, Error>>;
+/// Native method function. Arguments arrive as unboxed register values
+/// (`None` means the slot was never assigned); a method boxes only the
+/// arguments it needs as `RObject` via [`Value::to_rc`].
+pub type RFn = Box<dyn Fn(&mut VM, &[Option<Value>]) -> Result<Value, Error>>;
 /// Interned symbol name used across the VM to identify methods and constants.
+/// The `id` is a stable per-name integer from the global interning table.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RSym {
     pub name: String,
+    pub id: u32,
 }
 
 impl RSym {
     pub fn new(name: String) -> Self {
-        Self { name }
+        let id = intern_symbol(&name);
+        Self { name, id }
     }
 }
 
 impl From<&'static str> for RSym {
     fn from(value: &'static str) -> Self {
+        let id = intern_symbol(value);
         Self {
             name: value.to_string(),
+            id,
         }
     }
 }
@@ -1248,6 +1965,8 @@ impl RClass {
                     }
                 })
                 .unwrap_or_else(|| vm.get_class_by_name("Exception")),
+
+            Error::LocalJumpError(_) => vm.get_class_by_name("LocalJumpError"),
 
             Error::Break(_) => vm.get_class_by_name("_Break"),
             Error::BlockReturn(_, _) => vm.get_class_by_name("_BlockReturn"),

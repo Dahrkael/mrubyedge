@@ -3,7 +3,7 @@ use std::rc::Rc;
 use crate::{
     Error,
     yamrb::{
-        helpers::{mrb_define_cmethod, mrb_funcall},
+        helpers::{mrb_define_cmethod, mrb_define_cmethod_attr, mrb_funcall},
         value::*,
         vm::VM,
     },
@@ -51,10 +51,10 @@ pub(crate) fn initialize_class(vm: &mut VM) {
     mrb_define_cmethod(vm, class_class, "ancestors", Box::new(mrb_class_ancestors));
 }
 
-fn mrb_class_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_class_new(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let class = vm.getself()?;
-    let class = match &class.value {
-        RValue::Class(c) => c.clone(),
+    let class = match class.rvalue() {
+        Some(RValue::Class(c)) => c.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Class#new must be called from class".to_string(),
@@ -64,15 +64,21 @@ fn mrb_class_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error
 
     let obj = RObject::instance(class).to_refcount_assigned();
 
-    mrb_funcall(vm, Some(obj.clone()), "initialize", args)?;
+    let rc_args: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
+    mrb_funcall(
+        vm,
+        Some(Value::from_rc(obj.clone())),
+        "initialize",
+        &rc_args,
+    )?;
 
-    Ok(obj)
+    Ok(Value::from_rc(obj))
 }
 
-fn mrb_class_attr_reader(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_class_attr_reader(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let class_ = vm.getself()?;
-    let class = match &class_.value {
-        RValue::Class(c) => c.clone(),
+    let class = match class_.rvalue() {
+        Some(RValue::Class(c)) => c.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Class#attr_reader must be called from class".to_string(),
@@ -80,17 +86,28 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
         }
     };
     for arg in args.iter() {
-        match arg.value {
-            RValue::Symbol(ref sym) => {
-                let sym_id: &'static str = sym.name.clone().leak();
-                let method = move |vm: &mut VM, _args: &[Rc<RObject>]| {
-                    let this = vm.getself()?;
-                    let key = format!("@{}", sym_id);
-                    Ok(this.get_ivar(&key))
+        match arg.as_ref().unwrap() {
+            Value::Symbol(id) => {
+                let sym_id: &'static str = symbol_name(*id).leak();
+                // Build the ivar key once; reads reuse the symbol id so they
+                // never touch a string key or an interning lookup.
+                let key = intern_symbol(&format!("@{}", sym_id));
+                let method = {
+                    move |vm: &mut VM, _args: &[Option<Value>]| {
+                        let this = vm.getself()?;
+                        Ok(this.get_ivar_by_id(key))
+                    }
                 };
-                mrb_define_cmethod(vm, class.clone(), sym_id, Box::new(method));
+                mrb_define_cmethod_attr(
+                    vm,
+                    class.clone(),
+                    sym_id,
+                    FastOp::AttrGet,
+                    key,
+                    Box::new(method),
+                );
             }
-            RValue::Nil => {
+            Value::Nil => {
                 // skip
             }
             _ => {
@@ -100,13 +117,13 @@ fn mrb_class_attr_reader(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
             }
         }
     }
-    Ok(Rc::new(RObject::nil()))
+    Ok(Value::Nil)
 }
 
-fn mrb_class_attr_writer(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_class_attr_writer(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let class_ = vm.getself()?;
-    let class = match &class_.value {
-        RValue::Class(c) => c.clone(),
+    let class = match class_.rvalue() {
+        Some(RValue::Class(c)) => c.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Class#attr_reader must be called from class".to_string(),
@@ -114,20 +131,31 @@ fn mrb_class_attr_writer(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
         }
     };
     for arg in args.iter() {
-        match arg.value {
-            RValue::Symbol(ref sym) => {
-                let sym_id: &'static str = sym.name.clone().leak();
-                let method = move |vm: &mut VM, args: &[Rc<RObject>]| {
-                    let this = vm.getself()?;
-                    let key = format!("@{}", sym_id);
-                    let value = args[0].clone();
-                    this.set_ivar(&key, value.clone());
-                    Ok(value)
+        match arg.as_ref().unwrap() {
+            Value::Symbol(id) => {
+                let sym_id: &'static str = symbol_name(*id).leak();
+                // Build the ivar key once; writes reuse the symbol id so they
+                // never touch a string key or an interning lookup.
+                let key = intern_symbol(&format!("@{}", sym_id));
+                let method = {
+                    move |vm: &mut VM, args: &[Option<Value>]| {
+                        let this = vm.getself()?;
+                        let value = args[0].as_ref().unwrap().clone();
+                        this.set_ivar_by_id(key, value.clone());
+                        Ok(value)
+                    }
                 };
-                let sym_id = format!("{}=", sym_id);
-                mrb_define_cmethod(vm, class.clone(), &sym_id, Box::new(method));
+                let method_name = format!("{}=", sym_id);
+                mrb_define_cmethod_attr(
+                    vm,
+                    class.clone(),
+                    &method_name,
+                    FastOp::AttrSet,
+                    key,
+                    Box::new(method),
+                );
             }
-            RValue::Nil => {
+            Value::Nil => {
                 // skip
             }
             _ => {
@@ -137,43 +165,45 @@ fn mrb_class_attr_writer(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
             }
         }
     }
-    Ok(Rc::new(RObject::nil()))
+    Ok(Value::Nil)
 }
 
-fn mrb_class_attr_acceccor(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_class_attr_acceccor(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     mrb_class_attr_reader(vm, args)?;
     mrb_class_attr_writer(vm, args)
 }
 
-fn mrb_class_ancestors(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_class_ancestors(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let self_module = vm.getself()?;
-    let target_class = match &self_module.value {
-        RValue::Class(class) => class.clone(),
+    let target_class = match self_module.rvalue() {
+        Some(RValue::Class(class)) => class.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Module#ancestors must be called on class or module".to_string(),
             ));
         }
     };
-    let ancestors: Vec<Rc<RObject>> = build_lookup_chain(&target_class)
+    let ancestors: Vec<Value> = build_lookup_chain(&target_class)
         .iter()
-        .map(|m| RObject::class_or_module(m.clone(), vm))
+        .map(|m| Value::from_rc(RObject::class_or_module(m.clone(), vm)))
         .collect();
-    Ok(RObject::array(ancestors).to_refcount_assigned())
+    Ok(Value::from_rc(
+        RObject::array(ancestors).to_refcount_assigned(),
+    ))
 }
 
-fn mrb_module_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_module_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let class = vm.getself()?;
-    let class_name = match &class.value {
-        RValue::Class(c) => c.full_name(),
-        RValue::Module(m) => m.full_name(),
+    let class_name = match class.rvalue() {
+        Some(RValue::Class(c)) => c.full_name(),
+        Some(RValue::Module(m)) => m.full_name(),
         _ => {
             return Err(Error::RuntimeError(
                 "Module#inspect must be called from module or class".to_string(),
             ));
         }
     };
-    Ok(Rc::new(RObject::string(class_name)))
+    Ok(Value::from_rc(Rc::new(RObject::string(class_name))))
 }
 
 #[test]
@@ -182,18 +212,30 @@ fn test_class_attr_accessor() {
 
     let mut vm = VM::empty();
     let class = vm.define_class("Test", None, None);
-    let args = vec![RObject::symbol("foo".into()).to_refcount_assigned()];
+    let args = [Some(Value::from_rc(
+        RObject::symbol("foo".into()).to_refcount_assigned(),
+    ))];
     let classobj = RObject::class(class.clone(), &mut vm);
-    vm.current_regs()[0].replace(classobj.clone());
+    vm.set_reg(0, classobj.clone());
     mrb_class_attr_acceccor(&mut vm, &args).expect("mrb_class_attr_acceccor failed");
 
     let instance = RObject::instance(class).to_refcount_assigned();
 
-    let args = vec![RObject::integer(557188).to_refcount_assigned()];
-    mrb_funcall(&mut vm, Some(instance.clone()), "foo=", &args).expect("call obj.foo = failed");
+    let args = vec![Value::Integer(557188)];
+    mrb_funcall(
+        &mut vm,
+        Some(Value::from_rc(instance.clone())),
+        "foo=",
+        &args,
+    )
+    .expect("call obj.foo = failed");
 
-    let ret =
-        mrb_funcall(&mut vm, Some(instance.clone()), "foo", &[]).expect("call obj.foo failed");
-    let ret: i64 = ret.as_ref().try_into().expect("obj.foo must be integer");
+    let ret = mrb_funcall(&mut vm, Some(Value::from_rc(instance.clone())), "foo", &[])
+        .expect("call obj.foo failed");
+    let ret: i64 = ret
+        .to_rc()
+        .as_ref()
+        .try_into()
+        .expect("obj.foo must be integer");
     assert_eq!(ret, 557188);
 }

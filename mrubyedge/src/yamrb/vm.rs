@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::mem::MaybeUninit;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{array, env};
 
 use crate::Error;
@@ -8,6 +9,13 @@ use crate::rite::{Irep, Rite, insn};
 
 use super::op::Op;
 use super::prelude::prelude;
+
+// IREP ids must be unique across every loaded script: the VM keys closure
+// environments by the enclosing irep's id (cur_env, has_env_ref, the
+// __irep_id equality in op_return). Per-file numbering collides, letting a
+// returning method from one file capture its registers into another file's
+// live block environment.
+static NEXT_IREP_ID: AtomicUsize = AtomicUsize::new(1);
 use super::value::RHashMap;
 use super::value::*;
 use super::{op, optable::*};
@@ -15,7 +23,66 @@ use super::{op, optable::*};
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const ENGINE: &str = "mruby/edge";
 
-const MAX_REGS_SIZE: usize = 256;
+/// Cap for the inline argument buffer used at native boundaries. Small enough
+/// to live on the stack; larger arities fall back to a caller-owned Vec.
+pub(crate) const NATIVE_ARG_BUF: usize = 32;
+
+/// Fresh `Option<Value>` argument buffer (values are not `Copy`, so `[None; N]`
+/// repeat syntax is unavailable).
+pub(crate) fn arg_buf() -> [Option<Value>; NATIVE_ARG_BUF] {
+    std::array::from_fn(|_| None)
+}
+
+/// Wraps an unboxed `&[Value]` argument slice as `Option<Value>` (always
+/// `Some`), using the stack buffer when it fits and reusing `out` otherwise.
+pub(crate) fn value_args<'a>(
+    args: &[Value],
+    buf: &'a mut [Option<Value>; NATIVE_ARG_BUF],
+    out: &'a mut Vec<Option<Value>>,
+) -> &'a [Option<Value>] {
+    if args.len() <= buf.len() {
+        for (i, a) in args.iter().enumerate() {
+            buf[i] = Some(a.clone());
+        }
+        &buf[..args.len()]
+    } else {
+        out.clear();
+        out.extend(args.iter().cloned().map(Some));
+        out.as_slice()
+    }
+}
+
+/// Copies a register window into an unboxed `Option<Value>` argument slice,
+/// failing loudly when a slot was never assigned (an internal invariant: the
+/// compiler always initializes argument registers before a send).
+pub(crate) fn reg_args<'a>(
+    vm: &mut VM,
+    start: usize,
+    count: usize,
+    buf: &'a mut [Option<Value>; NATIVE_ARG_BUF],
+    out: &'a mut Vec<Option<Value>>,
+) -> Result<&'a [Option<Value>], Error> {
+    let regs = vm.current_regs();
+    let fill = |i: usize| -> Result<Option<Value>, Error> {
+        Ok(Some(regs[start + i].clone().ok_or_else(|| {
+            Error::internal(format!("register {} is not assigned", start + i))
+        })?))
+    };
+    if count <= buf.len() {
+        for (i, slot) in buf[..count].iter_mut().enumerate() {
+            *slot = fill(i)?;
+        }
+        Ok(&buf[..count])
+    } else {
+        out.clear();
+        for i in 0..count {
+            out.push(fill(i)?);
+        }
+        Ok(out.as_slice())
+    }
+}
+
+pub(crate) const MAX_REGS_SIZE: usize = 256;
 
 #[derive(Debug, Clone)]
 pub enum TargetContext {
@@ -32,40 +99,148 @@ impl TargetContext {
     }
 }
 
+/// Receiver identity for a lazy call-frame label. Kept as Rc clones (no
+/// allocation); the class/module name is only formatted when the error
+/// stack is captured.
+#[derive(Clone)]
+pub enum CallerReceiver {
+    Class(Rc<RClass>),
+    Module(Rc<RModule>),
+    Instance(Rc<RClass>),
+}
+
+impl std::fmt::Debug for CallerReceiver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Class(_) => write!(f, "CallerReceiver::Class"),
+            Self::Module(_) => write!(f, "CallerReceiver::Module"),
+            Self::Instance(_) => write!(f, "CallerReceiver::Instance"),
+        }
+    }
+}
+
+/// Lazy call-frame label. Built per send without allocating; the backtrace
+/// formatter turns it into "ClassName#method" only when reporting errors.
+#[derive(Clone)]
+pub enum CallerLabel {
+    /// Fixed label, no receiver qualification ("<tailcall>", "<exec>").
+    Static(&'static str),
+    /// Rust-known method name on a receiver (mrb_funcall). The name is kept
+    /// as an interned symbol id; `mrb_funcall` resolved that method by name,
+    /// so the id is already live and no per-call string is allocated.
+    Named {
+        receiver: CallerReceiver,
+        method_id: u32,
+    },
+    /// Method resolved through a send: the interned method id, resolved at
+    /// format time (or "method_missing" when the call went through a Ruby
+    /// method_missing), so no per-send string allocation is needed.
+    Send {
+        receiver: CallerReceiver,
+        method_id: u32,
+        use_method_missing: bool,
+    },
+    /// `super`: the name is an interned symbol id, resolved at format time.
+    Super { method_id: u32 },
+}
+
+impl std::fmt::Debug for CallerLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Static(s) => write!(f, "Static({})", s),
+            Self::Named {
+                receiver,
+                method_id,
+            } => {
+                write!(f, "Named({:?}, {})", receiver, symbol_name(*method_id))
+            }
+            Self::Send {
+                method_id,
+                use_method_missing,
+                ..
+            } => write!(
+                f,
+                "Send(sym={}, method_missing={})",
+                symbol_name(*method_id),
+                use_method_missing
+            ),
+            Self::Super { method_id } => write!(f, "Super({})", symbol_name(*method_id)),
+        }
+    }
+}
+
+fn qualify(receiver: &CallerReceiver, method: &str) -> String {
+    let class = match receiver {
+        CallerReceiver::Class(c) => c.full_name(),
+        CallerReceiver::Module(m) => m.sym_id.name.clone(),
+        CallerReceiver::Instance(c) => c.full_name(),
+    };
+    format!("{class}#{method}")
+}
+
+/// Formats a call-frame label for backtraces. Send method names are resolved
+/// through the crumb's frame irep here, at error time.
+fn caller_label(label: &CallerLabel) -> String {
+    match label {
+        CallerLabel::Static(s) => (*s).to_string(),
+        CallerLabel::Named {
+            receiver,
+            method_id,
+        } => qualify(receiver, &symbol_name(*method_id)),
+        CallerLabel::Send {
+            receiver,
+            method_id,
+            use_method_missing,
+        } => {
+            let method = if *use_method_missing {
+                "method_missing".to_string()
+            } else {
+                symbol_name(*method_id)
+            };
+            qualify(receiver, &method)
+        }
+        CallerLabel::Super { method_id } => format!("super({})", symbol_name(*method_id)),
+    }
+}
+
 #[derive(Debug)]
 pub struct Breadcrumb {
     pub event: &'static str, // TODO: be enum
-    pub caller: Option<String>,
+    pub caller: Option<CallerLabel>,
     pub return_reg: Option<usize>,
-    pub upper: Option<Rc<Breadcrumb>>,
+    // caller's irep and pc at push time, for mapping a stack
+    // frame to its source line via the irep's debug info.
+    pub irep: Option<Rc<IREP>>,
+    pub pc: Option<usize>,
+    /// Monotonic id, unique per crumb, so a stale break anchor (whose frame
+    /// was already popped) can be detected even without pointer identity.
+    pub id: u64,
 }
 
 #[derive(Debug)]
 pub struct KArgs {
-    pub args: RefCell<RHashMap<RSym, Rc<RObject>>>,
+    pub args: RefCell<RHashMap<RSym, Value>>,
     pub kwrest_reg: Cell<usize>,
     pub upper: Option<Rc<KArgs>>,
 }
 
 impl Breadcrumb {
     #[cfg(feature = "mrubyedge-debug")]
-    pub fn display_breadcrumb_for_debug(&self, level: usize, max_level: usize) -> bool {
-        if level > max_level {
-            return false;
-        }
+    pub fn display_breadcrumb_for_debug(&self) {
         eprintln!(
-            "{}- Breadcrumb: event='{}', caller={}, return_reg={:?}",
-            "  ".repeat(level),
+            "- Breadcrumb: event='{}', caller={}",
             self.event,
-            self.caller.as_deref().unwrap_or("(none)"),
-            self.return_reg
+            self.caller
+                .as_ref()
+                .map(caller_label)
+                .unwrap_or_else(|| "(none)".to_string()),
         );
-        if let Some(upper) = &self.upper {
-            upper.display_breadcrumb_for_debug(level + 1, max_level);
-        }
-        true
     }
 }
+
+/// Name-keyed dispatch cache for `mrb_funcall`. Key: (method version, class
+/// identity, fnv of the method name).
+type MethodNameCache = RHashMap<(u64, usize, u32), (Rc<RModule>, RProc)>;
 
 pub struct VM {
     pub irep: Rc<IREP>,
@@ -74,11 +249,34 @@ pub struct VM {
     pub bytecode: Vec<u8>,
     pub current_irep: Rc<IREP>,
     pub pc: Cell<usize>,
-    pub regs: [Option<Rc<RObject>>; MAX_REGS_SIZE],
+    pub regs: [Option<Value>; MAX_REGS_SIZE],
     pub current_regs_offset: usize,
-    pub current_callinfo: Option<Rc<CALLINFO>>,
-    pub current_breadcrumb: Option<Rc<Breadcrumb>>,
-    pub kargs: RefCell<Option<RHashMap<RSym, Rc<RObject>>>>,
+    /// Preallocated call-frame stack. Frame depth is bounded by `MAX_REGS_SIZE`
+    /// (each frame consumes at least one register slot), so this never grows
+    /// after the first overflow check, and pushes/pops never allocate.
+    pub callinfo_stack: Vec<CALLINFO>,
+    // n_args of the running frame; call_block hides the
+    // callinfo, and op_enter needs the count for optional arguments.
+    pub current_n_args: Cell<usize>,
+    // live call-frame stack (innermost last). One crumb per
+    // call, pushed and popped like a stack; a Vec so steady-state pushes and
+    // pops never allocate after the max call depth is reached.
+    pub breadcrumbs: RefCell<Vec<Breadcrumb>>,
+    // Monotonic crumb id source; ids are unique so stale break anchors can be
+    // detected after their frame was popped.
+    pub crumb_seq: Cell<u64>,
+    // call stack of the last raised exception, captured at
+    // raise time from the breadcrumb stack before unwinding destroys it.
+    // Outermost frame first; only frames with a name are kept.
+    pub last_error_stack: RefCell<Vec<String>>,
+    // landing pad captured at OP_BREAK time — the nearest
+    // do_op_send crumb's id and its return register. The unwinder delivers
+    // the break value once that crumb is gone from the live stack.
+    pub break_landing: RefCell<Option<(u64, usize)>>,
+    // irep id of the script currently being evaluated. A block
+    // return targeting it means there is no enclosing method (LocalJumpError).
+    pub root_irep_id: Cell<Option<usize>>,
+    pub kargs: RefCell<Option<RHashMap<RSym, Value>>>,
     pub current_kargs: RefCell<Option<Rc<KArgs>>>,
     pub target_class: TargetContext,
     pub exception: Option<Rc<RException>>,
@@ -93,9 +291,25 @@ pub struct VM {
     // common class
     pub object_class: Rc<RClass>,
     pub builtin_class_table: RHashMap<&'static str, Rc<RClass>>,
+    // hot-path class cache for RObject::get_class, avoiding a
+    // builtin_class_table lookup per send. Filled from the prelude classes.
+    pub class_class: Rc<RClass>,
+    pub module_class: Rc<RClass>,
+    pub integer_class: Rc<RClass>,
+    pub float_class: Rc<RClass>,
+    pub string_class: Rc<RClass>,
+    pub array_class: Rc<RClass>,
+    pub hash_class: Rc<RClass>,
+    pub symbol_class: Rc<RClass>,
+    pub proc_class: Rc<RClass>,
+    pub range_class: Rc<RClass>,
+    pub true_class: Rc<RClass>,
+    pub false_class: Rc<RClass>,
+    pub nil_class: Rc<RClass>,
+    pub shared_memory_class: Rc<RClass>,
     pub class_object_table: RHashMap<String, Rc<RObject>>,
 
-    pub globals: RHashMap<String, Rc<RObject>>,
+    pub globals: RHashMap<String, Value>,
     pub consts: RHashMap<String, Rc<RObject>>,
 
     pub upper: Option<Rc<ENV>>,
@@ -105,6 +319,38 @@ pub struct VM {
 
     pub fn_table: RFnTable,
     pub fn_block_stack: RFnStack,
+
+    /// Global method-definition version. Every definition, alias, undef or
+    /// include bumps it, so dispatch caches stamp entries with it and go cold
+    /// when it moves. Wrapping after 2^64 bumps is accepted as unreachable.
+    pub method_version: Cell<u64>,
+    /// Global constant-table version. Every constant definition or
+    /// replacement bumps it, so the per-call-site constant caches stamp
+    /// entries with it and go cold when a constant moves.
+    pub const_version: Cell<u64>,
+    /// Name-keyed dispatch cache for `mrb_funcall` (no bytecode call site).
+    pub method_name_cache: RefCell<MethodNameCache>,
+    /// `func` index of the pristine Array#[] native, captured after the
+    /// prelude. A redefined Array#[] resolves to a different proc, which
+    /// disables the GETIDX/SETIDX fast path.
+    pub array_index_func: Cell<Option<usize>>,
+    /// `func` indexes of the pristine Hash#[] / Hash#[]= natives, captured
+    /// after the prelude. A redefinition disables the Hash index fast path.
+    pub hash_index_func: Cell<Option<usize>>,
+    pub hash_aset_func: Cell<Option<usize>>,
+    /// Count of inline numeric/attr fast-path handlings (results and raised
+    /// errors). Tests assert it moves to prove the fast path actually runs,
+    /// and stays still after a redefinition replaced the tagged method.
+    pub fast_native_hits: Cell<u64>,
+    /// Count of attribute accesses served by `op_send`'s inline cache, which
+    /// bypasses `do_op_send` entirely. Tests assert it moves so the op_send
+    /// cache is observable independently of the do_op_send fast path.
+    pub attr_cache_hits: Cell<u64>,
+    /// Cached "Array index fast path is safe" verdict, reset on version bump.
+    pub array_fast: Cell<Option<bool>>,
+    /// Cached "Hash index/aset fast path is safe" verdicts, reset on bump.
+    pub hash_index_fast: Cell<Option<bool>>,
+    pub hash_aset_fast: Cell<Option<bool>>,
 }
 
 pub struct RFnTable {
@@ -202,6 +448,13 @@ impl RFnStack {
     }
 }
 
+// Break unwinding anchors on a do_op_send breadcrumb; a
+// landing pad keeps that crumb's id, and this reports whether it is still
+// alive in the live stack (popped frames are gone from the Vec).
+fn breadcrumb_stack_contains(stack: &[Breadcrumb], target_id: u64) -> bool {
+    stack.iter().any(|b| b.id == target_id)
+}
+
 impl VM {
     /// Builds a VM from a parsed Rite chunk, consuming the bytecode and
     /// preparing the VM so it can be executed via [`VM::run`].
@@ -230,6 +483,10 @@ impl VM {
             reps: Vec::new(),
             lv: None,
             catch_handlers: Vec::new(),
+            lines: Vec::new(),
+            send_cache: RefCell::new(vec![None; 1]),
+            attr_cache: RefCell::new(vec![None; 1]),
+            const_cache: RefCell::new(vec![None; 1]),
         };
         Self::new_by_raw_irep(irep)
     }
@@ -251,15 +508,19 @@ impl VM {
         let bytecode = Vec::new();
         let current_irep = irep.clone();
         let pc = Cell::new(0);
-        let regs: [Option<Rc<RObject>>; MAX_REGS_SIZE] = [const { None }; MAX_REGS_SIZE];
+        let regs: [Option<Value>; MAX_REGS_SIZE] = [const { None }; MAX_REGS_SIZE];
         let current_regs_offset = 0;
-        let current_callinfo = None;
-        let current_breadcrumb = Some(Rc::new(Breadcrumb {
-            upper: None,
-            event: "root",
-            caller: None,
-            return_reg: None,
-        }));
+        let callinfo_stack = Vec::with_capacity(MAX_REGS_SIZE);
+        let current_n_args = Cell::new(0);
+        let last_error_stack = RefCell::new(Vec::new());
+        let break_landing = RefCell::new(None);
+        let root_irep_id = Cell::new(None);
+        // Frame depth is bounded by the register file (each frame consumes at
+        // least one of `MAX_REGS_SIZE` slots), and a funcall pushes up to a
+        // few crumbs, so this capacity covers the worst case and keeps the
+        // breadcrumb stack allocation-free for the whole run.
+        let breadcrumbs = RefCell::new(Vec::with_capacity(MAX_REGS_SIZE * 2));
+        let crumb_seq = Cell::new(0);
         let kargs = RefCell::new(None);
         let current_kargs = RefCell::new(None);
         let target_class = TargetContext::Class(object_class.clone());
@@ -292,8 +553,13 @@ impl VM {
             pc,
             regs,
             current_regs_offset,
-            current_callinfo,
-            current_breadcrumb,
+            callinfo_stack,
+            current_n_args,
+            last_error_stack,
+            break_landing,
+            root_irep_id,
+            breadcrumbs,
+            crumb_seq,
             kargs,
             current_kargs,
             target_class,
@@ -303,9 +569,35 @@ impl VM {
             insn_count,
             #[cfg(feature = "insn-limit")]
             insn_limit,
-            object_class,
             builtin_class_table,
             class_object_table,
+            method_version: Cell::new(0),
+            const_version: Cell::new(0),
+            method_name_cache: RefCell::new(RHashMap::default()),
+            array_index_func: Cell::new(None),
+            array_fast: Cell::new(None),
+            hash_index_func: Cell::new(None),
+            hash_aset_func: Cell::new(None),
+            hash_index_fast: Cell::new(None),
+            hash_aset_fast: Cell::new(None),
+            fast_native_hits: Cell::new(0),
+            attr_cache_hits: Cell::new(0),
+            // Placeholders; filled from the prelude classes below.
+            class_class: object_class.clone(),
+            module_class: object_class.clone(),
+            integer_class: object_class.clone(),
+            float_class: object_class.clone(),
+            string_class: object_class.clone(),
+            array_class: object_class.clone(),
+            hash_class: object_class.clone(),
+            symbol_class: object_class.clone(),
+            proc_class: object_class.clone(),
+            range_class: object_class.clone(),
+            true_class: object_class.clone(),
+            false_class: object_class.clone(),
+            nil_class: object_class.clone(),
+            shared_memory_class: object_class.clone(),
+            object_class,
             globals,
             consts,
             upper,
@@ -317,7 +609,74 @@ impl VM {
 
         prelude(&mut vm);
 
+        vm.class_class = vm.get_class_by_name("Class");
+        vm.module_class = vm.get_class_by_name("Module");
+        vm.integer_class = vm.get_class_by_name("Integer");
+        vm.float_class = vm.get_class_by_name("Float");
+        vm.string_class = vm.get_class_by_name("String");
+        vm.array_class = vm.get_class_by_name("Array");
+        vm.hash_class = vm.get_class_by_name("Hash");
+        vm.symbol_class = vm.get_class_by_name("Symbol");
+        vm.proc_class = vm.get_class_by_name("Proc");
+        vm.range_class = vm.get_class_by_name("Range");
+        vm.true_class = vm.get_class_by_name("TrueClass");
+        vm.false_class = vm.get_class_by_name("FalseClass");
+        vm.nil_class = vm.get_class_by_name("NilClass");
+        vm.shared_memory_class = vm.get_class_by_name("SharedMemory");
+
+        vm.array_index_func
+            .set(resolve_method(&vm.array_class, "[]").and_then(|(_, m)| m.func));
+        vm.hash_index_func
+            .set(resolve_method(&vm.hash_class, "[]").and_then(|(_, m)| m.func));
+        vm.hash_aset_func
+            .set(resolve_method(&vm.hash_class, "[]=").and_then(|(_, m)| m.func));
+
         vm
+    }
+
+    /// Invalidates every dispatch cache: any method definition, alias, undef
+    /// or include changes what send sites may resolve to.
+    pub fn bump_method_version(&self) {
+        self.method_version
+            .set(self.method_version.get().wrapping_add(1));
+        self.method_name_cache.borrow_mut().clear();
+        self.array_fast.set(None);
+        self.hash_index_fast.set(None);
+        self.hash_aset_fast.set(None);
+    }
+
+    /// Invalidates every inline constant cache: any constant definition or
+    /// replacement may change what a `OP_GETCONST`/`OP_GETMCNST` site resolves
+    /// to.
+    pub fn bump_const_version(&self) {
+        self.const_version
+            .set(self.const_version.get().wrapping_add(1));
+    }
+
+    /// Resolves a method by (class, name) through the name-keyed cache used
+    /// by `mrb_funcall`. Entries are keyed on the method version and class
+    /// identity, so a stale hit can never outlive a redefinition.
+    pub fn resolve_method_cached(
+        &self,
+        klass: &Rc<RClass>,
+        name: &str,
+    ) -> Option<(Rc<RModule>, RProc)> {
+        let version = self.method_version.get();
+        // Key on the interned method id, not the name string: the id is a small
+        // integer, so the map hashes cheaply and the FNV name hash is computed
+        // (intern) once per call rather than per lookup.
+        let id = intern_symbol(name);
+        let key = (version, Rc::as_ptr(klass) as usize, id);
+        if let Some((owner, method)) = self.method_name_cache.borrow().get(&key) {
+            return Some((owner.clone(), method.clone()));
+        }
+        let resolved = resolve_method_by_id(klass, id);
+        if let Some((owner, method)) = &resolved {
+            self.method_name_cache
+                .borrow_mut()
+                .insert(key, (owner.clone(), method.clone()));
+        }
+        resolved
     }
 
     /// Resets the instruction counter. Only available when the `insn-limit` feature is enabled.
@@ -335,54 +694,170 @@ impl VM {
     /// Executes the current IREP until completion, returning the value in
     /// register 0 or propagating any raised exception as an error. The
     /// top-level `self` is initialized automatically before evaluation.
-    pub fn run(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
+    pub fn run(&mut self) -> Result<Value, Box<dyn std::error::Error>> {
         self.current_irep = self.irep.clone();
         self.pc.set(0);
 
-        let upper = self.current_breadcrumb.take();
-        let new_breadcrumb = Rc::new(Breadcrumb {
-            upper,
-            event: "run",
-            caller: None,
-            return_reg: None,
-        });
-        self.current_breadcrumb.replace(new_breadcrumb);
+        self.push_breadcrumb(
+            "run",
+            None,
+            None,
+            Some(self.current_irep.clone()),
+            Some(self.pc.get()),
+        );
         self.__run()
+    }
+
+    /// Pushes a call-frame crumb with a fresh monotonic id. The Vec holds the
+    /// crumbs by value, so steady-state pushes/pops never allocate.
+    pub fn push_breadcrumb(
+        &mut self,
+        event: &'static str,
+        caller: Option<CallerLabel>,
+        return_reg: Option<usize>,
+        irep: Option<Rc<IREP>>,
+        pc: Option<usize>,
+    ) {
+        let id = self.crumb_seq.get().wrapping_add(1);
+        self.crumb_seq.set(id);
+        self.breadcrumbs.borrow_mut().push(Breadcrumb {
+            event,
+            caller,
+            return_reg,
+            irep,
+            pc,
+            id,
+        });
+    }
+
+    /// Pops the innermost call-frame crumb.
+    pub fn pop_breadcrumb(&mut self) {
+        debug_assert!(
+            !self.breadcrumbs.borrow().is_empty(),
+            "crumb stack underflow"
+        );
+        self.breadcrumbs.borrow_mut().pop();
     }
 
     /// Internal run method that manages breadcrumb stack for internal calls.
-    pub fn run_internal(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
-        let upper = self.current_breadcrumb.take();
-        let new_breadcrumb = Rc::new(Breadcrumb {
-            upper,
-            event: "run_internal",
-            caller: None,
-            return_reg: None,
-        });
-        self.current_breadcrumb.replace(new_breadcrumb);
+    pub fn run_internal(&mut self) -> Result<Value, Box<dyn std::error::Error>> {
+        self.push_breadcrumb(
+            "run_internal",
+            None,
+            None,
+            Some(self.current_irep.clone()),
+            Some(self.pc.get()),
+        );
         self.__run()
     }
 
-    pub fn eval_rite(
-        &mut self,
-        rite: &mut Rite,
-    ) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
+    pub fn eval_rite(&mut self, rite: &mut Rite) -> Result<Value, Box<dyn std::error::Error>> {
         let irep = rite_to_irep(rite);
         self.pc.set(0);
         self.current_irep = Rc::new(irep);
+        // the evaluated script is the outermost frame; a block
+        // return unwinding to it has no enclosing method (LocalJumpError).
+        self.root_irep_id.set(Some(self.current_irep.__id));
 
-        let upper = self.current_breadcrumb.take();
-        let new_breadcrumb = Rc::new(Breadcrumb {
-            upper,
-            event: "eval",
-            caller: None,
-            return_reg: None,
-        });
-        self.current_breadcrumb.replace(new_breadcrumb);
+        // Each script evaluates against a fresh top-level self. A leftover
+        // Class/Module in regs[0] from the previous file would otherwise make
+        // top-level constant assignments (op_setconst) land in that stale
+        // namespace instead of the global table.
+        self.current_regs()[0] = None;
+
+        self.push_breadcrumb(
+            "eval",
+            None,
+            None,
+            Some(self.current_irep.clone()),
+            Some(self.pc.get()),
+        );
         self.__run()
     }
 
-    fn __run(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
+    /// Source line of the opcode being (or just) executed, if the current
+    /// irep carries debug info. The dispatch loop advances `pc` before an
+    /// opcode runs, so the failing opcode sits at `pc - 1`.
+    pub fn current_frame_line(&self) -> Option<u32> {
+        self.current_irep
+            .line_at_op(self.pc.get().saturating_sub(1))
+    }
+
+    /// call stack of the current exception, MRI-style. Each frame
+    /// is a method label and the line where that method's body called the next
+    /// frame (the inner crumb's recorded call site). The innermost frame is the
+    /// failing callee and drops its line when the caller frame already shows it
+    /// (the usual native-send/method_missing case). A synthetic <main> frame
+    /// tops the stack at the top-level call site.
+    pub fn capture_error_stack(&self) -> Vec<String> {
+        // Innermost crumb first (the Vec grows outward); crumbs without a
+        // caller label (top-level run/eval frames) are skipped.
+        let crumbs: Vec<(String, Option<u32>)> = self
+            .breadcrumbs
+            .borrow()
+            .iter()
+            .rev()
+            .filter_map(|b| {
+                b.caller.as_ref().map(|label| {
+                    let line = b
+                        .irep
+                        .as_ref()
+                        .and_then(|i| b.pc.and_then(|p| i.line_at_op(p)));
+                    (caller_label(label), line)
+                })
+            })
+            .collect();
+
+        let mut frames: Vec<String> = Vec::new();
+        let n = crumbs.len();
+        if n == 0 {
+            if let Some(line) = self.current_frame_line() {
+                frames.push(format!("<main>:{line}"));
+            }
+            return frames;
+        }
+
+        let current_line = self.current_frame_line();
+        // The failing line belongs to the caller frame when both resolve to the
+        // same line; the callee frame then carries no line of its own.
+        let innermost_line = if n >= 2 && current_line.is_some() && current_line == crumbs[0].1 {
+            None
+        } else {
+            current_line
+        };
+        frames.push(match innermost_line {
+            Some(l) => format!("{}:{l}", crumbs[0].0),
+            None => crumbs[0].0.clone(),
+        });
+        for i in 1..n {
+            let caller = &crumbs[i].0;
+            frames.push(match crumbs[i - 1].1 {
+                Some(l) => format!("{caller}:{l}"),
+                None => caller.clone(),
+            });
+        }
+        frames.push(match crumbs[n - 1].1 {
+            Some(l) => format!("<main>:{l}"),
+            None => "<main>".to_string(),
+        });
+        frames.reverse();
+        frames
+    }
+
+    /// rejects a frame whose register window would overflow
+    /// the fixed register array with a Ruby SystemStackError instead of a
+    /// Rust panic (e.g. unbounded method_missing recursion).
+    pub(crate) fn check_frame_window(&self, extra: usize, nregs: usize) -> Result<(), Error> {
+        if self.current_regs_offset + extra + nregs > MAX_REGS_SIZE {
+            return Err(Error::TaggedError(
+                "SystemStackError".to_string(),
+                "stack level too deep".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn __run(&mut self) -> Result<Value, Box<dyn std::error::Error>> {
         let class = self.object_class.clone();
         // Insert top_self
         let top_self = RObject {
@@ -393,21 +868,28 @@ impl VM {
             }),
             object_id: 0.into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
         .to_refcount_assigned();
         if self.current_regs()[0].is_none() {
-            self.current_regs()[0].replace(top_self.clone());
+            self.set_reg(0, top_self.clone());
         }
         let mut unwinding = false;
 
         loop {
             if unwinding && let Some(e) = self.exception.clone() {
                 let operand = insn::Fetched::B(0);
-                let mut retreg = None;
+                // Break lands on the send recorded by OP_BREAK
+                // (see break_landing). The unwinder pops frames until that
+                // send's breadcrumb is gone, then delivers the value there.
+                // Without a landing pad it unwinds like any other error.
+                let break_landing: Option<(u64, usize)> =
+                    if matches!(e.error_type.borrow().clone(), Error::Break(_)) {
+                        *self.break_landing.borrow()
+                    } else {
+                        None
+                    };
                 if let Some(pos) = self.find_handler_pos(None) {
-                    // The handler runs as ordinary code; EXCEPT picks the
-                    // exception up from here.
                     self.pc.set(pos);
                     unwinding = false;
                     continue;
@@ -418,32 +900,28 @@ impl VM {
                 {
                     // reached caller method's IREP, just return
                     let operand = insn::Fetched::B(16); // FIXME: just a bit far reg
-                    self.current_regs()[16].replace(v);
+                    self.set_reg_value(16, v);
                     self.exception.take();
                     op_return(self, &operand).expect("[bug]cannot return");
                     continue;
                 }
 
-                if matches!(e.error_type.borrow().clone(), Error::Break(_)) {
-                    retreg = match self.current_breadcrumb.as_ref() {
-                        Some(bc) if bc.event == "do_op_send" => {
-                            let retreg = bc.as_ref().return_reg.unwrap_or(0);
-                            Some(retreg)
-                        }
-                        _ => None,
-                    };
-                }
                 match op_return(self, &operand) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        if let Some(retreg) = retreg
+                    Ok(_) => {
+                        // once the anchored send crumb has been
+                        // popped its frame is gone; deliver the break value
+                        // into its return register and resume there.
+                        if let Some((target_id, treg)) = &break_landing
+                            && !breadcrumb_stack_contains(&self.breadcrumbs.borrow(), *target_id)
                             && let Error::Break(brkval) = e.error_type.borrow().clone()
                         {
-                            self.current_regs()[retreg].replace(brkval);
+                            self.set_reg_value(*treg, brkval);
                             self.exception.take();
-                        } else {
-                            break;
+                            self.break_landing.take();
                         }
+                    }
+                    Err(_) => {
+                        break;
                     }
                 }
                 if self.flag_preemption.get() {
@@ -454,15 +932,11 @@ impl VM {
             }
 
             let pc = self.pc.get();
-            if self.current_irep.code.len() <= pc {
+            if pc >= self.current_irep.code.len() {
                 // reached end of the IREP
                 break;
             }
-            let op = *self
-                .current_irep
-                .code
-                .get(pc)
-                .ok_or_else(|| Error::internal("end of opcode reached"))?;
+            let op = self.current_irep.code[pc];
             let operand = op.operand;
             self.pc.set(pc + 1);
 
@@ -487,13 +961,20 @@ impl VM {
                 }
                 eprintln!(
                     "{:?}: {:?} (pos={} len={})",
-                    op.code, &operand, op.pos, op.len
+                    op.code, operand, op.pos, op.len
                 );
             }
 
             match consume_expr(self, op.code, &operand, op.pos, op.len) {
                 Ok(_) => {}
                 Err(e) => {
+                    // snapshot named breadcrumb frames at the
+                    // deepest raise; skip while unwinding a pending
+                    // exception, whose later re-conversions see popped
+                    // chains. Last fresh raise wins.
+                    if self.exception.is_none() {
+                        *self.last_error_stack.borrow_mut() = self.capture_error_stack();
+                    }
                     let exception = RException::from_error(self, &e);
                     self.exception = Some(Rc::new(exception));
                     unwinding = true;
@@ -514,9 +995,9 @@ impl VM {
 
         let retval = match self.current_regs()[0].take() {
             Some(v) => Ok(v),
-            None => Ok(Rc::new(RObject::nil())),
+            None => Ok(Value::Nil),
         };
-        self.current_regs()[0].replace(top_self.clone());
+        self.set_reg(0, top_self.clone());
 
         retval
     }
@@ -534,37 +1015,80 @@ impl VM {
             .map(|ch| ch.target)
     }
 
-    pub(crate) fn current_regs(&mut self) -> &mut [Option<Rc<RObject>>] {
+    pub(crate) fn current_regs(&mut self) -> &mut [Option<Value>] {
         &mut self.regs[self.current_regs_offset..]
     }
 
+    /// Register read as a heap `RObject`, boxing an unboxed immediate. Native
+    /// method boundaries use this; hot opcodes read [`Self::current_regs`]
+    /// directly as [`Value`] to stay allocation-free.
     pub(crate) fn get_current_regs_cloned(&mut self, i: usize) -> Result<Rc<RObject>, Error> {
         self.current_regs()[i]
             .clone()
+            .map(|v| v.to_rc())
             .ok_or_else(|| Error::internal(format!("register {} is not assigned", i)))
     }
 
     pub(crate) fn take_current_regs(&mut self, i: usize) -> Result<Rc<RObject>, Error> {
         self.current_regs()[i]
             .take()
+            .map(|v| v.to_rc())
             .ok_or_else(|| Error::internal(format!("register {} is not assigned", i)))
     }
 
-    /// Returns the current `self` object from register 0, or an error if it has
+    /// Stores a heap result into a register, unboxing immediates so they never
+    /// stay boxed, and returns the previous value boxed (the counterpart of
+    /// [`Self::get_current_regs_cloned`]).
+    pub(crate) fn set_reg(&mut self, i: usize, rc: Rc<RObject>) -> Option<Rc<RObject>> {
+        self.current_regs()[i]
+            .replace(Value::from_rc(rc))
+            .map(|v| v.to_rc())
+    }
+
+    /// Register read as an unboxed `Value` (`Nil` when unassigned). Used by
+    /// container opcodes so immediates never cross into `Rc<RObject>`.
+    pub(crate) fn get_reg_value(&mut self, i: usize) -> Value {
+        self.current_regs()[i].clone().unwrap_or(Value::Nil)
+    }
+
+    /// Register take as an unboxed `Value`, clearing the slot.
+    pub(crate) fn take_reg_value(&mut self, i: usize) -> Value {
+        self.current_regs()[i].take().unwrap_or(Value::Nil)
+    }
+
+    /// Store an unboxed `Value` into a register.
+    pub(crate) fn set_reg_value(&mut self, i: usize, v: Value) {
+        self.current_regs()[i] = Some(v);
+    }
+
+    /// Store an unboxed `Value` into a register, returning the previous slot.
+    pub(crate) fn swap_reg_value(&mut self, i: usize, v: Value) -> Option<Value> {
+        self.current_regs()[i].replace(v)
+    }
+
+    /// Returns the current `self` value from register 0, or an error if it has
     /// not been initialized yet.
-    pub fn getself(&mut self) -> Result<Rc<RObject>, Error> {
-        self.get_current_regs_cloned(0)
+    pub fn getself(&mut self) -> Result<Value, Error> {
+        self.current_regs()[0]
+            .clone()
+            .ok_or_else(|| Error::internal("register 0 is not assigned"))
+    }
+
+    /// Innermost call frame, if any. Replaces the old `current_callinfo` field
+    /// now that frames live on a pooled stack.
+    pub fn current_callinfo(&self) -> Option<&CALLINFO> {
+        self.callinfo_stack.last()
     }
 
     /// Retrieves `self` without error handling, panicking if register 0 is
     /// empty. Prefer [`VM::getself`] when the value may be absent.
-    pub fn must_getself(&mut self) -> Rc<RObject> {
+    pub fn must_getself(&mut self) -> Value {
         self.current_regs()[0]
             .clone()
             .expect("self is not assigned")
     }
 
-    pub fn get_kwargs(&self) -> Option<RHashMap<String, Rc<RObject>>> {
+    pub fn get_kwargs(&self) -> Option<RHashMap<String, Value>> {
         let kwargs = self.current_kargs.borrow().clone();
         kwargs.map(|kargs| {
             kargs
@@ -580,7 +1104,6 @@ impl VM {
         self.fn_table.set(Rc::new(f));
         self.fn_table.len() - 1
     }
-
     pub(crate) fn push_fnblock(&mut self, f: Rc<RFn>) -> Result<(), Error> {
         self.fn_block_stack.push(f)
     }
@@ -645,6 +1168,7 @@ impl VM {
                 .borrow_mut()
                 .insert(name.to_string(), object);
         }
+        self.bump_const_version();
         class
     }
 
@@ -676,6 +1200,7 @@ impl VM {
                 .borrow_mut()
                 .insert(name.to_string(), object);
         }
+        self.bump_const_version();
         module
     }
 
@@ -742,20 +1267,19 @@ impl VM {
             for i in 0..size {
                 let reg = self.regs.get(i).unwrap().clone();
                 if let Some(obj) = reg {
-                    let inspect: String = mrb_call_inspect(self, obj.clone())
-                        .unwrap()
-                        .as_ref()
+                    let insp = mrb_call_inspect(self, &obj).unwrap();
+                    let inspect: String = (&insp)
                         .try_into()
                         .unwrap_or_else(|_| "(uninspectable)".into());
                     if i < current_regs_offset {
-                        eprintln!("  R{}(--): {}(oid={})", i, inspect, obj.object_id.get());
+                        eprintln!("  R{}(--): {}(oid={})", i, inspect, obj.object_id());
                     } else {
                         eprintln!(
                             "  R{}(R{}): {}(oid={})",
                             i,
                             i - current_regs_offset,
                             inspect,
-                            obj.object_id.get()
+                            obj.object_id()
                         );
                     }
                 } else if i < 16 || i < current_regs_offset {
@@ -773,10 +1297,12 @@ impl VM {
                     .map(|e| e.error_type.borrow().clone())
             );
             eprintln!("--- Breadcrumb ---");
-            if let Some(bc) = &self.current_breadcrumb {
-                bc.display_breadcrumb_for_debug(0, max_breadcrumb_level);
-            } else {
+            let crumbs = self.breadcrumbs.borrow();
+            if crumbs.is_empty() {
                 eprintln!("(none)");
+            }
+            for bc in crumbs.iter().rev().take(max_breadcrumb_level) {
+                bc.display_breadcrumb_for_debug();
             }
             eprintln!("=== End of VM Dump ===");
         }
@@ -810,7 +1336,7 @@ fn interpret_insn(mut insns: &[u8]) -> Vec<Op> {
 fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
     let irep = &mut reps[pos];
     let mut irep1 = IREP {
-        __id: pos,
+        __id: NEXT_IREP_ID.fetch_add(1, Ordering::SeqCst),
         nlocals: irep.nlocals(),
         nregs: irep.nregs(),
         rlen: irep.rlen(),
@@ -820,6 +1346,10 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
         reps: Vec::new(),
         lv: None,
         catch_handlers: Vec::new(),
+        lines: irep.lines.clone(),
+        send_cache: RefCell::new(Vec::new()),
+        attr_cache: RefCell::new(Vec::new()),
+        const_cache: RefCell::new(Vec::new()),
     };
     for sym in irep.syms.iter() {
         irep1
@@ -872,6 +1402,9 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
     }
 
     irep1.code = code;
+    irep1.send_cache = RefCell::new(vec![None; irep1.code.len()]);
+    irep1.attr_cache = RefCell::new(vec![None; irep1.code.len()]);
+    irep1.const_cache = RefCell::new(vec![None; irep1.code.len()]);
     (irep1, pos + 1)
 }
 
@@ -905,6 +1438,65 @@ pub struct IREP {
     pub reps: Vec<Rc<IREP>>,
     pub lv: Option<RHashMap<usize, String>>,
     pub catch_handlers: Vec<CatchTarget>,
+    /// Source line changes (instruction-byte offset, line), ascending.
+    /// Empty when the blob was compiled without debug info.
+    pub lines: Vec<(u32, u32)>,
+    /// Inline method dispatch cache, one slot per instruction. `do_op_send`
+    /// reads and fills its slot at the instruction index; entries go stale
+    /// when the global method version moves.
+    pub send_cache: RefCell<Vec<Option<SendCacheEntry>>>,
+    /// Attribute inline cache, one slot per instruction, parallel to
+    /// `send_cache`. When a send site resolves to an attr_accessor getter or
+    /// setter, its slot is filled so `op_send` can execute the access as a
+    /// direct IvarMap read/write without entering `do_op_send`. Entries go
+    /// stale with the method version, exactly like `send_cache`.
+    pub attr_cache: RefCell<Vec<Option<AttrCacheEntry>>>,
+    /// Constant inline cache, one slot per instruction, parallel to
+    /// `send_cache`. `OP_GETCONST`/`OP_GETMCNST` fill their slot with the
+    /// resolved value; entries go stale with the constant-table version.
+    pub const_cache: RefCell<Vec<Option<ConstCacheEntry>>>,
+}
+
+/// One inline cache slot: the last method a bytecode send site resolved to
+/// for a given receiver class, stamped with the method version at fill time.
+#[derive(Debug, Clone)]
+pub struct SendCacheEntry {
+    pub version: u64,
+    pub klass: Rc<RClass>,
+    pub owner: Rc<RModule>,
+    pub method: RProc,
+}
+
+/// Attribute inline-cache slot: the ivar an attr_accessor send site maps to
+/// for a given receiver class, stamped with the method version at fill time.
+/// A hit means the previous resolution was the pristine accessor, so the same
+/// class and version cannot have redefined it.
+#[derive(Debug, Clone)]
+pub struct AttrCacheEntry {
+    pub version: u64,
+    pub klass: Rc<RClass>,
+    pub key: u32,
+    pub is_set: bool,
+}
+
+/// Constant inline-cache slot: the value a `OP_GETCONST`/`OP_GETMCNST` site
+/// resolved to, stamped with the constant-table version and the namespace it
+/// was resolved in. A hit needs both stamps: the version guards redefinition,
+/// the namespace guards the same instruction seeing different lexical scopes
+/// (e.g. a method reused across classes that each define the constant).
+#[derive(Debug, Clone)]
+pub struct ConstCacheEntry {
+    pub version: u64,
+    pub ns: Option<Rc<RModule>>,
+    pub value: Value,
+}
+
+impl IREP {
+    /// Source line of the opcode at `pc`, if the irep carries debug info.
+    pub fn line_at_op(&self, pc: usize) -> Option<u32> {
+        let op = self.code.get(pc)?;
+        crate::rite::line_at(&self.lines, op.pos as u32)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -919,8 +1511,9 @@ pub const CATCH_TYPE_ENSURE: u8 = 1;
 
 #[derive(Debug, Clone)]
 pub struct CALLINFO {
-    pub prev: Option<Rc<CALLINFO>>,
-    pub method_id: RSym,
+    /// Interned method id; resolving the name is only needed for `super` or a
+    /// backtrace, so no per-call name string is retained.
+    pub method_id: u32,
     pub pc_irep: Rc<IREP>,
     pub pc: usize,
     pub current_regs_offset: usize,
@@ -929,6 +1522,14 @@ pub struct CALLINFO {
     pub return_reg: usize,
     pub method_owner: Option<Rc<RModule>>,
     pub has_block: Cell<bool>,
+    // whether op_enter pushed a KArgs frame for this call, so
+    // op_return only pops one when it was actually pushed.
+    pub kargs_pushed: Cell<bool>,
+    // true for frames entered through call_block (funcalls
+    // from native code, blocks). Their return preempts back to the native
+    // caller instead of restoring a Ruby caller, but the callinfo stays live
+    // while the callee runs so super/op_enter can read it.
+    pub is_funcall: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -938,6 +1539,10 @@ pub struct ENV {
     pub captured: RefCell<Option<Vec<Option<Rc<RObject>>>>>,
     pub current_regs_offset: usize,
     pub is_expired: Cell<bool>,
+    // lambda closures return locally (CRuby semantics); the
+    // flag and the closure's own irep id are set by op_lambda/op_block.
+    pub is_lambda: Cell<bool>,
+    pub closure_irep_id: usize,
 }
 
 impl ENV {

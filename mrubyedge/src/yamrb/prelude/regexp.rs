@@ -7,7 +7,7 @@ use crate::{
     Error,
     yamrb::{
         helpers::{mrb_define_class_cmethod, mrb_define_cmethod, mrb_funcall},
-        value::{RData, RHashMap, RObject, RValue},
+        value::{IvarMap, RData, RObject, RValue, Value},
         vm::VM,
     },
 };
@@ -106,8 +106,8 @@ fn get_regexp_from_object(obj: &Rc<RObject>) -> Result<Regex, Error> {
     Ok(pattern)
 }
 
-pub fn mrb_regexp_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    let pattern_obj = args[0].clone();
+pub fn mrb_regexp_new(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+    let pattern_obj = args[0].as_ref().unwrap().to_rc();
     match &pattern_obj.value {
         RValue::String(pattern, _) => {
             // For simplicity, we only support literal patterns without options.
@@ -122,14 +122,16 @@ pub fn mrb_regexp_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
                 data: RefCell::new(Some(Rc::new(Box::new(regexp) as Box<dyn std::any::Any>))),
                 ref_count: 1,
             });
-            Ok(RObject {
-                tt: crate::yamrb::value::RType::Data,
-                value: RValue::Data(regexp_data),
-                object_id: Cell::new(0),
-                singleton_class: RefCell::new(None),
-                ivar: RefCell::new(RHashMap::default()),
-            }
-            .to_refcount_assigned())
+            Ok(Value::from_rc(
+                RObject {
+                    tt: crate::yamrb::value::RType::Data,
+                    value: RValue::Data(regexp_data),
+                    object_id: Cell::new(0),
+                    singleton_class: RefCell::new(None),
+                    ivar: RefCell::new(IvarMap::new()),
+                }
+                .to_refcount_assigned(),
+            ))
         }
         _ => Err(Error::RuntimeError(
             "Regexp.new requires a string pattern".to_string(),
@@ -137,9 +139,9 @@ pub fn mrb_regexp_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
     }
 }
 
-fn mrb_regexp_match_tilda(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_regexp_match_tilda(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let regexp_obj = vm.getself()?;
-    let target_obj = args[0].clone();
+    let target_obj = args[0].as_ref().unwrap().to_rc();
 
     let regexp = get_regexp_from_object(&regexp_obj)?;
 
@@ -157,21 +159,23 @@ fn mrb_regexp_match_tilda(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObjec
     })?;
 
     match regexp.find(&haystack) {
-        Some(matched) => Ok(RObject::integer(matched.start() as i64).to_refcount_assigned()),
-        None => Ok(RObject::nil().to_refcount_assigned()),
+        Some(matched) => Ok(Value::from_rc(
+            RObject::integer(matched.start() as i64).to_refcount_assigned(),
+        )),
+        None => Ok(Value::Nil),
     }
 }
 
-fn mrb_regexp_not_match_tilda(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_regexp_not_match_tilda(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     match mrb_regexp_match_tilda(vm, args)? {
-        res if res.is_nil() => Ok(RObject::boolean(true).to_refcount_assigned()),
-        _ => Ok(RObject::boolean(false).to_refcount_assigned()),
+        res if res.is_nil() => Ok(Value::Bool(true)),
+        _ => Ok(Value::Bool(false)),
     }
 }
 
-fn mrb_regexp_match(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_regexp_match(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let regexp_obj = vm.getself()?;
-    let target_obj = args[0].clone();
+    let target_obj = args[0].as_ref().unwrap().to_rc();
 
     let regexp = get_regexp_from_object(&regexp_obj)?;
 
@@ -207,20 +211,22 @@ fn mrb_regexp_match(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Er
                 data: RefCell::new(Some(Rc::new(Box::new(matchdata) as Box<dyn std::any::Any>))),
                 ref_count: 1,
             });
-            Ok(RObject {
-                tt: crate::yamrb::value::RType::Data,
-                value: RValue::Data(matchdata_data),
-                object_id: Cell::new(0),
-                singleton_class: RefCell::new(None),
-                ivar: RefCell::new(RHashMap::default()),
-            }
-            .to_refcount_assigned())
+            Ok(Value::from_rc(
+                RObject {
+                    tt: crate::yamrb::value::RType::Data,
+                    value: RValue::Data(matchdata_data),
+                    object_id: Cell::new(0),
+                    singleton_class: RefCell::new(None),
+                    ivar: RefCell::new(IvarMap::new()),
+                }
+                .to_refcount_assigned(),
+            ))
         }
-        None => Ok(RObject::nil().to_refcount_assigned()),
+        None => Ok(Value::Nil),
     }
 }
 
-fn mrb_regexp_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_regexp_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let regexp_obj = vm.getself()?;
     let pattern_str: String = match &regexp_obj.value {
         RValue::Data(data) => {
@@ -240,12 +246,14 @@ fn mrb_regexp_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>,
         }
     };
     let inspect_str = format!("/{}/", pattern_str);
-    Ok(RObject::string(inspect_str).to_refcount_assigned())
+    Ok(Value::from_rc(
+        RObject::string(inspect_str).to_refcount_assigned(),
+    ))
 }
 
-fn mrb_matchdata_index(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_matchdata_index(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let matchdata_obj = vm.getself()?;
-    let index_obj = args[0].clone();
+    let index_obj = args[0].as_ref().unwrap().to_rc();
 
     let index = match &index_obj.value {
         RValue::Integer(i) => *i as isize,
@@ -281,27 +289,36 @@ fn mrb_matchdata_index(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>,
     };
 
     if cap_index >= matchdata.captures.len() {
-        return Ok(RObject::nil().to_refcount_assigned());
+        return Ok(Value::Nil);
     }
     let (start, end) = matchdata.captures[cap_index];
     if start == usize::MAX && end == usize::MAX {
-        return Ok(RObject::nil().to_refcount_assigned());
+        return Ok(Value::Nil);
     }
     let matched_str = &matchdata.haystack[start..end];
-    Ok(RObject::string(matched_str.to_string()).to_refcount_assigned())
+    Ok(Value::from_rc(
+        RObject::string(matched_str.to_string()).to_refcount_assigned(),
+    ))
 }
 
-fn mrb_string_regexp_match_tilda(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_string_regexp_match_tilda(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let string_obj = vm.getself()?;
-    let regexp_obj = args[0].clone();
-    mrb_funcall(vm, Some(regexp_obj), "=~", &[string_obj])
+    let regexp_obj = args[0].as_ref().unwrap().to_rc();
+    Ok(Value::from_rc(mrb_funcall(
+        vm,
+        Some(regexp_obj),
+        "=~",
+        &[string_obj],
+    )?))
 }
 
-fn mrb_string_regexp_not_match_tilda(
-    vm: &mut VM,
-    args: &[Rc<RObject>],
-) -> Result<Rc<RObject>, Error> {
+fn mrb_string_regexp_not_match_tilda(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let string_obj = vm.getself()?;
-    let regexp_obj = args[0].clone();
-    mrb_funcall(vm, Some(regexp_obj), "!~", &[string_obj])
+    let regexp_obj = args[0].as_ref().unwrap().to_rc();
+    Ok(Value::from_rc(mrb_funcall(
+        vm,
+        Some(regexp_obj),
+        "!~",
+        &[string_obj],
+    )?))
 }

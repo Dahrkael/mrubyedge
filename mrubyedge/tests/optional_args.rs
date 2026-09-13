@@ -19,7 +19,7 @@ result[0]
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 3);
 }
 
@@ -36,7 +36,7 @@ greet("Alice")
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(result_str, "Hello, Alice!");
 }
 
@@ -54,7 +54,7 @@ result[0] + result[1] + result[2]
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 9);
 }
 
@@ -71,7 +71,7 @@ add(5, 20)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 25);
 }
 
@@ -88,7 +88,7 @@ calc(5, 4)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 23);
 }
 
@@ -108,7 +108,7 @@ result[:count] + result[:other]
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 5 + 2);
 }
 
@@ -126,6 +126,6 @@ format_message("Test")
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(result_str, "[Info:1] Test");
 }

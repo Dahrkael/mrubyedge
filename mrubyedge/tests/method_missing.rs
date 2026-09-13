@@ -19,7 +19,7 @@ foo.bar(1, 2, 3)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(&result_str, "bar:3");
 }
 
@@ -39,7 +39,7 @@ foo.unknown_method
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(&result_str, "missing:unknown_method");
 }
 
@@ -67,7 +67,7 @@ result1 + result2
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 60); // (10 + 20) + (5 * 6) = 30 + 30
 }
 
@@ -87,7 +87,7 @@ foo.test_method(1, 2, a: 3, b: 4, c: 5)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(&result_str, "test_method:3");
 }
 
@@ -113,7 +113,7 @@ result1 + ',' + result2
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(&result_str, "value1,no default");
 }
 
@@ -141,7 +141,7 @@ r1 + r2 + r3
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result_int: i32 = result.as_ref().try_into().unwrap();
+    let result_int: i32 = result.try_into().unwrap();
     assert_eq!(result_int, 6); // 1 + 2 + 3
 }
 
@@ -190,6 +190,6 @@ Bar.new
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, Some(target), "call_nonexistent", &args).unwrap();
-    let msg: String = result.as_ref().try_into().unwrap();
+    let msg: String = result.try_into().unwrap();
     assert_eq!(msg, "handled by method_missing: call_nonexistent");
 }

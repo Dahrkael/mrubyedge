@@ -30,7 +30,6 @@ fn break_test() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 3);
@@ -55,7 +54,6 @@ fn break_test_with_c_func() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5);
@@ -81,7 +79,6 @@ fn break_test_with_c_func_2() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "test_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5);
@@ -129,7 +126,6 @@ fn break_test_nested() {
     let args = vec![];
     let result: (i32, i32) = mrb_funcall(&mut vm, None, "test_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, (5, 6));
@@ -161,7 +157,6 @@ fn break_test_nested_with_closure() {
     let args = vec![];
     let result: (i32, i32) = mrb_funcall(&mut vm, None, "test_break", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, (3, 36));
@@ -182,6 +177,50 @@ fn break_test_toplevel() {
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
 
     // Assert
-    let result: i32 = vm.run().unwrap().as_ref().try_into().unwrap();
+    let result: i32 = vm.run().unwrap().try_into().unwrap();
     assert_eq!(result, 10);
+}
+
+#[test]
+fn dump_block_registers() {
+    let code = "
+    def render
+      test = 2
+      draws = []
+      [1].each do |sprite|
+        test = sprite
+      end
+      draws
+    end
+    render
+    ";
+    let binary = mrbc_compile("dump_block_registers", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+
+    fn dump(name: &str, irep: &mrubyedge::yamrb::vm::IREP, depth: usize) {
+        let pad = "  ".repeat(depth);
+        let lv = irep
+            .lv
+            .as_ref()
+            .map(|m| {
+                m.iter()
+                    .map(|(k, v)| format!("{v}@reg{k}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_else(|| "-".to_string());
+        eprintln!(
+            "[dump] {pad}{name}: nlocals={} nregs={} locals=[{lv}]",
+            irep.nlocals, irep.nregs
+        );
+        for op in irep.code.iter().take(14) {
+            eprintln!("[dump] {pad}  {:?} {:?}", op.code, op.operand);
+        }
+        for (i, rep) in irep.reps.iter().enumerate() {
+            dump(&format!("block{i}"), rep, depth + 1);
+        }
+    }
+    dump("main", &vm.irep, 0);
 }

@@ -2,12 +2,12 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::yamrb::helpers::mrb_funcall;
-use crate::yamrb::value::{RClass, RHashMap};
+use crate::yamrb::value::RClass;
 use crate::{
     Error,
     yamrb::{
         helpers::{mrb_define_class_cmethod, mrb_define_cmethod},
-        value::{RData, RObject, RType, RValue},
+        value::{IvarMap, RData, RObject, RType, RValue, Value},
         vm::VM,
     },
 };
@@ -103,16 +103,16 @@ fn get_rng_class(vm: &mut VM) -> Rc<RClass> {
 }
 
 fn get_default_rng(vm: &mut VM) -> Rc<RObject> {
-    get_rng_singleton(vm).get_ivar(DEFAULT_RNG_KEY)
+    get_rng_singleton(vm).get_ivar(DEFAULT_RNG_KEY).to_rc()
 }
 
-pub(crate) fn mrb_random_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub(crate) fn mrb_random_new(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let class = get_rng_class(vm);
     let seed = if args.is_empty() {
         new_seed()
     } else {
         let seed_obj = &args[0];
-        seed_obj.as_ref().try_into()?
+        seed_obj.as_ref().unwrap().try_into()?
     };
     let rand = Random {
         rng_state: create_seeded_rng(seed),
@@ -129,26 +129,26 @@ pub(crate) fn mrb_random_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<ROb
         value: RValue::Data(Rc::new(random_data)),
         object_id: Cell::new(u64::MAX),
         singleton_class: RefCell::new(None),
-        ivar: RefCell::new(RHashMap::default()),
+        ivar: RefCell::new(IvarMap::new()),
     });
 
-    Ok(random_instance)
+    Ok(Value::from_rc(random_instance))
 }
 
 // Random.srand
-fn mrb_random_class_srand(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_random_class_srand(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let seed = if args.is_empty() {
         new_seed()
     } else {
         let seed_obj = &args[0];
-        seed_obj.as_ref().try_into()?
+        seed_obj.as_ref().unwrap().try_into()?
     };
 
     let old_seed = {
         let default_rng = get_default_rng(vm);
-        mrb_funcall(vm, Some(default_rng), "seed", &[])?
+        mrb_funcall(vm, Some(Value::from_rc(default_rng)), "seed", &[])?
     };
-    let new_rng = mrb_random_new(vm, &[Rc::new(RObject::integer(seed as i64))])?;
+    let new_rng = mrb_random_new(vm, &[Some(Value::Integer(seed as i64))])?;
     let random_singleton = get_rng_singleton(vm);
     random_singleton.set_ivar(DEFAULT_RNG_KEY, new_rng);
 
@@ -156,11 +156,11 @@ fn mrb_random_class_srand(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObjec
 }
 
 // Random#seed
-fn mrb_random_seed(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_random_seed(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let self_obj = vm.getself()?;
 
-    let seed = match &self_obj.value {
-        RValue::Data(data) => {
+    let seed = match self_obj.rvalue() {
+        Some(RValue::Data(data)) => {
             let borrow = data.data.borrow();
             let any_ref = borrow
                 .as_ref()
@@ -177,17 +177,17 @@ fn mrb_random_seed(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Er
         }
     };
 
-    Ok(Rc::new(RObject::integer(seed as i64)))
+    Ok(Value::Integer(seed as i64))
 }
 
 // Random#rand
-fn mrb_random_rand(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_random_rand(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     use rand_core::Rng;
 
     let self_obj = vm.getself()?;
 
-    let result = match &self_obj.value {
-        RValue::Data(data) => {
+    let result = match self_obj.rvalue() {
+        Some(RValue::Data(data)) => {
             let mut borrow = data.data.borrow_mut();
             let any_ref = borrow
                 .as_mut()
@@ -200,23 +200,23 @@ fn mrb_random_rand(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Err
             if args.is_empty() {
                 // Return a float between 0.0 and 1.0
                 let value = (rng.next_u32() as f64) / (u32::MAX as f64);
-                Rc::new(RObject::float(value))
+                Value::Float(value)
             } else {
-                let max_obj = &args[0];
-                match max_obj.value {
-                    RValue::Integer(max) => {
-                        if max <= 0 {
+                let max_obj = args[0].as_ref().unwrap();
+                match max_obj {
+                    Value::Integer(max) => {
+                        if *max <= 0 {
                             return Err(Error::ArgumentError("max must be positive".to_string()));
                         }
-                        let value = (rng.next_u64() % (max as u64)) as i64;
-                        Rc::new(RObject::integer(value))
+                        let value = (rng.next_u64() % (*max as u64)) as i64;
+                        Value::Integer(value)
                     }
-                    RValue::Float(max) => {
-                        if max <= 0.0 {
+                    Value::Float(max) => {
+                        if *max <= 0.0 {
                             return Err(Error::ArgumentError("max must be positive".to_string()));
                         }
-                        let value = (rng.next_u32() as f64) / (u32::MAX as f64) * max;
-                        Rc::new(RObject::float(value))
+                        let value = (rng.next_u32() as f64) / (u32::MAX as f64) * *max;
+                        Value::Float(value)
                     }
                     _ => {
                         return Err(Error::ArgumentError(
@@ -237,13 +237,15 @@ fn mrb_random_rand(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Err
 }
 
 // Random.rand (class method)
-fn mrb_random_class_rand(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_random_class_rand(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let default_rng = get_default_rng(vm);
-    mrb_funcall(vm, Some(default_rng), "rand", args)
+    let vals: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
+    mrb_funcall(vm, Some(Value::from_rc(default_rng)), "rand", &vals)
 }
 
 // Kernel#rand
-fn mrb_kernel_rand(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_kernel_rand(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let default_rng = get_default_rng(vm);
-    mrb_funcall(vm, Some(default_rng), "rand", args)
+    let vals: Vec<Value> = args.iter().map(|a| a.as_ref().unwrap().clone()).collect();
+    mrb_funcall(vm, Some(Value::from_rc(default_rng)), "rand", &vals)
 }

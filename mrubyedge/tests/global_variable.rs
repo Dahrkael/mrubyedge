@@ -13,7 +13,7 @@ fn a_global_variable_keeps_what_was_assigned_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 42);
@@ -33,7 +33,7 @@ fn a_global_variable_assigned_in_a_method_is_visible_outside_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 7);
@@ -48,7 +48,7 @@ fn a_global_variable_that_was_never_assigned_is_nil_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 1);
@@ -63,7 +63,7 @@ fn a_global_variable_that_was_never_assigned_answers_like_nil_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, "");

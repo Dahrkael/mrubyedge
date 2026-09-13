@@ -14,7 +14,7 @@ end
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 7);
@@ -37,7 +37,7 @@ end
 
     // Assert
     assert!(
-        matches!(err, Error::TaggedError("NoMatchingPatternError", msg) if msg == "pattern not matched"),
+        matches!(err, Error::TaggedError(tag, msg) if tag == "NoMatchingPatternError" && msg == "pattern not matched"),
         "{:?}",
         err
     );

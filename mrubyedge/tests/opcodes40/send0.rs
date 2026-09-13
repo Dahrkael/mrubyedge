@@ -7,7 +7,7 @@ fn ssend0_sends_to_self_with_no_arguments_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, "main");
@@ -20,7 +20,7 @@ fn send0_sends_to_the_receiver_in_the_register_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, "ABC");
@@ -33,7 +33,7 @@ fn send0_reaches_a_method_written_in_rust_test() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = (&result).try_into().unwrap();
 
     // Assert
     assert_eq!(result, 3);

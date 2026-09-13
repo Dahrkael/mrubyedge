@@ -1,12 +1,11 @@
 extern crate mrubyedge;
 
 mod helpers;
-use std::rc::Rc;
 
 use helpers::*;
 use mrubyedge::Error;
 use mrubyedge::yamrb::helpers::mrb_define_cmethod;
-use mrubyedge::yamrb::value::RObject;
+use mrubyedge::yamrb::value::Value;
 use mrubyedge::yamrb::vm::VM;
 
 #[test]
@@ -24,18 +23,18 @@ end
     // Rust method that calls mrb_funcall internally
     fn rust_method_calling_mrb_funcall(
         vm: &mut VM,
-        args: &[Rc<RObject>],
-    ) -> Result<Rc<RObject>, Error> {
+        args: &[Option<Value>],
+    ) -> Result<Value, Error> {
         // Get the first argument (should be an integer)
         let n = if !args.is_empty() {
-            let arg: i64 = args[0].as_ref().try_into()?;
+            let arg: i64 = args[0].as_ref().unwrap().try_into()?;
             arg
         } else {
             0
         };
 
         // Call Ruby's double method via mrb_funcall
-        let args_for_call = vec![Rc::new(RObject::integer(n))];
+        let args_for_call = vec![Value::Integer(n)];
         let result = mrb_funcall(vm, None, "double", &args_for_call)?;
 
         Ok(result)
@@ -50,9 +49,9 @@ end
     );
 
     // Call the Rust method which internally calls mrb_funcall
-    let args = vec![Rc::new(RObject::integer(5))];
+    let args = vec![Value::Integer(5)];
     let result = mrb_funcall(&mut vm, None, "call_double", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 10);
 }
 
@@ -73,29 +72,26 @@ complex_calc(2, 3)
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
 
-    fn rust_method_do_multiply(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-        let a: i64 = args[0].as_ref().try_into()?;
-        let b: i64 = args[1].as_ref().try_into()?;
+    fn rust_method_do_multiply(_vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+        let a: i64 = args[0].as_ref().unwrap().try_into()?;
+        let b: i64 = args[1].as_ref().unwrap().try_into()?;
 
         let result = a * b;
-        Ok(Rc::new(RObject::integer(result)))
+        Ok(Value::Integer(result))
     }
 
     // Rust method that calls multiple Ruby methods
-    fn complex_calculation(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-        let a: i64 = args[0].as_ref().try_into()?;
-        let b: i64 = args[1].as_ref().try_into()?;
+    fn complex_calculation(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
+        let a: i64 = args[0].as_ref().unwrap().try_into()?;
+        let b: i64 = args[1].as_ref().unwrap().try_into()?;
 
         // Call add(a, b)
-        let add_args = vec![Rc::new(RObject::integer(a)), Rc::new(RObject::integer(b))];
+        let add_args = vec![Value::Integer(a), Value::Integer(b)];
         let sum = mrb_funcall(vm, None, "add", &add_args)?;
 
         // Call multiply(sum, 3)
-        let sum_val: i64 = sum.as_ref().try_into()?;
-        let mul_args = vec![
-            Rc::new(RObject::integer(sum_val)),
-            Rc::new(RObject::integer(3)),
-        ];
+        let sum_val: i64 = sum.try_into()?;
+        let mul_args = vec![Value::Integer(sum_val), Value::Integer(3)];
         let result = mrb_funcall(vm, None, "multiply", &mul_args)?;
 
         Ok(result)
@@ -116,12 +112,12 @@ complex_calc(2, 3)
     );
 
     let result = vm.run().unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 15);
 
     // Test: (2 + 3) * 3 = 15
-    let args = vec![Rc::new(RObject::integer(2)), Rc::new(RObject::integer(3))];
+    let args = vec![Value::Integer(2), Value::Integer(3)];
     let result = mrb_funcall(&mut vm, None, "complex_calc", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 15);
 }

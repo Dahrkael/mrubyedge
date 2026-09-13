@@ -4,16 +4,14 @@ mod helpers;
 use helpers::*;
 use mrubyedge::Error;
 use mrubyedge::yamrb::helpers::mrb_define_cmethod;
-use mrubyedge::yamrb::value::*;
 use mrubyedge::yamrb::vm::*;
-use std::rc::Rc;
 
 fn prelude_dummy_error_func(vm: &mut VM) {
     let klass = vm.object_class.clone();
     mrb_define_cmethod(vm, klass, "dummy_raise", Box::new(mrb_test_dummy_raise));
 }
 
-fn mrb_test_dummy_raise(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_test_dummy_raise(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     Err(Error::RuntimeError("Intentional Rust Error".to_string()))
 }
 
@@ -26,9 +24,9 @@ fn prelude_custom_error_func(vm: &mut VM) {
     mrb_define_cmethod(vm, klass, "custom_raise", Box::new(mrb_test_custom_raise));
 }
 
-fn mrb_test_custom_raise(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_test_custom_raise(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     Err(Error::TaggedError(
-        "CustomError",
+        "CustomError".to_string(),
         "Intentional Custom Error".to_string(),
     ))
 }
@@ -94,7 +92,6 @@ fn rust_raise_rescue_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescued: Intentional Rust Error");
@@ -118,7 +115,6 @@ fn rust_nomethod_rescue_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert!(result.contains("rescued: Method not found"));
@@ -142,7 +138,6 @@ fn rust_noname_rescue_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescued: Cannot found name: NoName");
@@ -189,7 +184,6 @@ fn custom_error_rescue_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescued: [CustomError] Intentional Custom Error");

@@ -26,7 +26,6 @@ fn return_block_simple() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "outer", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5471);
@@ -50,7 +49,6 @@ fn return_block_with_c_func() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "outer2", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5472);
@@ -81,7 +79,6 @@ fn return_block_nested() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "outer", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5473);
@@ -112,7 +109,6 @@ fn return_block_nested_with_c_func() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "outer2", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5474);
@@ -141,7 +137,6 @@ fn return_block_nested_each_times() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "outer3", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     // k = 0+0 = 0, then 0+0, 0+1, 0+2, 0+3 = 6, then 6+1 = 7, then 7+0, 7+1, 7+2, 7+3 = 13 > 10
@@ -173,7 +168,6 @@ fn return_block_c_func_in_yield() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "outer4", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5475);
@@ -206,7 +200,6 @@ fn return_block_deeply_nested_c_func() {
     let args = vec![];
     let result: i32 = mrb_funcall(&mut vm, None, "outer5", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(result, 5476);

@@ -38,11 +38,11 @@ fn main() -> Result<(), std::io::Error> {
     let res = vm.run().unwrap();
     remove_file("/tmp/__tmp__.mrb")?;
 
-    match res.as_ref().tt {
+    match res.to_rc().tt {
         mrubyedge::yamrb::value::RType::Instance => {
             eprintln!(
                 "return value: Instance, object_id = {}",
-                res.as_ref().object_id.get()
+                res.to_rc().object_id.get()
             );
         }
         _ => eprintln!("return value: {:?}", res),

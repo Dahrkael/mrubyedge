@@ -2,10 +2,7 @@ extern crate mrubyedge;
 
 mod helpers;
 
-use std::rc::Rc;
-
 use helpers::*;
-use mrubyedge::yamrb::value::RObject;
 
 #[test]
 fn symbol_to_proc_direct() {
@@ -22,7 +19,7 @@ fn symbol_to_proc_direct() {
     vm.run().unwrap();
 
     let result = mrb_funcall(&mut vm, None, "test_to_proc_direct", &[]).unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(result_str, "HELLO");
 }
 
@@ -39,10 +36,10 @@ fn symbol_to_proc_map_to_s() {
     vm.run().unwrap();
 
     let result = mrb_funcall(&mut vm, None, "test_to_proc_map_to_s", &[]).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
-    let r0: String = result_array[0].as_ref().try_into().unwrap();
-    let r1: String = result_array[1].as_ref().try_into().unwrap();
-    let r2: String = result_array[2].as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
+    let r0: String = (&result_array[0]).try_into().unwrap();
+    let r1: String = (&result_array[1]).try_into().unwrap();
+    let r2: String = (&result_array[2]).try_into().unwrap();
     assert_eq!(r0, "1");
     assert_eq!(r1, "2");
     assert_eq!(r2, "3");
@@ -65,7 +62,7 @@ fn symbol_to_proc_keep() {
     vm.run().unwrap();
 
     let result = mrb_funcall(&mut vm, None, "test_to_proc_keep", &[]).unwrap();
-    let result: i32 = result.as_ref().try_into().unwrap();
+    let result: i32 = result.try_into().unwrap();
     assert_eq!(result, 45);
 }
 
@@ -82,7 +79,7 @@ fn symbol_to_proc_select() {
     vm.run().unwrap();
 
     let result = mrb_funcall(&mut vm, None, "test_to_proc_select", &[]).unwrap();
-    let result_array: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let result_array: Vec<Value> = result.try_into().unwrap();
     assert_eq!(result_array.len(), 2);
     assert!(result_array[0].is_nil());
     assert!(result_array[1].is_nil());

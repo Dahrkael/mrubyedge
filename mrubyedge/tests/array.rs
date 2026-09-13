@@ -18,7 +18,7 @@ fn array_add_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_add", &args).unwrap();
-    let result = result.as_vec_owned().unwrap();
+    let result = Vec::<Value>::try_from(&result).unwrap();
     assert_eq!(result.len(), 4);
 }
 
@@ -38,7 +38,7 @@ fn array_push_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_push", &args).unwrap();
-    let result = result.as_vec_owned().unwrap();
+    let result = Vec::<Value>::try_from(&result).unwrap();
     assert_eq!(result.len(), 3);
 }
 
@@ -56,7 +56,7 @@ fn array_at_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_at", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 2);
 }
 
@@ -75,7 +75,7 @@ fn array_negative_index_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_negative_index", &args).unwrap();
-    let result: (i32, i32, i32) = result.as_ref().try_into().unwrap();
+    let result: (i32, i32, i32) = result.try_into().unwrap();
     assert_eq!(result, (3, 2, 1));
 }
 
@@ -97,7 +97,7 @@ fn array_set_negative_index_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_set_negative_index", &args).unwrap();
-    let result: (i32, i32, i32) = result.as_ref().try_into().unwrap();
+    let result: (i32, i32, i32) = result.try_into().unwrap();
     assert_eq!(result, (6, 5, 4));
 }
 
@@ -117,7 +117,7 @@ fn array_clear_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_clear", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 0);
 }
 
@@ -136,7 +136,7 @@ fn array_delete_at_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_delete_at", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 2);
 }
 
@@ -154,7 +154,7 @@ fn array_empty_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_empty", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -172,7 +172,7 @@ fn array_include_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_include", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -190,7 +190,7 @@ fn array_and_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_and", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 2);
 }
 
@@ -208,7 +208,7 @@ fn array_or_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_or", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 3);
 }
 
@@ -226,7 +226,7 @@ fn array_first_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_first", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 1);
 }
 
@@ -244,7 +244,7 @@ fn array_last_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_last", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 3);
 }
 
@@ -263,7 +263,7 @@ fn array_pop_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_pop", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 3);
 }
 
@@ -282,7 +282,7 @@ fn array_shift_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_shift", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 1);
 }
 
@@ -302,7 +302,7 @@ fn array_unshift_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_unshift", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 1);
 }
 
@@ -322,7 +322,7 @@ fn array_dup_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_dup", &args).unwrap();
-    let result: bool = result.as_ref().try_into().unwrap();
+    let result: bool = result.try_into().unwrap();
     assert!(result);
 }
 
@@ -342,7 +342,7 @@ fn array_uniq_self_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_uniq_self", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 3);
 }
 
@@ -360,7 +360,7 @@ fn array_join_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_join", &args).unwrap();
-    let result: String = result.as_ref().try_into().unwrap();
+    let result: String = result.try_into().unwrap();
     assert_eq!(result, "1,2,3");
 }
 
@@ -386,7 +386,7 @@ fn array_reference_mutation_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_array_reference", &args).unwrap();
-    let result: i64 = result.as_ref().try_into().unwrap();
+    let result: i64 = result.try_into().unwrap();
     assert_eq!(result, 3);
 }
 
@@ -414,20 +414,18 @@ fn array_reference_mutation_recursive_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_recursive_mutation", &args).unwrap();
-    let outer: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let outer: Vec<Value> = result.try_into().unwrap();
 
     // arr[0] should be 5
-    let final_count: i64 = outer[0].as_ref().try_into().unwrap();
+    let final_count: i64 = (&outer[0]).try_into().unwrap();
     assert_eq!(final_count, 5);
 
     // results should be [1, 2, 3, 4, 5]
-    let results: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        outer[1].as_ref().try_into().unwrap();
+    let results: Vec<Value> = (&outer[1]).try_into().unwrap();
     assert_eq!(results.len(), 5);
 
     for (i, item) in results.iter().enumerate() {
-        let val: i64 = item.as_ref().try_into().unwrap();
+        let val: i64 = item.try_into().unwrap();
         assert_eq!(val, (i + 1) as i64);
     }
 }
@@ -446,11 +444,10 @@ fn array_flatten_basic_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_flatten_basic", &args).unwrap();
-    let arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
 
     assert_eq!(arr.len(), 4);
-    let vals: Vec<i64> = arr.iter().map(|r| r.as_ref().try_into().unwrap()).collect();
+    let vals: Vec<i64> = arr.iter().map(|r| r.try_into().unwrap()).collect();
     assert_eq!(vals, vec![1, 2, 3, 4]);
 }
 
@@ -468,11 +465,10 @@ fn array_flatten_nested_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_flatten_nested", &args).unwrap();
-    let arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
 
     assert_eq!(arr.len(), 5);
-    let vals: Vec<i64> = arr.iter().map(|r| r.as_ref().try_into().unwrap()).collect();
+    let vals: Vec<i64> = arr.iter().map(|r| r.try_into().unwrap()).collect();
     assert_eq!(vals, vec![1, 2, 3, 4, 5]);
 }
 
@@ -490,8 +486,7 @@ fn array_flatten_empty_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_flatten_empty", &args).unwrap();
-    let arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
 
     assert_eq!(arr.len(), 0);
 }
@@ -510,11 +505,10 @@ fn array_flatten_no_nested_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_flatten_no_nested", &args).unwrap();
-    let arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
 
     assert_eq!(arr.len(), 3);
-    let vals: Vec<i64> = arr.iter().map(|r| r.as_ref().try_into().unwrap()).collect();
+    let vals: Vec<i64> = arr.iter().map(|r| r.try_into().unwrap()).collect();
     assert_eq!(vals, vec![1, 2, 3]);
 }
 
@@ -534,11 +528,10 @@ fn array_flatten_self_basic_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_flatten_self_basic", &args).unwrap();
-    let arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
 
     assert_eq!(arr.len(), 4);
-    let vals: Vec<i64> = arr.iter().map(|r| r.as_ref().try_into().unwrap()).collect();
+    let vals: Vec<i64> = arr.iter().map(|r| r.try_into().unwrap()).collect();
     assert_eq!(vals, vec![1, 2, 3, 4]);
 }
 
@@ -559,7 +552,48 @@ fn array_flatten_self_returns_nil_if_no_change_test() {
     let result = mrb_funcall(&mut vm, None, "test_flatten_self_no_change", &args).unwrap();
 
     // Should return nil if no changes were made
-    assert!(result.as_ref().is_nil());
+    assert!(result.is_nil());
+}
+
+#[test]
+fn array_literal_over_stack_flush_size_test() {
+    let code = r#"
+    def test_big_literal_size
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144].size
+    end
+    "#;
+    let binary = mrbc_compile("big_literal_size", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+
+    let args = vec![];
+    let result = mrb_funcall(&mut vm, None, "test_big_literal_size", &args).unwrap();
+    let result: i64 = result.try_into().unwrap();
+    assert_eq!(result, 144);
+}
+
+#[test]
+fn array_literal_over_stack_flush_spot_values_test() {
+    let code = r#"
+    def test_big_literal_spot
+      a = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144]
+      [a.size, a[0], a[72], a[143]]
+    end
+    "#;
+    let binary = mrbc_compile("big_literal_spot", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+
+    let args = vec![];
+    let result = mrb_funcall(&mut vm, None, "test_big_literal_spot", &args).unwrap();
+    let outer: Vec<Value> = result.try_into().unwrap();
+    let size: i64 = (&outer[0]).try_into().unwrap();
+    let first: i64 = (&outer[1]).try_into().unwrap();
+    let middle: i64 = (&outer[2]).try_into().unwrap();
+    let last: i64 = (&outer[3]).try_into().unwrap();
+    assert_eq!((size, first, middle, last), (144, 1, 73, 144));
 }
 
 #[test]
@@ -578,27 +612,239 @@ fn array_flatten_self_returns_self_if_changed_test() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_flatten_self_changed", &args).unwrap();
-    let outer: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        result.as_ref().try_into().unwrap();
+    let outer: Vec<Value> = result.try_into().unwrap();
 
     // result (outer[0]) should be the same as a (outer[1])
-    let result_arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        outer[0].as_ref().try_into().unwrap();
-    let a_arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
-        outer[1].as_ref().try_into().unwrap();
+    let result_arr: Vec<Value> = (&outer[0]).try_into().unwrap();
+    let a_arr: Vec<Value> = (&outer[1]).try_into().unwrap();
 
     assert_eq!(result_arr.len(), 3);
     assert_eq!(a_arr.len(), 3);
 
-    let result_vals: Vec<i64> = result_arr
-        .iter()
-        .map(|r| r.as_ref().try_into().unwrap())
-        .collect();
-    let a_vals: Vec<i64> = a_arr
-        .iter()
-        .map(|r| r.as_ref().try_into().unwrap())
-        .collect();
+    let result_vals: Vec<i64> = result_arr.iter().map(|r| r.try_into().unwrap()).collect();
+    let a_vals: Vec<i64> = a_arr.iter().map(|r| r.try_into().unwrap()).collect();
 
     assert_eq!(result_vals, vec![1, 2, 3]);
     assert_eq!(a_vals, vec![1, 2, 3]);
+}
+
+#[test]
+fn array_return_splat_array_test() {
+    let code = r#"
+    def test_return_splat
+      a = [1, 2, 3]
+      return *a
+    end
+    "#;
+    let binary = mrbc_compile("return_splat_array", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+
+    let args = vec![];
+    let result = mrb_funcall(&mut vm, None, "test_return_splat", &args).unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
+    let vals: Vec<i64> = arr.iter().map(|r| r.try_into().unwrap()).collect();
+    assert_eq!(vals, vec![1, 2, 3]);
+}
+
+#[test]
+fn array_return_splat_nil_test() {
+    let code = r#"
+    def test_return_splat_nil
+      return *nil
+    end
+    "#;
+    let binary = mrbc_compile("return_splat_nil", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+
+    let args = vec![];
+    let result = mrb_funcall(&mut vm, None, "test_return_splat_nil", &args).unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
+    assert_eq!(arr.len(), 0);
+}
+
+#[test]
+fn array_return_splat_scalar_test() {
+    let code = r#"
+    def test_return_splat_scalar
+      return *5
+    end
+    "#;
+    let binary = mrbc_compile("return_splat_scalar", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+
+    let args = vec![];
+    let result = mrb_funcall(&mut vm, None, "test_return_splat_scalar", &args).unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
+    let vals: Vec<i64> = arr.iter().map(|r| r.try_into().unwrap()).collect();
+    assert_eq!(vals, vec![5]);
+}
+
+// ------------------------------------------------------- GETIDX / SETIDX ----
+
+fn array_run(code: &'static str, fname: &'static str) -> Vec<i64> {
+    let binary = mrbc_compile(fname, code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let arr: Vec<Value> = mrb_funcall(&mut vm, None, "test_main", &[])
+        .unwrap()
+        .try_into()
+        .unwrap();
+    arr.iter().map(|r| r.try_into().unwrap()).collect()
+}
+
+#[test]
+fn array_getidx_basic_test() {
+    let code = r#"
+    def test_main
+      a = [10, 20, 30]
+      [a[0], a[1], a[2]]
+    end
+    "#;
+    assert_eq!(array_run(code, "getidx_basic"), vec![10, 20, 30]);
+}
+
+#[test]
+fn array_getidx_negative_test() {
+    let code = r#"
+    def test_main
+      a = [10, 20, 30]
+      [a[-1], a[-2], a[-3]]
+    end
+    "#;
+    assert_eq!(array_run(code, "getidx_negative"), vec![30, 20, 10]);
+}
+
+#[test]
+fn array_getidx_out_of_bounds_nil_test() {
+    let code = r#"
+    def test_main
+      a = [10, 20]
+      [a[5], a[-9]]
+    end
+    "#;
+    let binary = mrbc_compile("getidx_oob", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let arr: Vec<Value> = mrb_funcall(&mut vm, None, "test_main", &[])
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert!(arr.len() == 2);
+    assert!(arr[0].is_nil());
+    assert!(arr[1].is_nil());
+}
+
+#[test]
+fn array_setidx_basic_test() {
+    let code = r#"
+    def test_main
+      a = [10, 20]
+      a[1] = 99
+      [a[0], a[1]]
+    end
+    "#;
+    assert_eq!(array_run(code, "setidx_basic"), vec![10, 99]);
+}
+
+#[test]
+fn array_setidx_negative_test() {
+    let code = r#"
+    def test_main
+      a = [10, 20]
+      a[-1] = 7
+      [a[0], a[1]]
+    end
+    "#;
+    assert_eq!(array_run(code, "setidx_negative"), vec![10, 7]);
+}
+
+#[test]
+fn array_setidx_append_test() {
+    // index == len appends (falls back to the native [] = path).
+    let code = r#"
+    def test_main
+      a = [10, 20]
+      a[2] = 30
+      a
+    end
+    "#;
+    assert_eq!(array_run(code, "setidx_append"), vec![10, 20, 30]);
+}
+
+#[test]
+fn array_getidx_multidimensional_test() {
+    let code = r#"
+    def test_main
+      a = [[1, 2], [3, 4]]
+      [a[0][1], a[1][0]]
+    end
+    "#;
+    assert_eq!(array_run(code, "getidx_multi"), vec![2, 3]);
+}
+
+#[test]
+fn array_setidx_multidimensional_test() {
+    let code = r#"
+    def test_main
+      a = [[1, 2], [3, 4]]
+      a[1][1] = 9
+      [a[0][1], a[1][1]]
+    end
+    "#;
+    assert_eq!(array_run(code, "setidx_multi"), vec![2, 9]);
+}
+
+#[test]
+fn hash_getidx_still_works_test() {
+    // GETIDX on a non-Array receiver must keep dispatching to [].
+    let code = r#"
+    def test_main
+      h = {1 => "a", 2 => "b"}
+      [h[1], h[2]]
+    end
+    "#;
+    let binary = mrbc_compile("getidx_hash", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let arr: Vec<Value> = mrb_funcall(&mut vm, None, "test_main", &[])
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let vals: Vec<String> = arr.iter().map(|r| r.try_into().unwrap()).collect();
+    assert_eq!(vals, vec!["a".to_string(), "b".to_string()]);
+}
+
+#[test]
+fn redefined_array_index_is_respected_test() {
+    // Overriding Array#[] must disable the GETIDX fast path.
+    let code = r#"
+    class Array
+      def [](i)
+        "custom"
+      end
+    end
+
+    def test_main
+      a = [1, 2, 3]
+      a[0]
+    end
+    "#;
+    let binary = mrbc_compile("getidx_redefined", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    vm.run().unwrap();
+    let result: String = mrb_funcall(&mut vm, None, "test_main", &[])
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert_eq!(result, "custom");
 }

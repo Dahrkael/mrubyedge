@@ -2,8 +2,7 @@ use std::error;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::yamrb::value::RClass;
-use crate::yamrb::value::RObject;
+use crate::yamrb::value::{RClass, Value};
 use crate::yamrb::vm::VM;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,10 +18,12 @@ pub enum Error {
     NameError(String),
     ZeroDivisionError,
 
-    TaggedError(&'static str, String),
+    TaggedError(String, String),
 
-    Break(Rc<RObject>),
-    BlockReturn(usize, Rc<RObject>),
+    LocalJumpError(String),
+
+    Break(Value),
+    BlockReturn(usize, Value),
 }
 
 impl fmt::Display for Error {
@@ -53,6 +54,8 @@ impl Error {
 
             Error::TaggedError(tag, msg) => format!("[{}] {}", tag, msg),
 
+            Error::LocalJumpError(msg) => msg.clone(),
+
             Error::Break(_) => "[Break]".to_string(),
             Error::BlockReturn(_, _) => "[BlockReturn]".to_string(),
         }
@@ -71,6 +74,7 @@ impl Error {
                 | (Error::NoMethodError(_), "NoMethodError")
                 | (Error::NameError(_), "NameError")
                 | (Error::ZeroDivisionError, "ZeroDivisionError")
+                | (Error::LocalJumpError(_), "LocalJumpError")
         )
     }
 
@@ -120,6 +124,8 @@ impl From<Error> for StaticError {
             Error::ZeroDivisionError => StaticError::General("divided by 0".to_string()),
 
             Error::TaggedError(tag, msg) => StaticError::General(format!("[{}] {}", tag, msg)),
+
+            Error::LocalJumpError(msg) => StaticError::General(msg),
 
             Error::Break(_) => StaticError::General("[Break]".to_string()),
             Error::BlockReturn(_, _) => StaticError::General("[BlockReturn]".to_string()),

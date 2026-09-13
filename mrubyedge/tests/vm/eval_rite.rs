@@ -1,9 +1,6 @@
 extern crate mrubyedge;
 
-use std::rc::Rc;
-
 use super::helpers::*;
-use mrubyedge::yamrb::value::RObject;
 
 #[test]
 fn test_eval_multiple_rites_with_classes() {
@@ -47,13 +44,13 @@ fn test_eval_multiple_rites_with_classes() {
     // Call the method that uses both classes
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_both", &args).unwrap();
-    let arr: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
     assert_eq!(
-        TryInto::<String>::try_into(arr[0].as_ref()).unwrap(),
+        TryInto::<String>::try_into(&arr[0]).unwrap(),
         "Hello from Foo"
     );
     assert_eq!(
-        TryInto::<String>::try_into(arr[1].as_ref()).unwrap(),
+        TryInto::<String>::try_into(&arr[1]).unwrap(),
         "Hello from Bar"
     );
 }
@@ -93,13 +90,13 @@ fn test_eval_multiple_rites_accumulate_methods() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_methods", &args).unwrap();
-    let arr: Vec<Rc<RObject>> = result.as_ref().try_into().unwrap();
+    let arr: Vec<Value> = result.try_into().unwrap();
     assert_eq!(
-        TryInto::<String>::try_into(arr[0].as_ref()).unwrap(),
+        TryInto::<String>::try_into(&arr[0]).unwrap(),
         "Hello, Alice!"
     );
     assert_eq!(
-        TryInto::<String>::try_into(arr[1].as_ref()).unwrap(),
+        TryInto::<String>::try_into(&arr[1]).unwrap(),
         "Goodbye, Bob!"
     );
 }
@@ -144,7 +141,7 @@ fn test_eval_multiple_rites_with_inheritance() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_inheritance", &args).unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(result_str, "Woof!");
 }
 
@@ -190,6 +187,6 @@ fn test_eval_multiple_rites_with_modules() {
 
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_module_include", &args).unwrap();
-    let result_str: String = result.as_ref().try_into().unwrap();
+    let result_str: String = result.try_into().unwrap();
     assert_eq!(result_str, "Hello from Alice");
 }

@@ -17,6 +17,6 @@ fn test_singleton_class() {
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
     let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
     let result = vm.run().unwrap();
-    let result: i32 = result.as_ref().try_into().unwrap();
+    let result: i32 = result.try_into().unwrap();
     assert_eq!(result, 123);
 }

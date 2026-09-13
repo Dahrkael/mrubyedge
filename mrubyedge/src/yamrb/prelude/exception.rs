@@ -32,6 +32,7 @@ pub(crate) fn initialize_exception(vm: &mut VM) {
     let _ = vm.define_standard_class_with_superclass("SystemCallError", std_exp_class.clone());
     let _ = vm.define_standard_class_with_superclass("NoMethodError", std_exp_class.clone());
     let _ = vm.define_standard_class_with_superclass("NameError", std_exp_class.clone());
+    let _ = vm.define_standard_class_with_superclass("LocalJumpError", std_exp_class.clone());
 
     // Dummy class for 'break' control flow
     let _ = vm.define_standard_class("_Break");
@@ -40,12 +41,14 @@ pub(crate) fn initialize_exception(vm: &mut VM) {
     mrb_define_cmethod(vm, exp_class, "message", Box::new(mrb_exception_message));
 }
 
-pub fn mrb_exception_message(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_exception_message(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let exp = vm.getself()?;
-    match &exp.value {
-        RValue::Exception(e) => {
+    match exp.rvalue() {
+        Some(RValue::Exception(e)) => {
             let message = e.as_ref().message.clone();
-            Ok(RObject::string(message).to_refcount_assigned())
+            Ok(Value::from_rc(
+                RObject::string(message).to_refcount_assigned(),
+            ))
         }
         _ => Err(Error::RuntimeError(
             "Exception#message must be called on an Exception".to_string(),

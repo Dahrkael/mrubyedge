@@ -127,7 +127,6 @@ fn rescue_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescue: Intentional Error 3");
@@ -159,7 +158,6 @@ fn rescue_nest_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise_parent", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescue: Intentional Error 4");
@@ -196,7 +194,6 @@ fn rescue_nest_nest_test() {
     let args = vec![];
     let result: String = mrb_funcall(&mut vm, None, "test_raise_parent", &args)
         .unwrap()
-        .as_ref()
         .try_into()
         .unwrap();
     assert_eq!(&result, "rescue: Intentional Error 4b");
@@ -219,6 +216,6 @@ fn no_matching_pattern_error_is_a_standard_error_test() {
     // Assert
     let args = vec![];
     let result = mrb_funcall(&mut vm, None, "test_no_matching_pattern_error", &args).unwrap();
-    let is_standard_error: bool = result.as_ref().try_into().unwrap();
+    let is_standard_error: bool = (&result).try_into().unwrap();
     assert!(is_standard_error);
 }

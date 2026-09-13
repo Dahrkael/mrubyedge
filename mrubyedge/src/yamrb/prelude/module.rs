@@ -21,16 +21,23 @@ pub(crate) fn initialize_module(vm: &mut VM) {
     );
 }
 
-fn mrb_module_include(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_module_include(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     if args.is_empty() {
         return Err(Error::RuntimeError(
             "Module#include expects at least one module".to_string(),
         ));
     }
 
-    let arg0 = &args[0];
-    let mixin = match &arg0.value {
-        RValue::Module(module) => module.clone(),
+    let arg0 = args[0].as_ref().unwrap().clone();
+    let mixin = match &arg0 {
+        Value::Object(o) => match &o.value {
+            RValue::Module(module) => module.clone(),
+            _ => {
+                return Err(Error::RuntimeError(
+                    "Module#include expects module arguments".to_string(),
+                ));
+            }
+        },
         _ => {
             return Err(Error::RuntimeError(
                 "Module#include expects module arguments".to_string(),
@@ -39,15 +46,16 @@ fn mrb_module_include(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
     };
 
     let self_obj = vm.getself()?;
-    match &self_obj.value {
-        RValue::Class(klass) => mrb_include_module(klass, mixin)?,
-        RValue::Module(module) => mrb_include_module(module, mixin)?,
+    match self_obj.rvalue() {
+        Some(RValue::Class(klass)) => mrb_include_module(klass, mixin)?,
+        Some(RValue::Module(module)) => mrb_include_module(module, mixin)?,
         _ => {
             return Err(Error::RuntimeError(
                 "Module#include must be called on class or module".to_string(),
             ));
         }
     };
+    vm.bump_method_version();
 
     Ok(self_obj)
 }
@@ -73,19 +81,21 @@ pub fn mrb_include_module(target: &impl AsModule, mixin: Rc<RModule>) -> Result<
     Ok(())
 }
 
-fn mrb_module_ancestors(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_module_ancestors(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let self_module = vm.getself()?;
-    let target_module = match &self_module.value {
-        RValue::Module(module) => module.clone(),
+    let target_module = match self_module.rvalue() {
+        Some(RValue::Module(module)) => module.clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Module#ancestors must be called on class or module".to_string(),
             ));
         }
     };
-    let ancestors: Vec<Rc<RObject>> = build_module_lookup_chain(&target_module)
+    let ancestors: Vec<Value> = build_module_lookup_chain(&target_module)
         .iter()
-        .map(|m| RObject::module(m.clone()).to_refcount_assigned())
+        .map(|m| Value::from_rc(RObject::module(m.clone()).to_refcount_assigned()))
         .collect();
-    Ok(RObject::array(ancestors).to_refcount_assigned())
+    Ok(Value::from_rc(
+        RObject::array(ancestors).to_refcount_assigned(),
+    ))
 }

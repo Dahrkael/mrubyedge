@@ -5,7 +5,7 @@ use crate::{
     yamrb::{
         helpers::{mrb_call_block, mrb_call_inspect, mrb_define_class_cmethod, mrb_define_cmethod},
         prelude::module::mrb_include_module,
-        value::{RHashMap, RObject, RValue},
+        value::{RHashMap, RObject, RValue, Value},
         vm::VM,
     },
 };
@@ -81,18 +81,18 @@ pub(crate) fn initialize_hash(vm: &mut VM) {
     mrb_include_module(&hash_class, enumerable_module).expect("failed to include Enumerable");
 }
 
-pub fn mrb_hash_new(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    Ok(Rc::new(RObject::hash(RHashMap::default())))
+pub fn mrb_hash_new(_vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
+    Ok(Value::from_rc(Rc::new(RObject::hash(RHashMap::default()))))
 }
 
-fn mrb_hash_get_index_self(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_get_index_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    mrb_hash_get_index(this, args[0].clone())
+    mrb_hash_get_index(&this, args[0].as_ref().unwrap().clone())
 }
 
-pub fn mrb_hash_get_index(this: Rc<RObject>, key: Rc<RObject>) -> Result<Rc<RObject>, Error> {
-    let hash = match &this.value {
-        RValue::Hash(a) => a.clone(),
+pub fn mrb_hash_get_index(this: &Value, key: Value) -> Result<Value, Error> {
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(a)) => a,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#[] must called on a hash".to_string(),
@@ -100,27 +100,23 @@ pub fn mrb_hash_get_index(this: Rc<RObject>, key: Rc<RObject>) -> Result<Rc<RObj
         }
     };
     let hash = hash.borrow();
-    let key = key.as_ref().as_hash_key()?;
+    let key = key.as_hash_key()?;
     match hash.get(&key) {
         Some((_, value)) => Ok(value.clone()),
-        None => Ok(Rc::new(RObject::nil())),
+        None => Ok(Value::Nil),
     }
 }
 
-fn mrb_hash_set_index_self(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_set_index_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let key = args[0].clone();
-    let value = args[1].clone();
-    mrb_hash_set_index(this, key, value)
+    let key = args[0].as_ref().unwrap().clone();
+    let value = args[1].as_ref().unwrap().clone();
+    mrb_hash_set_index(&this, key, value)
 }
 
-pub fn mrb_hash_set_index(
-    this: Rc<RObject>,
-    key: Rc<RObject>,
-    value: Rc<RObject>,
-) -> Result<Rc<RObject>, Error> {
-    let hash = match &this.value {
-        RValue::Hash(a) => a,
+pub fn mrb_hash_set_index(this: &Value, key: Value, value: Value) -> Result<Value, Error> {
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(a)) => a,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#[] must called on a hash".to_string(),
@@ -130,12 +126,12 @@ pub fn mrb_hash_set_index(
     let mut hash = hash.borrow_mut();
     let hashed = key.as_hash_key()?;
     hash.insert(hashed, (key.clone(), value.clone()));
-    Ok(value.clone())
+    Ok(value)
 }
 
-pub fn mrb_hash_delete(this: Rc<RObject>, key: Rc<RObject>) -> Result<Rc<RObject>, Error> {
-    let hash = match &this.value {
-        RValue::Hash(a) => a,
+pub fn mrb_hash_delete(this: &Value, key: Value) -> Result<Value, Error> {
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(a)) => a,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#delete must called on a hash".to_string(),
@@ -145,26 +141,36 @@ pub fn mrb_hash_delete(this: Rc<RObject>, key: Rc<RObject>) -> Result<Rc<RObject
     let mut hash = hash.borrow_mut();
     let hashed = key.as_hash_key()?;
     match hash.remove(&hashed) {
-        Some((_, value)) => Ok(value.clone()),
-        None => Ok(Rc::new(RObject::nil())),
+        Some((_, value)) => Ok(value),
+        None => Ok(Value::Nil),
     }
 }
 
-fn mrb_hash_delete_self(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_delete_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let key = args[0].clone();
-    mrb_hash_delete(this, key)
+    let key = args[0].as_ref().unwrap().clone();
+    mrb_hash_delete(&this, key)
 }
 
-fn mrb_hash_each(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_each(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let block = &args[0];
-    match &this.value {
-        RValue::Hash(hash) => {
+    let block = args[0].as_ref().unwrap().clone();
+    match this.rvalue() {
+        Some(RValue::Hash(hash)) => {
             let hash = hash.borrow();
-            for (_, (key, value)) in hash.iter() {
+            for (key, value) in hash.values() {
                 let args = vec![key.clone(), value.clone()];
-                mrb_call_block(vm, block.clone(), None, &args, 0)?;
+                match mrb_call_block(vm, block.to_rc(), None, &args, 0) {
+                    Ok(_) => {}
+                    // break inside the block stops each and
+                    // its value becomes the method result (Ruby semantics).
+                    // Consume the pending exception (see integer.rs note).
+                    Err(Error::Break(v)) => {
+                        vm.exception.take();
+                        return Ok(v);
+                    }
+                    Err(e) => return Err(e),
+                }
             }
         }
         _ => {
@@ -173,13 +179,13 @@ fn mrb_hash_each(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error
             ));
         }
     };
-    Ok(this.clone())
+    Ok(this)
 }
 
-fn mrb_hash_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let hash = match &this.value {
-        RValue::Hash(h) => h,
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(h)) => h,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#inspect must be called on a hash".to_string(),
@@ -188,13 +194,15 @@ fn mrb_hash_inspect(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
     };
     let hash = hash.borrow();
     let mut parts: Vec<String> = Vec::new();
-    for (_, (key, value)) in hash.iter() {
-        let key_inspect: String = mrb_call_inspect(vm, key.clone())?.as_ref().try_into()?;
-        let value_inspect: String = mrb_call_inspect(vm, value.clone())?.as_ref().try_into()?;
+    for (key, value) in hash.values() {
+        let ki = mrb_call_inspect(vm, key)?;
+        let key_inspect: String = (&ki).try_into()?;
+        let vi = mrb_call_inspect(vm, value)?;
+        let value_inspect: String = (&vi).try_into()?;
         parts.push(format!("{}=>{}", key_inspect, value_inspect));
     }
     let inspect = format!("{{{}}}", parts.join(", "));
-    Ok(Rc::new(RObject::string(inspect)))
+    Ok(Value::from_rc(Rc::new(RObject::string(inspect))))
 }
 
 #[test]
@@ -210,30 +218,23 @@ fn test_mrb_hash_set_and_index() {
     let mut vm = VM::empty();
     prelude::prelude(&mut vm);
 
-    let hash = Rc::new(RObject::hash(RHashMap::default()));
+    let hash = Value::from_rc(Rc::new(RObject::hash(RHashMap::default())));
     let keys = [
-        Rc::new(RObject::string("key".to_string())),
-        Rc::new(RObject::integer(1234)),
-        Rc::new(RObject::symbol("key2".into())),
+        Value::from_rc(Rc::new(RObject::string("key".to_string()))),
+        Value::Integer(1234),
+        Value::from_rc(Rc::new(RObject::symbol("key2".into()))),
     ];
-    let values = [
-        Rc::new(RObject::integer(1)),
-        Rc::new(RObject::integer(2)),
-        Rc::new(RObject::integer(42)),
-    ];
+    let values = [Value::Integer(1), Value::Integer(2), Value::Integer(42)];
 
     for (i, key) in keys.iter().enumerate() {
         let value = &values[i];
-        mrb_hash_set_index(hash.clone(), key.clone(), value.clone()).expect("set index failed");
+        mrb_hash_set_index(&hash, key.clone(), value.clone()).expect("set index failed");
     }
 
     for (i, key) in keys.iter().enumerate() {
-        let value = mrb_hash_get_index(hash.clone(), key.clone()).expect("getting index failed");
-        let value: i64 = value.as_ref().try_into().expect("value is not integer");
-        let expected: i64 = values[i]
-            .as_ref()
-            .try_into()
-            .expect("expected is not integer");
+        let value = mrb_hash_get_index(&hash, key.clone()).expect("getting index failed");
+        let value: i64 = (&value).try_into().expect("value is not integer");
+        let expected: i64 = (&values[i]).try_into().expect("expected is not integer");
         assert_eq!(value, expected);
     }
 }
@@ -244,22 +245,21 @@ fn test_mrb_hash_set_and_index_not_found() {
     let mut vm = VM::empty();
     prelude::prelude(&mut vm);
 
-    let hash = Rc::new(RObject::hash(RHashMap::default()));
-    let key = Rc::new(RObject::string("key".to_string()));
-    let value = Rc::new(RObject::integer(42));
+    let hash = Value::from_rc(Rc::new(RObject::hash(RHashMap::default())));
+    let key = Value::from_rc(Rc::new(RObject::string("key".to_string())));
+    let value = Value::Integer(42);
 
-    mrb_hash_set_index(hash.clone(), key.clone(), value.clone()).expect("set index failed");
+    mrb_hash_set_index(&hash, key.clone(), value.clone()).expect("set index failed");
 
-    let key = Rc::new(RObject::string("key2".to_string()));
-    let value = mrb_hash_get_index(hash.clone(), key.clone()).expect("getting index failed");
-    let value = value.as_ref();
+    let key = Value::from_rc(Rc::new(RObject::string("key2".to_string())));
+    let value = mrb_hash_get_index(&hash, key.clone()).expect("getting index failed");
     assert!(value.is_nil());
 }
 
-fn mrb_hash_size(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_size(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let hash = match &this.value {
-        RValue::Hash(a) => a,
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(a)) => a,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#size must be called on a hash".to_string(),
@@ -267,65 +267,65 @@ fn mrb_hash_size(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Erro
         }
     };
     let hash = hash.borrow();
-    Ok(Rc::new(RObject::integer(hash.len() as i64)))
+    Ok(Value::Integer(hash.len() as i64))
 }
 
 // Hash#clear: Removes all key-value pairs from the hash (destructive)
-fn mrb_hash_clear(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_clear(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
     this.hash_borrow_mut()?.clear();
     Ok(this)
 }
 
 // Hash#dup: Returns a shallow copy of the hash
-fn mrb_hash_dup(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_dup(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let hash = match &this.value {
-        RValue::Hash(h) => h.borrow().clone(),
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(h)) => h.borrow().clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#dup must be called on a hash".to_string(),
             ));
         }
     };
-    Ok(Rc::new(RObject::hash(hash)))
+    Ok(Value::from_rc(Rc::new(RObject::hash(hash))))
 }
 
 // Hash#empty?: Returns true if the hash contains no key-value pairs
-fn mrb_hash_empty(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_empty(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let hash = match &this.value {
-        RValue::Hash(h) => h,
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(h)) => h,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#empty? must be called on a hash".to_string(),
             ));
         }
     };
-    Ok(Rc::new(RObject::boolean(hash.borrow().is_empty())))
+    Ok(Value::Bool(hash.borrow().is_empty()))
 }
 
 // Hash#has_key?: Returns true if the given key is present in the hash
-fn mrb_hash_has_key(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_has_key(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let key = args[0].as_hash_key()?;
-    let hash = match &this.value {
-        RValue::Hash(h) => h,
+    let key = args[0].as_ref().unwrap().clone().as_hash_key()?;
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(h)) => h,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#has_key? must be called on a hash".to_string(),
             ));
         }
     };
-    Ok(Rc::new(RObject::boolean(hash.borrow().contains_key(&key))))
+    Ok(Value::Bool(hash.borrow().contains_key(&key)))
 }
 
 // Hash#has_value?: Returns true if the given value is present for some key in the hash
-fn mrb_hash_has_value(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_has_value(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let search_value = &args[0];
-    let hash = match &this.value {
-        RValue::Hash(h) => h,
+    let search_value = args[0].as_ref().unwrap().clone();
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(h)) => h,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#has_value? must be called on a hash".to_string(),
@@ -334,20 +334,20 @@ fn mrb_hash_has_value(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
     };
 
     let search_eq = search_value.as_eq_value();
-    for (_, (_, value)) in hash.borrow().iter() {
+    for (_, value) in hash.borrow().values() {
         if value.as_eq_value() == search_eq {
-            return Ok(Rc::new(RObject::boolean(true)));
+            return Ok(Value::Bool(true));
         }
     }
-    Ok(Rc::new(RObject::boolean(false)))
+    Ok(Value::Bool(false))
 }
 
 // Hash#key: Returns the key of an occurrence of a given value
-fn mrb_hash_key(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_key(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let search_value = &args[0];
-    let hash = match &this.value {
-        RValue::Hash(h) => h,
+    let search_value = args[0].as_ref().unwrap().clone();
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(h)) => h,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#key must be called on a hash".to_string(),
@@ -356,19 +356,19 @@ fn mrb_hash_key(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error>
     };
 
     let search_eq = search_value.as_eq_value();
-    for (_, (key, value)) in hash.borrow().iter() {
+    for (key, value) in hash.borrow().values() {
         if value.as_eq_value() == search_eq {
             return Ok(key.clone());
         }
     }
-    Ok(Rc::new(RObject::nil()))
+    Ok(Value::Nil)
 }
 
 // Hash#keys: Returns a new array populated with the keys from this hash
-fn mrb_hash_keys(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_keys(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let hash = match &this.value {
-        RValue::Hash(h) => h,
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(h)) => h,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#keys must be called on a hash".to_string(),
@@ -376,15 +376,15 @@ fn mrb_hash_keys(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Erro
         }
     };
 
-    let keys: Vec<Rc<RObject>> = hash.borrow().values().map(|(k, _)| k.clone()).collect();
-    Ok(RObject::array(keys).to_refcount_assigned())
+    let keys: Vec<Value> = hash.borrow().values().map(|(k, _)| k.clone()).collect();
+    Ok(Value::from_rc(RObject::array(keys).to_refcount_assigned()))
 }
 
 // Hash#values: Returns a new array populated with the values from this hash
-fn mrb_hash_values(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_values(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let hash = match &this.value {
-        RValue::Hash(h) => h,
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(h)) => h,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#values must be called on a hash".to_string(),
@@ -392,17 +392,19 @@ fn mrb_hash_values(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Er
         }
     };
 
-    let values: Vec<Rc<RObject>> = hash.borrow().values().map(|(_, v)| v.clone()).collect();
-    Ok(RObject::array(values).to_refcount_assigned())
+    let values: Vec<Value> = hash.borrow().values().map(|(_, v)| v.clone()).collect();
+    Ok(Value::from_rc(
+        RObject::array(values).to_refcount_assigned(),
+    ))
 }
 
 // Hash#merge: Returns a new hash containing the contents of other_hash and the contents of self
-fn mrb_hash_merge(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_merge(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let other = &args[0];
+    let other = args[0].as_ref().unwrap().clone();
 
-    let this_hash = match &this.value {
-        RValue::Hash(h) => h.borrow().clone(),
+    let this_hash = match this.rvalue() {
+        Some(RValue::Hash(h)) => h.borrow().clone(),
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#merge must be called on a hash".to_string(),
@@ -410,8 +412,13 @@ fn mrb_hash_merge(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Erro
         }
     };
 
-    let other_hash = match &other.value {
-        RValue::Hash(h) => h,
+    let other_hash = match &other {
+        Value::Object(o) => match &o.value {
+            RValue::Hash(h) => h,
+            _ => {
+                return Err(Error::ArgumentError("argument must be a hash".to_string()));
+            }
+        },
         _ => {
             return Err(Error::ArgumentError("argument must be a hash".to_string()));
         }
@@ -422,16 +429,21 @@ fn mrb_hash_merge(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Erro
         result.insert(key_hash.clone(), (key.clone(), value.clone()));
     }
 
-    Ok(RObject::hash(result).to_refcount_assigned())
+    Ok(Value::from_rc(RObject::hash(result).to_refcount_assigned()))
 }
 
 // Hash#merge!: Adds the contents of other_hash to self (destructive)
-fn mrb_hash_merge_self(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_merge_self(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let other = &args[0];
+    let other = args[0].as_ref().unwrap().clone();
 
-    let other_hash = match &other.value {
-        RValue::Hash(h) => h,
+    let other_hash = match &other {
+        Value::Object(o) => match &o.value {
+            RValue::Hash(h) => h,
+            _ => {
+                return Err(Error::ArgumentError("argument must be a hash".to_string()));
+            }
+        },
         _ => {
             return Err(Error::ArgumentError("argument must be a hash".to_string()));
         }
@@ -447,16 +459,16 @@ fn mrb_hash_merge_self(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>,
 }
 
 // Hash#to_h: Returns self
-fn mrb_hash_to_h(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_to_h(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     vm.getself()
 }
 
 // Hash#flatten: Returns a new array that is a one-dimensional flattening of this hash
 // Converts the hash to an array of [key1, value1, key2, value2, ...]
-fn mrb_hash_flatten(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+fn mrb_hash_flatten(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
     let this = vm.getself()?;
-    let hash = match &this.value {
-        RValue::Hash(h) => h,
+    let hash = match this.rvalue() {
+        Some(RValue::Hash(h)) => h,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#flatten must be called on a hash".to_string(),
@@ -465,30 +477,32 @@ fn mrb_hash_flatten(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, E
     };
 
     let mut result = Vec::new();
-    for (_, (key, value)) in hash.borrow().iter() {
+    for (key, value) in hash.borrow().values() {
         result.push(key.clone());
         result.push(value.clone());
     }
 
-    Ok(RObject::array(result).to_refcount_assigned())
+    Ok(Value::from_rc(
+        RObject::array(result).to_refcount_assigned(),
+    ))
 }
 
 #[test]
 fn test_mrb_hash_size() {
     let mut vm = VM::empty();
 
-    let hash = Rc::new(RObject::hash(RHashMap::default()));
-    let key = Rc::new(RObject::string("key".to_string()));
-    let value = Rc::new(RObject::integer(42));
-    vm.current_regs()[0].replace(hash.clone());
+    let hash = Value::from_rc(Rc::new(RObject::hash(RHashMap::default())));
+    let key = Value::from_rc(Rc::new(RObject::string("key".to_string())));
+    let value = Value::Integer(42);
+    vm.set_reg_value(0, hash.clone());
 
     let size = mrb_hash_size(&mut vm, &[]).expect("getting size failed");
-    let size: i64 = size.as_ref().try_into().expect("size is not integer");
+    let size: i64 = i64::try_from(&size).expect("size is not integer");
     assert_eq!(size, 0);
 
-    mrb_hash_set_index(hash.clone(), key.clone(), value.clone()).expect("set index failed");
+    mrb_hash_set_index(&hash, key.clone(), value.clone()).expect("set index failed");
 
     let size = mrb_hash_size(&mut vm, &[]).expect("getting size failed");
-    let size: i64 = size.as_ref().try_into().expect("size is not integer");
+    let size: i64 = i64::try_from(&size).expect("size is not integer");
     assert_eq!(size, 1);
 }
