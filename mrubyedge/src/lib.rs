@@ -64,20 +64,23 @@
 //!
 //! Loading a `*.mrb` produced by mruby 4.0's `mrbc` is also straightforward.
 //! A chunk whose header does not say `RITE0400` is refused, so mruby 3.x
-//! bytecode has to be recompiled:
+//! bytecode has to be recompiled. This doctest compiles a small script in
+//! memory before loading and running it:
 //!
-//! ```no_run
+//! ```
+//! use mruby_compiler2_sys::MRubyCompiler2Context;
 //! use mrubyedge::rite;
 //! use mrubyedge::yamrb::vm;
 //!
-//! fn run_embedded() -> Result<(), Box<dyn std::error::Error>> {
-//!     let script = std::fs::read("script.mrb")?;
-//!     let mut rite = rite::load(&script)?;
-//!     let mut vm = vm::VM::open(&mut rite);
-//!     let value = vm.run()?;
-//!     println!("{:?}", value);
-//!     Ok(())
-//! }
+//! let script = unsafe {
+//!     let mut compiler = MRubyCompiler2Context::new();
+//!     compiler.compile("1 + 2").unwrap()
+//! };
+//! let mut rite = rite::load(&script).unwrap();
+//! let mut vm = vm::VM::open(&mut rite);
+//! let value = vm.run().unwrap();
+//! let value: i64 = value.as_ref().try_into().unwrap();
+//! assert_eq!(value, 3);
 //! ```
 pub mod error;
 pub mod eval;
