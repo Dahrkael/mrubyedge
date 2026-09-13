@@ -1,9 +1,13 @@
 # Patches and divergences
 
-This fork tracks upstream `mrubyedge` but carries its own patch line on top of
-`v1.1.12`, later rebased onto upstream `master`. This document lists what
-diverges from upstream. The working branch is `nextgen`; releases are tagged
-`v1.1.12-ng.N`.
+This fork carries its own patch line on top of upstream `v1.1.12`, merged with
+upstream `master` up to `c7dd9ae` (the last mruby 3.x commit, before upstream
+`v2.0.0`/RITE0400). This document lists what diverges from upstream. The
+working branch is `nextgen`; releases are tagged `v1.1.12-ng.N`.
+
+This line interprets mruby 3.x (RITE0300) bytecode and refuses any other RITE
+version (`rite::Error::UnsupportedVersion`). The mruby 4.0 line lives on the
+separate `nextgen40` branch.
 
 Most entries below were originally captured as individual commits on the
 `nextgen` branch; run `git log` for the full history.

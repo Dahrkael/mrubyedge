@@ -8,17 +8,17 @@ mruby.
 This fork is maintained independently. It carries a batch of VM fixes,
 opcode coverage, performance work, richer diagnostics (backtraces with source
 lines) and a Ruby standard-library compatibility layer on top of the upstream
-`v1.1.12` base, rebased onto upstream `master`.
+`v1.1.12` base, merged with upstream `master` up to the last mruby 3.x commit.
 
-- Base: upstream `v1.1.12` (`8e803ca`), merged with upstream `master`.
+- Base: upstream `v1.1.12` (`8e803ca`), merged with upstream `master` up to `c7dd9ae` (the last 3.x commit; upstream `v2.0.0` and later are RITE0400 and tracked on a separate branch).
 - Working branch: `nextgen`; releases are tagged `v1.1.12-ng.N`.
 - Divergences from upstream: [PATCHES.md](./PATCHES.md).
 - Ruby compatibility coverage: [COVERAGE.md](./COVERAGE.md).
 
 ## What this fork adds
 
-Everything below is on top of the upstream base (`master`). See
-[PATCHES.md](./PATCHES.md) for the full list.
+Everything below is on top of the upstream base (`v1.1.12` + `master` through
+`c7dd9ae`). See [PATCHES.md](./PATCHES.md) for the full list.
 
 ### Language flow and semantics
 
