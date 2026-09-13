@@ -1,4 +1,3 @@
-extern crate mec_mrbc_sys;
 extern crate mrubyedge;
 
 mod helpers;

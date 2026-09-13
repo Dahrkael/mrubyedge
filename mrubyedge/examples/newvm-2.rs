@@ -61,7 +61,7 @@ fn main() {
         pool: Vec::new(),
         reps: Vec::new(),
         lv: None,
-        catch_target_pos: Vec::new(),
+        catch_handlers: Vec::new(),
     };
 
     // irep 0x600000f20000 nregs=7 nlocals=3 pools=0 syms=1 reps=1 ilen=27
@@ -151,7 +151,7 @@ fn main() {
         pool: Vec::new(),
         reps: vec![Rc::new(irep1)],
         lv: None,
-        catch_target_pos: Vec::new(),
+        catch_handlers: Vec::new(),
     };
     let mut vm = vm::VM::new_by_raw_irep(irep0);
     let ret = vm.run().unwrap();

@@ -22,6 +22,7 @@ pub enum Error {
     InvalidOperand,
     NoMethod,
     UnknownPoolType(u8),
+    UnsupportedVersion([u8; 2]),
 }
 
 impl fmt::Display for Error {

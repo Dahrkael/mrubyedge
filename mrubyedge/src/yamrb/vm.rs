@@ -229,7 +229,7 @@ impl VM {
             pool: Vec::new(),
             reps: Vec::new(),
             lv: None,
-            catch_target_pos: Vec::new(),
+            catch_handlers: Vec::new(),
         };
         Self::new_by_raw_irep(irep)
     }
@@ -399,15 +399,17 @@ impl VM {
         if self.current_regs()[0].is_none() {
             self.current_regs()[0].replace(top_self.clone());
         }
-        let mut rescued = false;
+        let mut unwinding = false;
 
         loop {
-            if !rescued && let Some(e) = self.exception.clone() {
+            if unwinding && let Some(e) = self.exception.clone() {
                 let operand = insn::Fetched::B(0);
                 let mut retreg = None;
-                if let Some(pos) = self.find_next_handler_pos() {
+                if let Some(pos) = self.find_handler_pos(None) {
+                    // The handler runs as ordinary code; EXCEPT picks the
+                    // exception up from here.
                     self.pc.set(pos);
-                    rescued = true;
+                    unwinding = false;
                     continue;
                 }
 
@@ -450,7 +452,6 @@ impl VM {
                     continue;
                 }
             }
-            rescued = false;
 
             let pc = self.pc.get();
             if self.current_irep.code.len() <= pc {
@@ -495,6 +496,7 @@ impl VM {
                 Err(e) => {
                     let exception = RException::from_error(self, &e);
                     self.exception = Some(Rc::new(exception));
+                    unwinding = true;
                     continue;
                 }
             }
@@ -519,14 +521,17 @@ impl VM {
         retval
     }
 
-    pub(crate) fn find_next_handler_pos(&mut self) -> Option<usize> {
-        let ci = self.pc.get();
-        for p in self.current_irep.catch_target_pos.iter() {
-            if ci < *p {
-                return Some(*p);
-            }
-        }
-        None
+    pub(crate) fn find_handler_pos(&self, type_: Option<u8>) -> Option<usize> {
+        // pc already points at the instruction after the one that raised, so the
+        // range is half-open the other way round: begin < pc <= end. The innermost
+        // handler is the one written last.
+        let pc = self.pc.get();
+        self.current_irep
+            .catch_handlers
+            .iter()
+            .rev()
+            .find(|ch| type_.is_none_or(|t| ch.type_ == t) && ch.begin < pc && pc <= ch.end)
+            .map(|ch| ch.target)
     }
 
     pub(crate) fn current_regs(&mut self) -> &mut [Option<Rc<RObject>>] {
@@ -814,7 +819,7 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
         pool: Vec::new(),
         reps: Vec::new(),
         lv: None,
-        catch_target_pos: Vec::new(),
+        catch_handlers: Vec::new(),
     };
     for sym in irep.syms.iter() {
         irep1
@@ -842,14 +847,18 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
         }
     }
     let code = interpret_insn(irep.insn);
+    let index_of = |pos: usize| {
+        code.iter()
+            .position(|op| op.pos == pos)
+            .unwrap_or(code.len())
+    };
     for ch in irep.catch_handlers.iter() {
-        let pos = ch.target;
-        let (i, _) = code
-            .iter()
-            .enumerate()
-            .find(|(_, op)| op.pos == pos)
-            .expect("catch handler mismatch");
-        irep1.catch_target_pos.push(i);
+        irep1.catch_handlers.push(CatchTarget {
+            type_: ch.type_,
+            begin: index_of(ch.start),
+            end: index_of(ch.end),
+            target: index_of(ch.target),
+        });
     }
     let mut map = RHashMap::default();
     for (reg, name) in irep.lv.iter().enumerate() {
@@ -861,7 +870,6 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
     if !map.is_empty() {
         irep1.lv = Some(map);
     }
-    irep1.catch_target_pos.sort();
 
     irep1.code = code;
     (irep1, pos + 1)
@@ -896,8 +904,18 @@ pub struct IREP {
     pub pool: Vec<RPool>,
     pub reps: Vec<Rc<IREP>>,
     pub lv: Option<RHashMap<usize, String>>,
-    pub catch_target_pos: Vec<usize>,
+    pub catch_handlers: Vec<CatchTarget>,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct CatchTarget {
+    pub type_: u8,
+    pub begin: usize,
+    pub end: usize,
+    pub target: usize,
+}
+
+pub const CATCH_TYPE_ENSURE: u8 = 1;
 
 #[derive(Debug, Clone)]
 pub struct CALLINFO {
