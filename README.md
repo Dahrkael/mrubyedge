@@ -1,4 +1,12 @@
-# mruby/edge
+# mruby/edge (nextgen)
+
+> **This is an independent fork of
+> [mrubyedge](https://github.com/mrubyedge/mrubyedge).** It keeps the same API
+> and compatibility goals while shipping a much faster interpreter — around
+> **6.5x faster than upstream `master`** and within **~1.5x of mruby C** — plus
+> broader Ruby standard-library coverage and a more feature-complete runtime
+> than the base. See [`mrubyedge/README.md`](./mrubyedge/README.md) and
+> [`mrubyedge/PATCHES.md`](./mrubyedge/PATCHES.md) for details.
 
 mruby/edge is yet another mruby-compatible VM implementation, specialized for WebAssembly.
 
