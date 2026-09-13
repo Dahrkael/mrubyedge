@@ -613,8 +613,9 @@ dependencies = [
 
 [[package]]
 name = "mruby-compiler2-sys"
-version = "0.4.0"
-source = "git+https://github.com/bash0C7/mruby-compiler2-sys?branch=rite0400-vendor#01b77b7f2d1718244f718f93925068cced8bbf81"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b5de1d76937c97e0df5d670363dc737f5295c3e3ef8ddf886e20c1b7029c77c"
 dependencies = [
  "bindgen 0.72.1",
  "cc",
@@ -641,7 +642,7 @@ version = "1.1.12"
 dependencies = [
  "criterion",
  "fnv",
- "mruby-compiler2-sys 0.4.0",
+ "mruby-compiler2-sys 0.5.0",
  "once_cell",
  "plain",
  "rand_core 0.10.0",
