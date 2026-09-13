@@ -1,36 +1,42 @@
-# mrubyedge
+# mrubyedge (nextgen40)
 
-[![crates.io](https://img.shields.io/crates/v/mrubyedge.svg)](https://crates.io/crates/mrubyedge)
-[![docs.rs](https://docs.rs/mrubyedge/badge.svg)](https://docs.rs/mrubyedge)
+A downstream fork of [mrubyedge](https://github.com/mrubyedge/mrubyedge): a
+pure-Rust reimplementation of the mruby VM that keeps its core execution engine
+`no_std`-friendly while striving for behavioral compatibility with upstream
+mruby.
 
-A pure-Rust reimplementation of the mruby VM that keeps its core execution engine `no_std`-friendly while striving for behavioral compatibility with upstream mruby.
+This is the **mruby 4.0 (RITE0400)** line of the fork, based on upstream
+`v2.0.0`. It carries the same patch set as the 3.x line (`nextgen`), ported to
+the 4.0 opcode table and exception machinery, plus the Ruby standard-library
+compatibility layer.
 
-## Overview
-
-mruby/edge is an mruby-compatible virtual machine implementation written in Rust, specifically designed for WebAssembly environments and embedded systems. It aims to provide:
-
-- **WebAssembly-first design**: Optimized for running Ruby code in browsers and edge computing environments
-- **Lightweight runtime**: Minimal footprint and binary size suitable for constrained environments
-- **`no_std` core**: Can run in environments without standard library support
-- **mruby compatibility**: Executes mruby bytecode (`.mrb` files) and Ruby source code
-- **Rust safety**: Built with Rust for memory safety and reliability
+- Base: upstream `v2.0.0`, with the fork's patches applied on top.
+- Working branch: `nextgen40`; releases are tagged `v2.0.0-ng.N`.
+- Divergences from upstream: [PATCHES.md](./PATCHES.md).
+- Ruby compatibility coverage: [COVERAGE.md](./COVERAGE.md).
 
 ## Installation
 
-Add this to your `Cargo.toml`:
+This fork is consumed directly from git. Pin the release tag for reproducible
+builds:
 
 ```toml
 [dependencies]
-mrubyedge = "2.0.0"
+mrubyedge = { git = "https://github.com/Dahrkael/mrubyedge", package = "mrubyedge", tag = "v2.0.0-ng.1", default-features = false, features = ["mruby-random", "mruby-hash-fnv"] }
+```
+
+Enable `ruby-compat` to build the Ruby standard-library compatibility layer:
+
+```toml
+mrubyedge = { git = "https://github.com/Dahrkael/mrubyedge", package = "mrubyedge", tag = "v2.0.0-ng.1", default-features = false, features = ["mruby-random", "mruby-hash-fnv", "ruby-compat"] }
 ```
 
 ## Usage
 
 ### Running Precompiled Bytecode
 
-Load and execute a `*.mrb` file produced by mruby 4.0's `mrbc`. A chunk whose
-header does not say `RITE0400` is refused, so mruby 3.x bytecode has to be
-recompiled:
+Load and execute a `*.mrb` produced by mruby 4.0's `mrbc`. A chunk whose header
+does not say `RITE0400` is refused, so mruby 3.x bytecode has to be recompiled:
 
 ```rust
 use mrubyedge::rite;
@@ -46,38 +52,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Creating VMs Programmatically
+### Ruby Standard Library Compatibility Layer
 
-You can also construct IREP (internal representation) structures directly:
+The optional `ruby-compat` feature adds commonly used methods implemented in
+Rust on top of the public VM API (more `Array`/`String`/`Hash`/`Integer`/
+`Float`/`Range`/`Symbol` methods, `Math`, `Comparable`, extra `Enumerable`
+methods, missing exception classes and `Kernel` conversions).
 
 ```rust
-use mrubyedge::yamrb::{op, vm, value::RSym};
-use mrubyedge::rite::insn::{Fetched, OpCode};
+use mrubyedge::yamrb::vm::VM;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let irep = vm::IREP {
-        __id: 0,
-        nlocals: 0,
-        nregs: 7,
-        rlen: 0,
-        code: vec![
-            op::Op { code: OpCode::LOADI_1, operand: Fetched::B(1), pos: 0, len: 2 },
-            op::Op { code: OpCode::LOADI_2, operand: Fetched::B(2), pos: 2, len: 2 },
-            op::Op { code: OpCode::ADD, operand: Fetched::B(1), pos: 4, len: 2 },
-            op::Op { code: OpCode::STOP, operand: Fetched::Z, pos: 6, len: 1 },
-        ],
-        syms: vec![],
-        pool: Vec::new(),
-        reps: Vec::new(),
-        catch_target_pos: Vec::new(),
-    };
-
-    let mut vm = vm::VM::new_by_raw_irep(irep);
-    let value = vm.run()?;
-    println!("{:?}", value);
+    let mut vm = VM::empty();
+    mrubyedge::compat::register(&mut vm)?;
     Ok(())
 }
 ```
+
+See [COVERAGE.md](./COVERAGE.md) for the full method list.
 
 ## Use Cases
 
@@ -92,9 +84,10 @@ For a command-line interface to compile and run Ruby scripts, see [mrubyedge-cli
 
 ## Documentation
 
-- [API Documentation](https://docs.rs/mrubyedge)
-- [GitHub Repository](https://github.com/mrubyedge/mrubyedge)
+- [Patches and divergences](./PATCHES.md)
 - [Ruby Compatibility Coverage](./COVERAGE.md)
+- [GitHub Repository](https://github.com/Dahrkael/mrubyedge)
+- [Upstream project](https://github.com/mrubyedge/mrubyedge)
 
 ## License
 
