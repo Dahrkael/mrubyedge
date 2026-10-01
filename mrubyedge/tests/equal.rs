@@ -79,3 +79,32 @@ fn equal_test() {
         .unwrap();
     assert!(result);
 }
+
+#[test]
+fn user_defined_eq_is_honored_test() {
+    let code = r#"
+    class Money
+      def initialize(amount)
+        @amount = amount
+      end
+
+      def ==(other)
+        @amount == other.amount
+      end
+
+      def amount
+        @amount
+      end
+    end
+
+    [Money.new(5) == Money.new(5), Money.new(5) == Money.new(6), 1 == 1, "a" == "a"]
+    "#;
+    let binary = mrbc_compile("user_defined_eq", code);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let mut vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    let result = vm.run().unwrap();
+    let arr: Vec<std::rc::Rc<mrubyedge::yamrb::value::RObject>> =
+        result.as_ref().try_into().unwrap();
+    let vals: Vec<bool> = arr.iter().map(|r| r.as_ref().try_into().unwrap()).collect();
+    assert_eq!(vals, vec![true, false, true, true]);
+}
