@@ -1,9 +1,12 @@
 use std::rc::Rc;
 
+use num_bigint::BigInt;
+use num_traits::Signed;
+
 use crate::Error;
 use crate::yamrb::helpers::{mrb_define_cmethod, mrb_define_cmethod_fast};
 
-use crate::yamrb::value::{FastOp, Value};
+use crate::yamrb::value::{FastOp, Value, bigint_to_f64};
 use crate::yamrb::{helpers::mrb_call_block, value::RObject, vm::VM};
 
 pub(crate) fn initialize_integer(vm: &mut VM) {
@@ -94,8 +97,12 @@ pub(crate) fn initialize_integer(vm: &mut VM) {
 }
 
 fn mrb_integer_inspect(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.try_into()?;
-    Ok(Value::from_rc(Rc::new(RObject::string(this.to_string()))))
+    let this = vm.getself()?;
+    match &this {
+        Value::Integer(n) => Ok(Value::from_rc(Rc::new(RObject::string(n.to_string())))),
+        Value::BigInt(b) => Ok(Value::from_rc(Rc::new(RObject::string(b.to_string())))),
+        _ => Err(Error::TypeMismatch),
+    }
 }
 
 fn mrb_integer_times(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
@@ -139,28 +146,48 @@ fn mrb_integer_bitref(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 }
 
 fn mrb_integer_negative(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.try_into()?;
-    Ok(Value::Integer(-this))
+    let this = vm.getself()?;
+    match &this {
+        Value::Integer(n) => Ok(Value::Integer(-n)),
+        Value::BigInt(b) => Ok(Value::BigInt(Rc::new(-b.as_ref()))),
+        _ => Err(Error::TypeMismatch),
+    }
 }
 
 fn mrb_integer_add(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.try_into()?;
-    let rhs_obj = args[0].as_ref().unwrap();
+    let lhs = vm.getself()?;
+    let rhs = args[0].as_ref().unwrap();
 
-    match rhs_obj {
-        Value::Integer(rhs) => Ok(Value::Integer(lhs + rhs)),
-        Value::Float(rhs) => Ok(Value::Float(lhs as f64 + rhs)),
+    match (&lhs, rhs) {
+        (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l + r)),
+        (Value::Integer(l), Value::Float(r)) => Ok(Value::Float(*l as f64 + r)),
+        (Value::Integer(l), Value::BigInt(r)) => {
+            Ok(Value::BigInt(Rc::new(BigInt::from(*l) + r.as_ref())))
+        }
+        (Value::BigInt(l), Value::BigInt(r)) => Ok(Value::BigInt(Rc::new(l.as_ref() + r.as_ref()))),
+        (Value::BigInt(l), Value::Integer(r)) => {
+            Ok(Value::BigInt(Rc::new(l.as_ref() + BigInt::from(*r))))
+        }
+        (Value::BigInt(l), Value::Float(r)) => Ok(Value::Float(bigint_to_f64(l) + r)),
         _ => Err(Error::TypeMismatch),
     }
 }
 
 fn mrb_integer_sub(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.try_into()?;
-    let rhs_obj = args[0].as_ref().unwrap();
+    let lhs = vm.getself()?;
+    let rhs = args[0].as_ref().unwrap();
 
-    match rhs_obj {
-        Value::Integer(rhs) => Ok(Value::Integer(lhs - rhs)),
-        Value::Float(rhs) => Ok(Value::Float(lhs as f64 - rhs)),
+    match (&lhs, rhs) {
+        (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l - r)),
+        (Value::Integer(l), Value::Float(r)) => Ok(Value::Float(*l as f64 - r)),
+        (Value::Integer(l), Value::BigInt(r)) => {
+            Ok(Value::BigInt(Rc::new(BigInt::from(*l) - r.as_ref())))
+        }
+        (Value::BigInt(l), Value::BigInt(r)) => Ok(Value::BigInt(Rc::new(l.as_ref() - r.as_ref()))),
+        (Value::BigInt(l), Value::Integer(r)) => {
+            Ok(Value::BigInt(Rc::new(l.as_ref() - BigInt::from(*r))))
+        }
+        (Value::BigInt(l), Value::Float(r)) => Ok(Value::Float(bigint_to_f64(l) - r)),
         _ => Err(Error::TypeMismatch),
     }
 }
@@ -191,26 +218,63 @@ fn mrb_integer_power(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error
 }
 
 fn mrb_integer_and(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.try_into()?;
-    let rhs: i64 = args[0].as_ref().unwrap().try_into()?;
-    Ok(Value::Integer(lhs & rhs))
+    let lhs = vm.getself()?;
+    let rhs = args[0].as_ref().unwrap();
+
+    match (&lhs, rhs) {
+        (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l & r)),
+        (Value::BigInt(l), Value::BigInt(r)) => Ok(Value::BigInt(Rc::new(l.as_ref() & r.as_ref()))),
+        (Value::BigInt(l), Value::Integer(r)) => {
+            Ok(Value::BigInt(Rc::new(l.as_ref() & BigInt::from(*r))))
+        }
+        (Value::Integer(l), Value::BigInt(r)) => {
+            Ok(Value::BigInt(Rc::new(BigInt::from(*l) & r.as_ref())))
+        }
+        _ => Err(Error::TypeMismatch),
+    }
 }
 
 fn mrb_integer_or(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.try_into()?;
-    let rhs: i64 = args[0].as_ref().unwrap().try_into()?;
-    Ok(Value::Integer(lhs | rhs))
+    let lhs = vm.getself()?;
+    let rhs = args[0].as_ref().unwrap();
+
+    match (&lhs, rhs) {
+        (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l | r)),
+        (Value::BigInt(l), Value::BigInt(r)) => Ok(Value::BigInt(Rc::new(l.as_ref() | r.as_ref()))),
+        (Value::BigInt(l), Value::Integer(r)) => {
+            Ok(Value::BigInt(Rc::new(l.as_ref() | BigInt::from(*r))))
+        }
+        (Value::Integer(l), Value::BigInt(r)) => {
+            Ok(Value::BigInt(Rc::new(BigInt::from(*l) | r.as_ref())))
+        }
+        _ => Err(Error::TypeMismatch),
+    }
 }
 
 fn mrb_integer_xor(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
-    let lhs: i64 = vm.getself()?.try_into()?;
-    let rhs: i64 = args[0].as_ref().unwrap().try_into()?;
-    Ok(Value::Integer(lhs ^ rhs))
+    let lhs = vm.getself()?;
+    let rhs = args[0].as_ref().unwrap();
+
+    match (&lhs, rhs) {
+        (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l ^ r)),
+        (Value::BigInt(l), Value::BigInt(r)) => Ok(Value::BigInt(Rc::new(l.as_ref() ^ r.as_ref()))),
+        (Value::BigInt(l), Value::Integer(r)) => {
+            Ok(Value::BigInt(Rc::new(l.as_ref() ^ BigInt::from(*r))))
+        }
+        (Value::Integer(l), Value::BigInt(r)) => {
+            Ok(Value::BigInt(Rc::new(BigInt::from(*l) ^ r.as_ref())))
+        }
+        _ => Err(Error::TypeMismatch),
+    }
 }
 
 fn mrb_integer_not(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.try_into()?;
-    Ok(Value::Integer(!this))
+    let this = vm.getself()?;
+    match &this {
+        Value::Integer(n) => Ok(Value::Integer(!n)),
+        Value::BigInt(b) => Ok(Value::BigInt(Rc::new(!b.as_ref()))),
+        _ => Err(Error::TypeMismatch),
+    }
 }
 
 fn mrb_integer_lshift(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Error> {
@@ -236,8 +300,12 @@ fn mrb_integer_rshift(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Erro
 }
 
 fn mrb_integer_abs(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.try_into()?;
-    Ok(Value::Integer(this.abs()))
+    let this = vm.getself()?;
+    match &this {
+        Value::Integer(n) => Ok(Value::Integer(n.abs())),
+        Value::BigInt(b) => Ok(Value::BigInt(Rc::new(b.as_ref().abs()))),
+        _ => Err(Error::TypeMismatch),
+    }
 }
 
 fn mrb_integer_to_i(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
@@ -245,8 +313,12 @@ fn mrb_integer_to_i(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error
 }
 
 fn mrb_integer_to_f(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {
-    let this: i64 = vm.getself()?.try_into()?;
-    Ok(Value::Float(this as f64))
+    let this = vm.getself()?;
+    match &this {
+        Value::Integer(n) => Ok(Value::Float(*n as f64)),
+        Value::BigInt(b) => Ok(Value::Float(bigint_to_f64(b))),
+        _ => Err(Error::TypeMismatch),
+    }
 }
 
 fn mrb_integer_chr(vm: &mut VM, _args: &[Option<Value>]) -> Result<Value, Error> {

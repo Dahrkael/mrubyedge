@@ -9,10 +9,13 @@ use crate::Error;
 use crate::rite::insn::{Fetched, OpCode};
 use crate::yamrb::helpers::mrb_call_inspect;
 
+use num_traits::{ToPrimitive, Zero};
+
 use super::prelude::hash::mrb_hash_delete;
 use super::prelude::object::mrb_object_is_equal;
 use super::value::RHashMap;
 use super::{helpers::mrb_funcall, value::*, vm::*};
+use num_bigint::BigInt;
 
 // OpCodes of mruby 3.2.0 from mruby/op.h:
 // OPCODE(NOP,        Z)        /* no operation */
@@ -589,6 +592,7 @@ pub(crate) fn op_loadl(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val = match pool_val {
         RPool::Str(s) => Value::Object(Rc::new(RObject::string(s))),
         RPool::Int(i) => Value::Integer(i),
+        RPool::BigInt(b) => Value::BigInt(b),
         RPool::Float(f) => Value::Float(f),
         RPool::Data(_) => {
             return Err(Error::Internal(
@@ -2559,6 +2563,21 @@ pub(crate) fn op_add(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         (Some(Value::Float(n1)), Some(Value::Float(n2))) => Some(Value::Float(n1 + n2)),
         (Some(Value::Integer(n1)), Some(Value::Float(n2))) => Some(Value::Float(*n1 as f64 + n2)),
         (Some(Value::Float(n1)), Some(Value::Integer(n2))) => Some(Value::Float(n1 + *n2 as f64)),
+        (Some(Value::BigInt(n1)), Some(Value::BigInt(n2))) => {
+            Some(Value::BigInt(Rc::new(n1.as_ref() + n2.as_ref())))
+        }
+        (Some(Value::Integer(n1)), Some(Value::BigInt(n2))) => {
+            Some(Value::BigInt(Rc::new(BigInt::from(*n1) + n2.as_ref())))
+        }
+        (Some(Value::BigInt(n1)), Some(Value::Integer(n2))) => {
+            Some(Value::BigInt(Rc::new(n1.as_ref() + BigInt::from(*n2))))
+        }
+        (Some(Value::BigInt(n1)), Some(Value::Float(n2))) => {
+            Some(Value::Float(bigint_to_f64(n1) + n2))
+        }
+        (Some(Value::Float(n1)), Some(Value::BigInt(n2))) => {
+            Some(Value::Float(n1 + bigint_to_f64(n2)))
+        }
         (Some(Value::Object(o1)), Some(Value::Object(o2)))
             if matches!(o1.value, RValue::String(..)) && matches!(o2.value, RValue::String(..)) =>
         {
@@ -2589,8 +2608,9 @@ pub(crate) fn op_addi(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let result = match &val1 {
         Some(Value::Integer(n1)) => Value::Integer(n1 + val2),
         Some(Value::Float(n1)) => Value::Float(n1 + val2 as f64),
+        Some(Value::BigInt(n1)) => Value::BigInt(Rc::new(n1.as_ref() + BigInt::from(val2))),
         _ => {
-            unreachable!("addi supports only integer and float")
+            unreachable!("addi supports only integer, bigint and float")
         }
     };
     vm.current_regs()[a as usize].replace(result);
@@ -2607,6 +2627,21 @@ pub(crate) fn op_sub(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         (Some(Value::Float(n1)), Some(Value::Float(n2))) => Some(Value::Float(n1 - n2)),
         (Some(Value::Integer(n1)), Some(Value::Float(n2))) => Some(Value::Float(*n1 as f64 - n2)),
         (Some(Value::Float(n1)), Some(Value::Integer(n2))) => Some(Value::Float(n1 - *n2 as f64)),
+        (Some(Value::BigInt(n1)), Some(Value::BigInt(n2))) => {
+            Some(Value::BigInt(Rc::new(n1.as_ref() - n2.as_ref())))
+        }
+        (Some(Value::Integer(n1)), Some(Value::BigInt(n2))) => {
+            Some(Value::BigInt(Rc::new(BigInt::from(*n1) - n2.as_ref())))
+        }
+        (Some(Value::BigInt(n1)), Some(Value::Integer(n2))) => {
+            Some(Value::BigInt(Rc::new(n1.as_ref() - BigInt::from(*n2))))
+        }
+        (Some(Value::BigInt(n1)), Some(Value::Float(n2))) => {
+            Some(Value::Float(bigint_to_f64(n1) - n2))
+        }
+        (Some(Value::Float(n1)), Some(Value::BigInt(n2))) => {
+            Some(Value::Float(n1 - bigint_to_f64(n2)))
+        }
         _ => None,
     };
     if let Some(result) = fast {
@@ -2626,8 +2661,9 @@ pub(crate) fn op_subi(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val2 = b as i64;
     let result = match &val1 {
         Some(Value::Integer(n1)) => Value::Integer(n1 - val2),
+        Some(Value::BigInt(n1)) => Value::BigInt(Rc::new(n1.as_ref() - BigInt::from(val2))),
         _ => {
-            unreachable!("subi supports only integer")
+            unreachable!("subi supports only integer and bigint")
         }
     };
     vm.current_regs()[a as usize].replace(result);
@@ -2642,6 +2678,7 @@ fn math_immediate_to_local(vm: &mut VM, operand: &Fetched, add: bool) -> Result<
     let result = match &value {
         Value::Integer(n) => Value::Integer(n + amount),
         Value::Float(n) => Value::Float(n + amount as f64),
+        Value::BigInt(n) => Value::BigInt(Rc::new(n.as_ref() + BigInt::from(amount))),
         _ => {
             // Other receivers are sent the method; the call runs in the window ops.h reserves at R[b].
             let arg = Value::Integer(c as i64);
@@ -2673,6 +2710,21 @@ pub(crate) fn op_mul(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         (Some(Value::Float(n1)), Some(Value::Float(n2))) => Some(Value::Float(n1 * n2)),
         (Some(Value::Integer(n1)), Some(Value::Float(n2))) => Some(Value::Float(*n1 as f64 * n2)),
         (Some(Value::Float(n1)), Some(Value::Integer(n2))) => Some(Value::Float(n1 * *n2 as f64)),
+        (Some(Value::BigInt(n1)), Some(Value::BigInt(n2))) => {
+            Some(Value::BigInt(Rc::new(n1.as_ref() * n2.as_ref())))
+        }
+        (Some(Value::Integer(n1)), Some(Value::BigInt(n2))) => {
+            Some(Value::BigInt(Rc::new(BigInt::from(*n1) * n2.as_ref())))
+        }
+        (Some(Value::BigInt(n1)), Some(Value::Integer(n2))) => {
+            Some(Value::BigInt(Rc::new(n1.as_ref() * BigInt::from(*n2))))
+        }
+        (Some(Value::BigInt(n1)), Some(Value::Float(n2))) => {
+            Some(Value::Float(bigint_to_f64(n1) * n2))
+        }
+        (Some(Value::Float(n1)), Some(Value::BigInt(n2))) => {
+            Some(Value::Float(n1 * bigint_to_f64(n2)))
+        }
         _ => None,
     };
     if let Some(result) = fast {
@@ -2696,6 +2748,30 @@ pub(crate) fn op_div(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
         (Some(Value::Float(n1)), Some(Value::Float(n2))) => Some(Value::Float(n1 / n2)),
         (Some(Value::Integer(n1)), Some(Value::Float(n2))) => Some(Value::Float(*n1 as f64 / n2)),
         (Some(Value::Float(n1)), Some(Value::Integer(n2))) => Some(Value::Float(n1 / *n2 as f64)),
+        (Some(Value::BigInt(n1)), Some(Value::BigInt(n2))) => {
+            if n2.is_zero() {
+                return Err(Error::ZeroDivisionError);
+            }
+            Some(Value::BigInt(Rc::new(n1.as_ref() / n2.as_ref())))
+        }
+        (Some(Value::Integer(n1)), Some(Value::BigInt(n2))) => {
+            if n2.is_zero() {
+                return Err(Error::ZeroDivisionError);
+            }
+            Some(Value::BigInt(Rc::new(BigInt::from(*n1) / n2.as_ref())))
+        }
+        (Some(Value::BigInt(n1)), Some(Value::Integer(n2))) => {
+            if *n2 == 0 {
+                return Err(Error::ZeroDivisionError);
+            }
+            Some(Value::BigInt(Rc::new(n1.as_ref() / BigInt::from(*n2))))
+        }
+        (Some(Value::BigInt(n1)), Some(Value::Float(n2))) => {
+            Some(Value::Float(bigint_to_f64(n1) / n2))
+        }
+        (Some(Value::Float(n1)), Some(Value::BigInt(n2))) => {
+            Some(Value::Float(n1 / bigint_to_f64(n2)))
+        }
         _ => None,
     };
     if let Some(result) = fast {
@@ -2707,6 +2783,31 @@ pub(crate) fn op_div(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let result = mrb_funcall(vm, Some(val1), "/", &[val2])?;
     vm.set_reg_value(a, result);
     Ok(())
+}
+
+/// Ordering for BigInt-involving numeric pairs; `None` (or a NaN operand)
+/// falls back to `<=>` dispatch. BigInt→f64 saturates at the signed infinity
+/// so magnitude overflow never panics.
+fn bigint_compare(val1: &Value, val2: &Value) -> Option<std::cmp::Ordering> {
+    match (val1, val2) {
+        (Value::BigInt(a), Value::BigInt(b)) => Some(a.as_ref().cmp(b.as_ref())),
+        (Value::Integer(a), Value::BigInt(b)) => Some(BigInt::from(*a).cmp(b.as_ref())),
+        (Value::BigInt(a), Value::Integer(b)) => Some(a.as_ref().cmp(&BigInt::from(*b))),
+        (Value::BigInt(a), Value::Float(b)) => bigint_to_f64(a).partial_cmp(b),
+        (Value::Float(a), Value::BigInt(b)) => a.partial_cmp(&bigint_to_f64(b)),
+        _ => None,
+    }
+}
+
+/// Applies the operator name to a `bigint_compare` ordering, if applicable.
+fn bigint_compare_hit(val1: &Value, val2: &Value, op: &str) -> Option<bool> {
+    let ord = bigint_compare(val1, val2)?;
+    Some(match op {
+        "<" => ord.is_lt(),
+        "<=" => ord.is_le(),
+        ">" => ord.is_gt(),
+        _ => ord.is_ge(),
+    })
 }
 
 /// Falls back to <=> dispatch for non-numeric operands, mirroring op_div.
@@ -2746,6 +2847,10 @@ pub(crate) fn op_lt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     }
     let val1 = vm.current_regs()[a].clone().expect("op_lt lhs");
     let val2 = vm.current_regs()[b].clone().expect("op_lt rhs");
+    if let Some(hit) = bigint_compare_hit(&val1, &val2, "<") {
+        vm.current_regs()[a].replace(Value::Bool(hit));
+        return Ok(());
+    }
     let result = compare_via_spaceship(vm, val1, val2, "<")?;
     vm.set_reg_value(a, result);
     Ok(())
@@ -2769,6 +2874,10 @@ pub(crate) fn op_le(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     }
     let val1 = vm.current_regs()[a].clone().expect("op_le lhs");
     let val2 = vm.current_regs()[b].clone().expect("op_le rhs");
+    if let Some(hit) = bigint_compare_hit(&val1, &val2, "<=") {
+        vm.current_regs()[a].replace(Value::Bool(hit));
+        return Ok(());
+    }
     let result = compare_via_spaceship(vm, val1, val2, "<=")?;
     vm.set_reg_value(a, result);
     Ok(())
@@ -2784,6 +2893,9 @@ pub(crate) fn op_eq(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let fast = match (&val1, &val2) {
         (Some(Value::Integer(n1)), Some(Value::Integer(n2))) => Some(n1 == n2),
         (Some(Value::Float(n1)), Some(Value::Float(n2))) => Some(n1 == n2),
+        (Some(Value::BigInt(n1)), Some(Value::BigInt(n2))) => Some(n1 == n2),
+        (Some(Value::Integer(n1)), Some(Value::BigInt(n2))) => Some(n2.to_i64() == Some(*n1)),
+        (Some(Value::BigInt(n1)), Some(Value::Integer(n2))) => Some(n1.to_i64() == Some(*n2)),
         (Some(Value::Bool(x)), Some(Value::Bool(y))) => Some(x == y),
         (Some(Value::Nil), Some(Value::Nil)) => Some(true),
         (Some(Value::Symbol(x)), Some(Value::Symbol(y))) => Some(x == y),
@@ -2818,6 +2930,10 @@ pub(crate) fn op_gt(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     }
     let val1 = vm.current_regs()[a].clone().expect("op_gt lhs");
     let val2 = vm.current_regs()[b].clone().expect("op_gt rhs");
+    if let Some(hit) = bigint_compare_hit(&val1, &val2, ">") {
+        vm.current_regs()[a].replace(Value::Bool(hit));
+        return Ok(());
+    }
     let result = compare_via_spaceship(vm, val1, val2, ">")?;
     vm.set_reg_value(a, result);
     Ok(())
@@ -2841,6 +2957,10 @@ pub(crate) fn op_ge(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     }
     let val1 = vm.current_regs()[a].clone().expect("op_ge lhs");
     let val2 = vm.current_regs()[b].clone().expect("op_ge rhs");
+    if let Some(hit) = bigint_compare_hit(&val1, &val2, ">=") {
+        vm.current_regs()[a].replace(Value::Bool(hit));
+        return Ok(());
+    }
     let result = compare_via_spaceship(vm, val1, val2, ">=")?;
     vm.set_reg_value(a, result);
     Ok(())

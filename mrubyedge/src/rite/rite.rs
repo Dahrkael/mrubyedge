@@ -6,6 +6,9 @@ use super::binfmt::*;
 use core::ffi::CStr;
 use core::mem;
 use std::ffi::CString;
+use std::rc::Rc;
+
+use num_traits::Num;
 
 use super::marker::*;
 
@@ -13,12 +16,14 @@ use simple_endian::{u16be, u32be};
 
 #[derive(Debug, Clone)]
 pub enum PoolValue {
-    Str(CString),    // IREP_TT_STR = 0 (need free)
-    Int32(i32),      // IREP_TT_INT32 = 1
-    SStr(CString),   // IREP_TT_SSTR = 2 (static)
-    Int64(i64),      // IREP_TT_INT64 = 3
-    Float(f64),      // IREP_TT_FLOAT = 5
-    BigInt(Vec<u8>), // IREP_TT_BIGINT = 7 (not yet fully supported)
+    Str(CString),  // IREP_TT_STR = 0 (need free)
+    Int32(i32),    // IREP_TT_INT32 = 1
+    SStr(CString), // IREP_TT_SSTR = 2 (static)
+    Int64(i64),    // IREP_TT_INT64 = 3
+    Float(f64),    // IREP_TT_FLOAT = 5
+    /// IREP_TT_BIGINT = 7: parsed number. Sign comes from a negative base
+    /// byte; digits are unsigned in the literal's radix.
+    BigInt(Rc<num_bigint::BigInt>),
 }
 
 #[derive(Debug, Default)]
@@ -250,8 +255,20 @@ pub fn section_irep_1(head: &[u8]) -> Result<(usize, SectionIrepHeader, Vec<Irep
                     let bigint_len = head.get(cur).copied().ok_or(Error::TooShort)? as usize;
                     cur += 1;
                     let bigint_end = cur + bigint_len + 1; // base byte + digits
-                    let bigint_data = head.get(cur..bigint_end).ok_or(Error::TooShort)?.to_vec();
-                    pool.push(PoolValue::BigInt(bigint_data));
+                    let bigint_data = head.get(cur..bigint_end).ok_or(Error::TooShort)?;
+                    let base = bigint_data[0] as i8;
+                    let digits =
+                        std::str::from_utf8(&bigint_data[1..]).map_err(|_| Error::InvalidFormat)?;
+                    let radix = base.unsigned_abs() as u32;
+                    if !(2..=36).contains(&radix) {
+                        return Err(Error::InvalidFormat);
+                    }
+                    let mut n = num_bigint::BigInt::from_str_radix(digits, radix)
+                        .map_err(|_| Error::InvalidFormat)?;
+                    if base < 0 {
+                        n = -n;
+                    }
+                    pool.push(PoolValue::BigInt(Rc::new(n)));
                     cur = bigint_end;
                 }
                 v => {

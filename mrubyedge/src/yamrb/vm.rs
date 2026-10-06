@@ -1370,9 +1370,8 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
             crate::rite::PoolValue::Float(f) => {
                 irep1.pool.push(RPool::Float(*f));
             }
-            crate::rite::PoolValue::BigInt(_) => {
-                // BigInt not yet supported, store as 0 for now
-                irep1.pool.push(RPool::Int(0));
+            crate::rite::PoolValue::BigInt(b) => {
+                irep1.pool.push(RPool::BigInt(b.clone()));
             }
         }
     }

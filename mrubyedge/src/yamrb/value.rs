@@ -6,8 +6,24 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 use crate::Error;
 use crate::yamrb::helpers::mrb_call_inspect;
 
+use num_traits::ToPrimitive;
+
 use super::shared_memory::SharedMemory;
 use super::vm::{ENV, IREP, VM};
+
+use num_bigint::BigInt;
+
+/// Converts a BigInt to f64, saturating at the signed infinity when the
+/// magnitude overflows the f64 range (never panics, never NaN).
+pub(crate) fn bigint_to_f64(b: &BigInt) -> f64 {
+    b.to_f64().unwrap_or_else(|| {
+        if b.sign() == num_bigint::Sign::Minus {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        }
+    })
+}
 
 /// Tag that identifies each runtime object variant handled by the VM.
 #[derive(Debug, Clone, Copy)]
@@ -15,6 +31,7 @@ pub enum RType {
     Bool,
     Symbol,
     Integer,
+    BigInt,
     Float,
     Class,
     Module,
@@ -49,6 +66,7 @@ pub enum RValue {
     Bool(bool),
     Symbol(RSym),
     Integer(i64),
+    BigInt(Rc<BigInt>),
     Float(f64),
     Class(Rc<RClass>),
     Module(Rc<RModule>),
@@ -77,6 +95,7 @@ pub enum Value {
     Bool(bool),
     Symbol(u32),
     Integer(i64),
+    BigInt(Rc<BigInt>),
     Float(f64),
     Object(Rc<RObject>),
 }
@@ -90,6 +109,7 @@ impl Value {
             Value::Bool(b) => RObject::boolean_rc(*b),
             Value::Symbol(id) => symbol_object(*id),
             Value::Integer(i) => RObject::integer_rc(*i),
+            Value::BigInt(b) => Rc::new(RObject::bigint(b.clone())),
             Value::Float(f) => Rc::new(RObject::float(*f)),
             Value::Object(o) => o.clone(),
         }
@@ -114,6 +134,10 @@ impl Value {
                 RValue::Integer(i) => Value::Integer(*i),
                 _ => unreachable!("Integer RObject without Integer value"),
             },
+            RType::BigInt => match &rc.value {
+                RValue::BigInt(b) => Value::BigInt(b.clone()),
+                _ => unreachable!("BigInt RObject without BigInt value"),
+            },
             RType::Float => match &rc.value {
                 RValue::Float(f) => Value::Float(*f),
                 _ => unreachable!("Float RObject without Float value"),
@@ -126,7 +150,8 @@ impl Value {
         matches!(self, Value::Nil)
     }
 
-    /// Ruby truthiness: everything except `nil` and `false` is truthy.
+    /// Ruby truthiness: everything except `nil`, `false` and a zero bigint
+    /// is truthy.
     pub fn is_truthy(&self) -> bool {
         match self {
             Value::Nil => false,
@@ -147,7 +172,7 @@ impl Value {
             Value::Bool(true) => vm.true_class.clone(),
             Value::Bool(false) => vm.false_class.clone(),
             Value::Symbol(_) => vm.symbol_class.clone(),
-            Value::Integer(_) => vm.integer_class.clone(),
+            Value::Integer(_) | Value::BigInt(_) => vm.integer_class.clone(),
             Value::Float(_) => vm.float_class.clone(),
             Value::Object(o) => o.get_class(vm),
         }
@@ -168,6 +193,12 @@ impl Value {
         match self {
             Value::Bool(b) => Ok(ValueHasher::Bool(*b)),
             Value::Integer(i) => Ok(ValueHasher::Integer(*i)),
+            Value::BigInt(b) => Ok(match b.to_i64() {
+                // Mirrors ValueEquality: a bigint equal to an Integer hashes
+                // as that Integer, so Hash lookup and == agree.
+                Some(i) => ValueHasher::Integer(i),
+                None => ValueHasher::BigInt(b.to_string().into_bytes()),
+            }),
             Value::Float(f) => Ok(ValueHasher::Float(f.to_be_bytes().to_vec())),
             Value::Symbol(id) => Ok(ValueHasher::Symbol(*id)),
             Value::Object(o) => o.as_hash_key(),
@@ -180,6 +211,7 @@ impl Value {
         match self {
             Value::Bool(b) => ValueEquality::Bool(*b),
             Value::Integer(i) => ValueEquality::Integer(*i),
+            Value::BigInt(b) => ValueEquality::BigInt(b.clone()),
             Value::Float(f) => ValueEquality::Float(*f),
             Value::Symbol(id) => ValueEquality::Symbol(*id),
             Value::Nil => ValueEquality::Nil,
@@ -344,17 +376,19 @@ pub enum ValueHasher {
     Bool(bool),
     Integer(i64),
     Float(Vec<u8>),
+    BigInt(Vec<u8>),
     Symbol(u32),
     String(Vec<u8>),
     Class(String),
 }
 
 /// Normalized form used to compare Ruby values for equality in tests and Hashes.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum ValueEquality {
     Bool(bool),
     Integer(i64),
     Float(f64),
+    BigInt(Rc<BigInt>),
     Symbol(u32),
     String(Vec<u8>),
     Class(String),
@@ -363,6 +397,30 @@ pub enum ValueEquality {
     KeyValue(ValueEqualityForKeyValue),
     ObjectID(u64),
     Nil,
+}
+
+impl PartialEq for ValueEquality {
+    fn eq(&self, other: &Self) -> bool {
+        use ValueEquality::*;
+        match (self, other) {
+            (Bool(a), Bool(b)) => a == b,
+            (Integer(a), Integer(b)) => a == b,
+            (Float(a), Float(b)) => a == b,
+            (Symbol(a), Symbol(b)) => a == b,
+            (String(a), String(b)) => a == b,
+            (Class(a), Class(b)) => a == b,
+            (Range(a1, b1, x1), Range(a2, b2, x2)) => a1 == a2 && b1 == b2 && x1 == x2,
+            (Array(a), Array(b)) => a == b,
+            (KeyValue(a), KeyValue(b)) => a == b,
+            (ObjectID(a), ObjectID(b)) => a == b,
+            (Nil, Nil) => true,
+            // Integer and BigInt are equal when values coincide; Float and
+            // BigInt are never equal across kinds (same rule as Integer/Float).
+            (Integer(i), BigInt(b)) | (BigInt(b), Integer(i)) => b.to_i64() == Some(*i),
+            (BigInt(a), BigInt(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 /// Key-value specific equality helper storing both keys and resolved values.
@@ -618,6 +676,23 @@ impl RObject {
         }
     }
 
+    pub fn bigint(b: Rc<BigInt>) -> Self {
+        // Value-derived stable id (FNV-1a over decimal digits), mirroring
+        // how Float derives its id from the bit pattern.
+        let mut hash: u64 = 0xcbf29ce484222325;
+        for byte in b.to_string().bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        RObject {
+            tt: RType::BigInt,
+            value: RValue::BigInt(b),
+            object_id: hash.into(),
+            singleton_class: RefCell::new(None),
+            ivar: RefCell::new(IvarMap::new()),
+        }
+    }
+
     pub fn string(s: String) -> Self {
         RObject {
             tt: RType::String,
@@ -823,7 +898,12 @@ impl RObject {
     pub fn is_immediate(&self) -> bool {
         matches!(
             self.tt,
-            RType::Integer | RType::Float | RType::Bool | RType::Nil | RType::Symbol
+            RType::Integer
+                | RType::BigInt
+                | RType::Float
+                | RType::Bool
+                | RType::Nil
+                | RType::Symbol
         )
     }
 
@@ -870,6 +950,10 @@ impl RObject {
         match &self.value {
             RValue::Bool(b) => Ok(ValueHasher::Bool(*b)),
             RValue::Integer(i) => Ok(ValueHasher::Integer(*i)),
+            RValue::BigInt(b) => Ok(match b.to_i64() {
+                Some(i) => ValueHasher::Integer(i),
+                None => ValueHasher::BigInt(b.to_string().into_bytes()),
+            }),
             RValue::Float(f) => Ok(ValueHasher::Float(f.to_be_bytes().to_vec())),
             RValue::Symbol(s) => Ok(ValueHasher::Symbol(s.id)),
             RValue::String(s, _) => Ok(ValueHasher::String(s.borrow().clone())),
@@ -882,6 +966,7 @@ impl RObject {
         match &self.value {
             RValue::Bool(b) => ValueEquality::Bool(*b),
             RValue::Integer(i) => ValueEquality::Integer(*i),
+            RValue::BigInt(b) => ValueEquality::BigInt(b.clone()),
             RValue::Float(f) => ValueEquality::Float(*f),
             RValue::Symbol(s) => ValueEquality::Symbol(s.id),
             RValue::String(s, _) => ValueEquality::String(s.borrow().clone()),
@@ -923,7 +1008,7 @@ impl RObject {
                 }
             }
             RValue::Symbol(_) => vm.symbol_class.clone(),
-            RValue::Integer(_) => vm.integer_class.clone(),
+            RValue::Integer(_) | RValue::BigInt(_) => vm.integer_class.clone(),
             RValue::Float(_) => vm.float_class.clone(),
             RValue::Proc(_) => vm.proc_class.clone(),
             RValue::Array(_) => vm.array_class.clone(),
@@ -1253,16 +1338,17 @@ impl TryFrom<&RObject> for i64 {
     type Error = Error;
 
     fn try_from(value: &RObject) -> Result<Self, Self::Error> {
-        match value.value {
-            RValue::Integer(i) => Ok(i),
+        match &value.value {
+            RValue::Integer(i) => Ok(*i),
+            RValue::BigInt(b) => b.to_i64().ok_or(Error::TypeMismatch),
             RValue::Bool(b) => {
-                if b {
+                if *b {
                     Ok(1)
                 } else {
                     Ok(0)
                 }
             }
-            RValue::Float(f) => Ok(f as i64),
+            RValue::Float(f) => Ok(*f as i64),
             _ => Err(Error::TypeMismatch),
         }
     }
@@ -1329,16 +1415,17 @@ impl TryFrom<&RObject> for f64 {
     type Error = Error;
 
     fn try_from(value: &RObject) -> Result<Self, Self::Error> {
-        match value.value {
-            RValue::Integer(i) => Ok(i as f64),
+        match &value.value {
+            RValue::Integer(i) => Ok(*i as f64),
+            RValue::BigInt(b) => b.to_f64().ok_or(Error::TypeMismatch),
             RValue::Bool(b) => {
-                if b {
+                if *b {
                     Ok(1.0)
                 } else {
                     Ok(0.0)
                 }
             }
-            RValue::Float(f) => Ok(f),
+            RValue::Float(f) => Ok(*f),
             _ => Err(Error::TypeMismatch),
         }
     }
@@ -1363,7 +1450,7 @@ impl TryFrom<&RObject> for bool {
 // paths (a boxed numeric returned by legacy code).
 
 macro_rules! value_numeric_try_from {
-    ($t:ty, $int:expr, $f:expr) => {
+    ($t:ty, $int:expr, $f:expr, $big:expr) => {
         impl TryFrom<&Value> for $t {
             type Error = Error;
 
@@ -1371,6 +1458,7 @@ macro_rules! value_numeric_try_from {
                 match value {
                     Value::Integer(i) => Ok($int(*i)),
                     Value::Float(f) => Ok($f(*f)),
+                    Value::BigInt(b) => $big(b),
                     // 1/0 become i64 then $int (real cast), so a plain integer
                     // literal never triggers an unnecessary_cast lint.
                     Value::Bool(b) => Ok($int(if *b { 1i64 } else { 0i64 })),
@@ -1390,13 +1478,32 @@ macro_rules! value_numeric_try_from {
     };
 }
 
-value_numeric_try_from!(i32, |i| i as i32, |f| f as i32);
-value_numeric_try_from!(u32, |i| i as u32, |f| f as u32);
-value_numeric_try_from!(i64, |i| i, |f| f as i64);
-value_numeric_try_from!(u64, |i| i as u64, |f| f as u64);
-value_numeric_try_from!(usize, |i| i as usize, |f| f as usize);
-value_numeric_try_from!(f32, |i| i as f32, |f| f as f32);
-value_numeric_try_from!(f64, |i| i as f64, |f| f);
+value_numeric_try_from!(i32, |i| i as i32, |f| f as i32, |b: &Rc<BigInt>| b
+    .to_i64()
+    .map(|i| i as i32)
+    .ok_or(Error::TypeMismatch));
+value_numeric_try_from!(u32, |i| i as u32, |f| f as u32, |b: &Rc<BigInt>| b
+    .to_i64()
+    .map(|i| i as u32)
+    .ok_or(Error::TypeMismatch));
+value_numeric_try_from!(i64, |i| i, |f| f as i64, |b: &Rc<BigInt>| b
+    .to_i64()
+    .ok_or(Error::TypeMismatch));
+value_numeric_try_from!(u64, |i| i as u64, |f| f as u64, |b: &Rc<BigInt>| b
+    .to_i64()
+    .map(|i| i as u64)
+    .ok_or(Error::TypeMismatch));
+value_numeric_try_from!(usize, |i| i as usize, |f| f as usize, |b: &Rc<BigInt>| b
+    .to_i64()
+    .map(|i| i as usize)
+    .ok_or(Error::TypeMismatch));
+value_numeric_try_from!(f32, |i| i as f32, |f| f as f32, |b: &Rc<BigInt>| b
+    .to_f64()
+    .map(|f| f as f32)
+    .ok_or(Error::TypeMismatch));
+value_numeric_try_from!(f64, |i| i as f64, |f| f, |b: &Rc<BigInt>| b
+    .to_f64()
+    .ok_or(Error::TypeMismatch));
 
 impl TryFrom<&Value> for bool {
     type Error = Error;
@@ -1407,7 +1514,7 @@ impl TryFrom<&Value> for bool {
             Value::Integer(i) => Ok(*i != 0),
             Value::Nil => Ok(false),
             Value::Object(o) => bool::try_from(o.as_ref()),
-            Value::Float(_) | Value::Symbol(_) => Err(Error::TypeMismatch),
+            Value::Float(_) | Value::BigInt(_) | Value::Symbol(_) => Err(Error::TypeMismatch),
         }
     }
 }
@@ -1465,6 +1572,7 @@ impl TryFrom<&RObject> for String {
             // overflows the stack.
             RValue::Exception(e) => Ok(e.message.clone()),
             RValue::Integer(n) => Ok(n.to_string()),
+            RValue::BigInt(b) => Ok(b.to_string()),
             RValue::Float(f) => Ok(f.to_string()),
             RValue::Bool(b) => Ok(b.to_string()),
             RValue::Nil => Ok(String::new()),
@@ -1920,6 +2028,7 @@ pub enum RPool {
     Str(String),
     Data(Vec<u8>),
     Int(i64),
+    BigInt(Rc<BigInt>),
     Float(f64),
 }
 

@@ -119,15 +119,16 @@ fn test_rite_parse_bigint_pool_value() {
         .pool
         .iter()
         .find_map(|p| match p {
-            PoolValue::BigInt(bytes) => Some(bytes),
+            PoolValue::BigInt(n) => Some(n),
             _ => None,
         })
+        .cloned()
         .expect("Should have a BigInt in pool");
 
-    // `[base][digits]`: base 10 followed by the 23 decimal digits.
-    assert_eq!(bigint.len(), 24);
-    assert_eq!(bigint[0], 10);
-    assert!(bigint[1..].iter().all(|&b| b == b'9'));
+    // Decimal literal parses to its exact value (base byte carries the sign).
+    use num_traits::Num;
+    let expected = num_bigint::BigInt::from_str_radix("99999999999999999999999", 10).unwrap();
+    assert_eq!(*bigint, expected);
 }
 
 #[test]
@@ -146,6 +147,59 @@ fn test_rite_truncated_bigint_is_error_not_panic() {
 
     // An out-of-bounds length must be reported, not panic.
     assert!(mrubyedge::rite::load(&chunk).is_err());
+}
+
+#[test]
+fn test_rite_bigint_invalid_base_is_error_not_panic() {
+    let binary = mrbc_compile("bigint", "x = 99999999999999999999999");
+    let digits = [b'9'; 23];
+    let digits_start = binary
+        .windows(digits.len())
+        .position(|w| w == digits)
+        .expect("Should find the bigint digits");
+
+    // Layout before the digits is [type=7][len:u8][base:i8]. A base byte
+    // outside 2..=36 (or its negation) must be reported, not panic inside
+    // from_str_radix.
+    let base_pos = digits_start - 1;
+    for bad in [0x00u8, 0x01, 0x25, 0x7f] {
+        let mut chunk = binary.clone();
+        chunk[base_pos] = bad;
+        assert!(
+            mrubyedge::rite::load(&chunk).is_err(),
+            "base byte {:#04x} must fail, not panic",
+            bad
+        );
+    }
+}
+
+#[test]
+fn test_rite_bigint_negative_base_negates_value() {
+    let binary = mrbc_compile("bigint", "x = 99999999999999999999999");
+    let digits = [b'9'; 23];
+    let digits_start = binary
+        .windows(digits.len())
+        .position(|w| w == digits)
+        .expect("Should find the bigint digits");
+
+    // Flip the base byte from 0x0a (10) to -10: the loaded value negates.
+    let base_pos = digits_start - 1;
+    let mut chunk = binary.clone();
+    chunk[base_pos] = 0xf6;
+    let rite = mrubyedge::rite::load(&chunk).unwrap();
+
+    use mrubyedge::rite::PoolValue;
+    use num_traits::Num;
+    let bigint = rite.irep[0]
+        .pool
+        .iter()
+        .find_map(|p| match p {
+            PoolValue::BigInt(n) => Some(n.clone()),
+            _ => None,
+        })
+        .expect("Should have a BigInt in pool");
+    let expected = num_bigint::BigInt::from_str_radix("-99999999999999999999999", 10).unwrap();
+    assert_eq!(*bigint, expected);
 }
 
 #[test]

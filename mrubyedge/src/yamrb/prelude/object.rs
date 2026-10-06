@@ -174,6 +174,9 @@ pub fn mrb_kernel_puts(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, Err
         Value::Integer(i) => {
             println!("{}", i);
         }
+        Value::BigInt(b) => {
+            println!("{}", b);
+        }
         Value::Object(o) => match &o.value {
             RValue::String(s, _) => {
                 println!("{}", String::from_utf8_lossy(&s.borrow()));
@@ -216,9 +219,12 @@ pub fn mrb_kernel_debug(_vm: &mut VM, args: &[Option<Value>]) -> Result<Value, E
 pub fn mrb_object_is_equal(vm: &mut VM, lhs: Value, rhs: Value) -> Value {
     let structural = || Value::Bool(lhs.to_rc().as_eq_value() == rhs.to_rc().as_eq_value());
     let primitive = |v: &Value| match v {
-        Value::Integer(_) | Value::Float(_) | Value::Bool(_) | Value::Nil | Value::Symbol(_) => {
-            true
-        }
+        Value::Integer(_)
+        | Value::BigInt(_)
+        | Value::Float(_)
+        | Value::Bool(_)
+        | Value::Nil
+        | Value::Symbol(_) => true,
         Value::Object(o) => matches!(o.value, RValue::String(..)),
     };
     if primitive(&lhs) && primitive(&rhs) {
@@ -333,6 +339,55 @@ pub fn mrb_object_compare(vm: &mut VM, args: &[Option<Value>]) -> Result<Value, 
             if a < &b_float {
                 -1
             } else if a > &b_float {
+                1
+            } else {
+                0
+            }
+        }
+        (BigInt(a), BigInt(b)) => {
+            if a < b {
+                -1
+            } else if a > b {
+                1
+            } else {
+                0
+            }
+        }
+        (Integer(a), BigInt(b)) => {
+            let a_big = num_bigint::BigInt::from(*a);
+            if a_big < **b {
+                -1
+            } else if a_big > **b {
+                1
+            } else {
+                0
+            }
+        }
+        (BigInt(a), Integer(b)) => {
+            let b_big = num_bigint::BigInt::from(*b);
+            if **a < b_big {
+                -1
+            } else if **a > b_big {
+                1
+            } else {
+                0
+            }
+        }
+        (BigInt(a), Float(b)) => {
+            let a_float = bigint_to_f64(a);
+            if a_float < *b {
+                -1
+            } else if a_float > *b {
+                1
+            } else {
+                0
+            }
+        }
+        (Float(a), BigInt(b)) => {
+            let b_float = bigint_to_f64(b);
+            if *a < b_float {
+                -1
+            } else if *a > b_float {
                 1
             } else {
                 0
