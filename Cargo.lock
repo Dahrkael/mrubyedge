@@ -607,11 +607,9 @@ dependencies = [
 [[package]]
 name = "mrubyedge"
 version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f36a355cc3e87a2d17f9d237c09dba3f544bf4f1505b0c57974be54bb33464d"
 dependencies = [
- "criterion",
- "fnv",
- "mruby-compiler2-sys",
- "once_cell",
  "plain",
  "rand_core 0.10.1",
  "rand_xorshift",
@@ -621,10 +619,12 @@ dependencies = [
 
 [[package]]
 name = "mrubyedge"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f36a355cc3e87a2d17f9d237c09dba3f544bf4f1505b0c57974be54bb33464d"
+version = "2.1.1"
 dependencies = [
+ "criterion",
+ "fnv",
+ "mruby-compiler2-sys",
+ "once_cell",
  "plain",
  "rand_core 0.10.1",
  "rand_xorshift",
@@ -640,7 +640,7 @@ dependencies = [
  "clap",
  "crossterm",
  "mruby-compiler2-sys",
- "mrubyedge 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mrubyedge 2.1.0",
  "mrubyedge-math 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "mrubyedge-time 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "nom",
@@ -653,7 +653,7 @@ name = "mrubyedge-math"
 version = "0.3.0"
 dependencies = [
  "mruby-compiler2-sys",
- "mrubyedge 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mrubyedge 2.1.0",
 ]
 
 [[package]]
@@ -662,7 +662,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fa06c2f6d63ee14d0c4d155ba0ad0363ee6ea603e9b0d79335ed93d94ee2c1d"
 dependencies = [
- "mrubyedge 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mrubyedge 2.1.0",
 ]
 
 [[package]]
@@ -670,7 +670,7 @@ name = "mrubyedge-serde-json"
 version = "0.3.0"
 dependencies = [
  "mruby-compiler2-sys",
- "mrubyedge 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mrubyedge 2.1.0",
  "serde",
  "serde_json",
 ]
@@ -681,7 +681,7 @@ version = "0.3.0"
 dependencies = [
  "libc",
  "mruby-compiler2-sys",
- "mrubyedge 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mrubyedge 2.1.0",
 ]
 
 [[package]]
@@ -691,7 +691,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c26878bfc485d7d548c29fc04f1799fb42bbc78270b2dfcbef31ffb9335fbb52"
 dependencies = [
  "libc",
- "mrubyedge 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mrubyedge 2.1.0",
 ]
 
 [[package]]
