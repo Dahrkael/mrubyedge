@@ -154,8 +154,71 @@ fn a_chunk_of_an_unknown_format_version_is_refused_test() {
     }
 }
 
-// The test compiler does not emit DBG sections, so the parser is exercised
-// with synthetic sections spliced into a compiled chunk before END.
+#[test]
+fn dbg_lines_from_ruby_source_are_retained_test() {
+    // The compiler wrapper uses dump flags = 0. Call its underlying C API
+    // with MRC_DUMP_DEBUG_INFO to exercise real compiler-generated DBG data.
+    use std::ffi::{c_int, c_void};
+    unsafe extern "C" {
+        fn mrc_ccontext_new(mrb: *mut c_void) -> *mut c_void;
+        fn mrc_ccontext_free(c: *mut c_void);
+        fn mrc_load_string_cxt(c: *mut c_void, source: *mut *const u8, len: usize) -> *mut c_void;
+        fn mrc_dump_irep(
+            c: *mut c_void,
+            irep: *const c_void,
+            flags: u8,
+            bin: *mut *mut u8,
+            size: *mut usize,
+        ) -> c_int;
+        fn mrc_irep_free(c: *mut c_void, irep: *mut c_void);
+        fn free(ptr: *mut c_void);
+    }
+
+    let code = r#"
+    def answer
+      x = 40
+      x + 2
+    end
+    answer
+    "#;
+    let binary = unsafe {
+        let context = mrc_ccontext_new(std::ptr::null_mut());
+        assert!(!context.is_null());
+        let mut source = code.as_ptr();
+        let irep = mrc_load_string_cxt(context, &mut source, code.len());
+        if irep.is_null() {
+            mrc_ccontext_free(context);
+            panic!("Failed to compile Ruby source");
+        }
+        let mut bin = std::ptr::null_mut();
+        let mut size = 0;
+        let result = mrc_dump_irep(context, irep, 1, &mut bin, &mut size);
+        let binary = if result == 0 && !bin.is_null() {
+            std::slice::from_raw_parts(bin, size).to_vec()
+        } else {
+            Vec::new()
+        };
+        free(bin.cast());
+        mrc_irep_free(context, irep);
+        mrc_ccontext_free(context);
+        assert_eq!(result, 0, "Failed to dump debug bytecode");
+        binary
+    };
+
+    let rite = mrubyedge::rite::load(&binary).unwrap();
+    assert_eq!(rite.irep.len(), 2);
+    assert_eq!(rite.irep[0].lines, vec![(0, 2), (4, 6)]);
+    assert_eq!(rite.irep[1].lines, vec![(0, 2), (4, 3), (7, 4)]);
+
+    // Offsets are byte positions, including bytes inside an instruction.
+    use mrubyedge::rite::line_at;
+    assert_eq!(line_at(&rite.irep[0].lines, 4), Some(6)); // answer
+    assert_eq!(line_at(&rite.irep[1].lines, 4), Some(3)); // x = 40
+    assert_eq!(line_at(&rite.irep[1].lines, 6), Some(3));
+    assert_eq!(line_at(&rite.irep[1].lines, 7), Some(4)); // x + 2
+}
+
+// Synthetic sections exercise each encoding and malformed input separately.
 
 fn splice_before_end(mut chunk: Vec<u8>, section: &[u8]) -> Vec<u8> {
     let end_at = chunk.len() - 8; // "END\0" + size
