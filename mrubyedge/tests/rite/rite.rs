@@ -153,3 +153,188 @@ fn a_chunk_of_an_unknown_format_version_is_refused_test() {
         assert!(matches!(err, mrubyedge::rite::Error::UnsupportedVersion(m) if &m == major));
     }
 }
+
+#[test]
+fn dbg_lines_from_ruby_source_are_retained_test() {
+    // The compiler wrapper uses dump flags = 0. Call its underlying C API
+    // with MRC_DUMP_DEBUG_INFO to exercise real compiler-generated DBG data.
+    use std::ffi::{c_int, c_void};
+    unsafe extern "C" {
+        fn mrc_ccontext_new(mrb: *mut c_void) -> *mut c_void;
+        fn mrc_ccontext_free(c: *mut c_void);
+        fn mrc_load_string_cxt(c: *mut c_void, source: *mut *const u8, len: usize) -> *mut c_void;
+        fn mrc_dump_irep(
+            c: *mut c_void,
+            irep: *const c_void,
+            flags: u8,
+            bin: *mut *mut u8,
+            size: *mut usize,
+        ) -> c_int;
+        fn mrc_irep_free(c: *mut c_void, irep: *mut c_void);
+        fn free(ptr: *mut c_void);
+    }
+
+    let code = r#"
+    def answer
+      x = 40
+      x + 2
+    end
+    answer
+    "#;
+    let binary = unsafe {
+        let context = mrc_ccontext_new(std::ptr::null_mut());
+        assert!(!context.is_null());
+        let mut source = code.as_ptr();
+        let irep = mrc_load_string_cxt(context, &mut source, code.len());
+        if irep.is_null() {
+            mrc_ccontext_free(context);
+            panic!("Failed to compile Ruby source");
+        }
+        let mut bin = std::ptr::null_mut();
+        let mut size = 0;
+        let result = mrc_dump_irep(context, irep, 1, &mut bin, &mut size);
+        let binary = if result == 0 && !bin.is_null() {
+            std::slice::from_raw_parts(bin, size).to_vec()
+        } else {
+            Vec::new()
+        };
+        free(bin.cast());
+        mrc_irep_free(context, irep);
+        mrc_ccontext_free(context);
+        assert_eq!(result, 0, "Failed to dump debug bytecode");
+        binary
+    };
+
+    let rite = mrubyedge::rite::load(&binary).unwrap();
+    assert_eq!(rite.irep.len(), 2);
+    assert_eq!(rite.irep[0].lines, vec![(0, 2), (4, 6)]);
+    assert_eq!(rite.irep[1].lines, vec![(0, 2), (4, 3), (7, 4)]);
+
+    // Offsets are byte positions, including bytes inside an instruction.
+    use mrubyedge::rite::line_at;
+    assert_eq!(line_at(&rite.irep[0].lines, 4), Some(6)); // answer
+    assert_eq!(line_at(&rite.irep[1].lines, 4), Some(3)); // x = 40
+    assert_eq!(line_at(&rite.irep[1].lines, 6), Some(3));
+    assert_eq!(line_at(&rite.irep[1].lines, 7), Some(4)); // x + 2
+}
+
+// Synthetic sections exercise each encoding and malformed input separately.
+
+fn splice_before_end(mut chunk: Vec<u8>, section: &[u8]) -> Vec<u8> {
+    let end_at = chunk.len() - 8; // "END\0" + size
+    let total = u32::from_be_bytes(chunk[8..12].try_into().unwrap()) + section.len() as u32;
+    chunk[8..12].copy_from_slice(&total.to_be_bytes());
+    let mut out = chunk[..end_at].to_vec();
+    out.extend_from_slice(section);
+    out.extend_from_slice(&chunk[end_at..]);
+    out
+}
+
+/// One-record DBG section for a single-irep chunk: filename table with one
+/// entry, then a record with one file entry of the given line_type.
+fn dbg_section(line_type: u8, entry_count: u32, payload: &[u8]) -> Vec<u8> {
+    let mut record = Vec::new();
+    record.extend_from_slice(&1u16.to_be_bytes()); // file entries in the record
+    record.extend_from_slice(&0u32.to_be_bytes()); // start_pos
+    record.extend_from_slice(&0u16.to_be_bytes()); // filename index
+    record.extend_from_slice(&entry_count.to_be_bytes());
+    record.push(line_type);
+    record.extend_from_slice(payload);
+
+    let mut body = Vec::new();
+    body.extend_from_slice(&1u16.to_be_bytes()); // filename table: 1 entry
+    body.extend_from_slice(&4u16.to_be_bytes());
+    body.extend_from_slice(b"a.rb");
+    // The record size includes its own 4 length bytes.
+    body.extend_from_slice(&((record.len() as u32 + 4).to_be_bytes()));
+    body.extend_from_slice(&record);
+
+    let mut section = Vec::new();
+    section.extend_from_slice(b"DBG\0");
+    section.extend_from_slice(&((8 + body.len()) as u32).to_be_bytes());
+    section.extend_from_slice(&body);
+    section
+}
+
+fn compiled_two_line_snippet() -> Vec<u8> {
+    mrbc_compile("dbg_snip", "x = 1\ny = 2\n")
+}
+
+#[test]
+fn dbg_flat_map_lines_are_parsed_test() {
+    // (pos, line) pairs: (0,1), (2,2).
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&0u32.to_be_bytes());
+    payload.extend_from_slice(&1u16.to_be_bytes());
+    payload.extend_from_slice(&2u32.to_be_bytes());
+    payload.extend_from_slice(&2u16.to_be_bytes());
+    let chunk = splice_before_end(compiled_two_line_snippet(), &dbg_section(1, 2, &payload));
+
+    let rite = mrubyedge::rite::load(&chunk).unwrap();
+    assert_eq!(rite.irep[0].lines, vec![(0, 1), (2, 2)]);
+
+    use mrubyedge::rite::line_at;
+    assert_eq!(line_at(&rite.irep[0].lines, 0), Some(1));
+    assert_eq!(line_at(&rite.irep[0].lines, 1), Some(1));
+    assert_eq!(line_at(&rite.irep[0].lines, 2), Some(2));
+    assert_eq!(line_at(&rite.irep[0].lines, 99), Some(2));
+}
+
+#[test]
+fn dbg_line_ary_lines_are_parsed_test() {
+    // One line per pc starting at start_pos; consecutive equal lines dedup.
+    let payload = [1u16, 1, 2]
+        .iter()
+        .flat_map(|l| l.to_be_bytes())
+        .collect::<Vec<u8>>();
+    let chunk = splice_before_end(compiled_two_line_snippet(), &dbg_section(0, 3, &payload));
+
+    let rite = mrubyedge::rite::load(&chunk).unwrap();
+    assert_eq!(rite.irep[0].lines, vec![(0, 1), (2, 2)]);
+}
+
+#[test]
+fn dbg_packed_map_lines_are_parsed_test() {
+    // entry_count is the byte length; varint (pos_delta, line_delta) pairs.
+    let payload = [0x00u8, 0x01, 0x02, 0x01];
+    let chunk = splice_before_end(
+        compiled_two_line_snippet(),
+        &dbg_section(2, payload.len() as u32, &payload),
+    );
+
+    let rite = mrubyedge::rite::load(&chunk).unwrap();
+    assert_eq!(rite.irep[0].lines, vec![(0, 1), (2, 2)]);
+}
+
+#[test]
+fn dbg_record_size_mismatch_is_rejected_test() {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&0u32.to_be_bytes());
+    payload.extend_from_slice(&1u16.to_be_bytes());
+    let mut section = dbg_section(1, 1, &payload);
+    // Corrupt the record size field: layout is DBG\0(4) size(4) count(2)
+    // len(2) "a.rb"(4) record_size(4), so it starts at offset 16.
+    section[16] = 0xff;
+
+    let chunk = splice_before_end(compiled_two_line_snippet(), &section);
+    assert!(mrubyedge::rite::load(&chunk).is_err());
+}
+
+#[test]
+fn dbg_section_shorter_than_declared_is_rejected_test() {
+    let mut section = dbg_section(0, 0, &[]);
+    // Declare more section bytes than exist.
+    let size = u32::from_be_bytes(section[4..8].try_into().unwrap()) + 64;
+    section[4..8].copy_from_slice(&size.to_be_bytes());
+
+    let chunk = splice_before_end(compiled_two_line_snippet(), &section);
+    let err = mrubyedge::rite::load(&chunk).unwrap_err();
+    assert!(matches!(err, mrubyedge::rite::Error::TooShort));
+}
+
+#[test]
+fn chunk_without_dbg_section_still_loads_with_empty_lines_test() {
+    let binary = mrbc_compile("no_dbg", "x = 1");
+    let rite = mrubyedge::rite::load(&binary).unwrap();
+    assert!(rite.irep[0].lines.is_empty());
+}
