@@ -912,10 +912,10 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
         irep1.lv = Some(map);
     }
 
-    if !irep.lines.is_empty() {
+    if !irep.debug_files.is_empty() {
         irep1.debug_info = Some(DebugInfo {
             pc_count: irep.insn.len(),
-            lines: irep.lines.clone(),
+            files: irep.debug_files.clone(),
         });
     }
     irep1.code = code;
@@ -959,18 +959,30 @@ pub struct IREP {
 #[derive(Debug, Clone)]
 pub struct DebugInfo {
     pub pc_count: usize,
-    pub lines: Vec<(u32, u32)>,
+    pub files: Vec<crate::rite::DebugFile>,
 }
 
 impl IREP {
     /// Returns the source line at an instruction byte offset, like mruby's
     /// mrb_debug_get_line. Missing debug data and out-of-range PCs return None.
     pub fn debug_line(&self, pc: usize) -> Option<u32> {
+        let file = self.debug_file(pc)?;
+        crate::rite::line_at(&file.lines, u32::try_from(pc).ok()?).filter(|line| *line > 0)
+    }
+
+    /// Returns the source filename at an instruction byte offset.
+    pub fn debug_filename(&self, pc: usize) -> Option<&std::ffi::CStr> {
+        Some(self.debug_file(pc)?.filename.as_c_str())
+    }
+
+    fn debug_file(&self, pc: usize) -> Option<&crate::rite::DebugFile> {
         let info = self.debug_info.as_ref()?;
         if pc >= info.pc_count {
             return None;
         }
-        crate::rite::line_at(&info.lines, u32::try_from(pc).ok()?).filter(|line| *line > 0)
+        let pc = u32::try_from(pc).ok()?;
+        let index = info.files.partition_point(|file| file.start_pos <= pc);
+        info.files.get(index.checked_sub(1)?)
     }
 }
 

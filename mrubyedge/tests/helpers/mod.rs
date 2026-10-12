@@ -30,12 +30,17 @@ pub(crate) fn string(s: &str) -> Rc<RObject> {
 }
 
 pub(crate) fn mrbc_compile_with_debug(code: &str) -> Vec<u8> {
+    mrbc_compile_named_debug("test.rb", code)
+}
+
+pub(crate) fn mrbc_compile_named_debug(filename: &str, code: &str) -> Vec<u8> {
     // The compiler wrapper uses dump flags = 0. Call its underlying C API
     // with MRC_DUMP_DEBUG_INFO to exercise real compiler-generated DBG data.
-    use std::ffi::{c_int, c_void};
+    use std::ffi::{CString, c_char, c_int, c_void};
     unsafe extern "C" {
         fn mrc_ccontext_new(mrb: *mut c_void) -> *mut c_void;
         fn mrc_ccontext_free(c: *mut c_void);
+        fn mrc_ccontext_filename(c: *mut c_void, name: *const c_char) -> *const c_char;
         fn mrc_load_string_cxt(c: *mut c_void, source: *mut *const u8, len: usize) -> *mut c_void;
         fn mrc_dump_irep(
             c: *mut c_void,
@@ -48,9 +53,11 @@ pub(crate) fn mrbc_compile_with_debug(code: &str) -> Vec<u8> {
         fn free(ptr: *mut c_void);
     }
 
+    let filename = CString::new(filename).unwrap();
     unsafe {
         let context = mrc_ccontext_new(std::ptr::null_mut());
         assert!(!context.is_null());
+        mrc_ccontext_filename(context, filename.as_ptr());
         let mut source = code.as_ptr();
         let irep = mrc_load_string_cxt(context, &mut source, code.len());
         if irep.is_null() {

@@ -325,3 +325,71 @@ fn vm_irep_retains_source_lines_test() {
     assert!(vm.irep.debug_info.is_none());
     assert_eq!(vm.irep.debug_line(0), None);
 }
+
+#[test]
+fn debug_filenames_survive_loading_into_vm_test() {
+    let binary = mrbc_compile_named_debug("source.rb", "def answer\n  42\nend\nanswer\n");
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    for irep in &rite.irep {
+        assert_eq!(irep.debug_files[0].filename.to_bytes(), b"source.rb");
+    }
+    let vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    drop(rite);
+    drop(binary);
+    assert_eq!(vm.irep.debug_filename(0).unwrap().to_bytes(), b"source.rb");
+    assert_eq!(
+        vm.irep.reps[0].debug_filename(0).unwrap().to_bytes(),
+        b"source.rb"
+    );
+    assert_eq!(vm.irep.debug_filename(usize::MAX), None);
+    assert_eq!(
+        mrubyedge::yamrb::vm::VM::empty().irep.debug_filename(0),
+        None
+    );
+}
+
+#[test]
+fn debug_filename_index_is_validated_test() {
+    let mut section = dbg_section(0, 1, &1u16.to_be_bytes());
+    // Record header (size + file count), start_pos, then filename index.
+    section[26..28].copy_from_slice(&1u16.to_be_bytes());
+    let binary = splice_before_end(compiled_two_line_snippet(), &section);
+    assert!(matches!(
+        mrubyedge::rite::load(&binary),
+        Err(mrubyedge::rite::Error::InvalidFormat)
+    ));
+}
+
+#[test]
+fn debug_multiple_files_select_their_own_line_maps_test() {
+    let mut body = Vec::new();
+    body.extend_from_slice(&2u16.to_be_bytes());
+    for name in [b"a.rb", b"b.rb"] {
+        body.extend_from_slice(&4u16.to_be_bytes());
+        body.extend_from_slice(name);
+    }
+    let mut record = Vec::new();
+    record.extend_from_slice(&2u16.to_be_bytes());
+    // The second file starts at byte 2 but its first mapped line is at byte 3.
+    for (start, filename, pos, line) in [(0u32, 0u16, 0u32, 10u16), (2, 1, 3, 20)] {
+        record.extend_from_slice(&start.to_be_bytes());
+        record.extend_from_slice(&filename.to_be_bytes());
+        record.extend_from_slice(&1u32.to_be_bytes());
+        record.push(1); // flat map
+        record.extend_from_slice(&pos.to_be_bytes());
+        record.extend_from_slice(&line.to_be_bytes());
+    }
+    body.extend_from_slice(&((record.len() + 4) as u32).to_be_bytes());
+    body.extend_from_slice(&record);
+    let mut section = b"DBG\0".to_vec();
+    section.extend_from_slice(&((body.len() + 8) as u32).to_be_bytes());
+    section.extend_from_slice(&body);
+    let binary = splice_before_end(compiled_two_line_snippet(), &section);
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    assert_eq!(vm.irep.debug_filename(1).unwrap().to_bytes(), b"a.rb");
+    assert_eq!(vm.irep.debug_line(1), Some(10));
+    assert_eq!(vm.irep.debug_filename(2).unwrap().to_bytes(), b"b.rb");
+    assert_eq!(vm.irep.debug_line(2), None);
+    assert_eq!(vm.irep.debug_line(3), Some(20));
+}
