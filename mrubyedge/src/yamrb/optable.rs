@@ -1239,12 +1239,6 @@ pub(crate) fn do_op_send_with_id(
     } else {
         vm.get_current_regs_cloned(recv_index)?
     };
-    let mut args = (0..n)
-        .map(|i| {
-            vm.get_current_regs_cloned(a as usize + i + 1)
-                .expect("args too short for required")
-        })
-        .collect::<Vec<_>>();
 
     let mut map = RHashMap::default();
     for i in 0..k {
@@ -1258,13 +1252,16 @@ pub(crate) fn do_op_send_with_id(
     }
     vm.kargs.borrow_mut().replace(map);
 
+    // The block is captured here but only appended to the argument vector
+    // for native calls; Ruby callees read it from the registers.
+    let mut block_val: Option<Rc<RObject>> = None;
     if let Some(blk_index) = blk_index {
         let blk_val = vm.get_current_regs_cloned(blk_index)?;
         if matches!(blk_val.tt, RType::Symbol) {
             let proc_val = mrb_funcall(vm, Some(blk_val), "to_proc", &[])?;
-            args.push(proc_val);
+            block_val = Some(proc_val);
         } else {
-            args.push(blk_val);
+            block_val = Some(blk_val);
         }
     } else {
         // When no block is provided, do not push a nil placeholder
@@ -1277,10 +1274,12 @@ pub(crate) fn do_op_send_with_id(
     } else {
         recv.singleton_or_this_class(vm)
     };
+    let mut via_method_missing = false;
     let (owner_module, method) = resolve_method(&klass, &method_id.name)
         .or_else(|| {
-            unshift_method_name(vm, &mut args, &method_id, a as usize, n + k * 2 + 1);
+            unshift_method_name(vm, &method_id, a as usize, n + k * 2 + 1);
             n += 1;
+            via_method_missing = true;
             resolve_method(&klass, "method_missing")
         })
         .ok_or_else(|| {
@@ -1302,6 +1301,22 @@ pub(crate) fn do_op_send_with_id(
 
     vm.current_regs()[a as usize].replace(recv.clone());
     if !method.is_rb_func {
+        // Build the argument vector only for native calls (Ruby callees read
+        // the registers directly). After method_missing the name sits at
+        // a+1 and the original args were shifted up by one.
+        let mm = via_method_missing as usize;
+        let first_arg = a as usize + 1 + mm;
+        let mut args = Vec::with_capacity(n + usize::from(block_val.is_some()));
+        if via_method_missing {
+            args.push(vm.get_current_regs_cloned(a as usize + 1)?);
+        }
+        for i in 0..(n - mm) {
+            args.push(vm.get_current_regs_cloned(first_arg + i)?);
+        }
+        if let Some(blk) = block_val {
+            args.push(blk);
+        }
+
         kwarg_op_enter(vm, 0);
 
         let func = vm
@@ -1354,20 +1369,13 @@ pub(crate) fn do_op_send_with_id(
     Ok(())
 }
 
-fn unshift_method_name(
-    vm: &mut VM,
-    args: &mut Vec<Rc<RObject>>,
-    method_id: &RSym,
-    a: usize,
-    total_args: usize,
-) {
+fn unshift_method_name(vm: &mut VM, method_id: &RSym, a: usize, total_args: usize) {
     let method_name = RObject::symbol(method_id.clone()).to_refcount_assigned();
     for i in (a + 1..=a + total_args).rev() {
         let val = vm.current_regs().get(i).and_then(|r| r.as_ref().cloned());
         val.as_ref().cloned().map(|v| mrb_call_inspect(vm, v));
         vm.current_regs()[i + 1].replace(val.unwrap_or_else(|| Rc::new(RObject::nil())));
     }
-    args.insert(0, method_name.clone());
     vm.current_regs()[a + 1].replace(method_name);
 }
 
