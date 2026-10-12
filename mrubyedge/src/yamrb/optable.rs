@@ -2223,36 +2223,35 @@ pub(crate) fn op_strcat(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let b = a + 1;
     let val1 = vm.get_current_regs_cloned(a)?;
     let val2 = vm.get_current_regs_cloned(b)?;
-    match (&val1.value, &val2.value) {
-        (RValue::String(s1, _), RValue::String(s2, _)) => {
-            let mut s1 = s1.borrow_mut();
-            let s2 = s2.borrow();
-            for c in s2.iter() {
-                s1.push(*c);
-            }
-        }
-        (RValue::String(s1, _), RValue::Integer(s2)) => {
-            let mut s1 = s1.borrow_mut();
-            let s2 = s2.to_string();
-            for c in s2.as_bytes() {
-                s1.push(*c);
-            }
-        }
-        (RValue::String(s1, _), _) => {
-            let mut s1 = s1.borrow_mut();
-            let s2 = mrb_funcall(vm, Some(val2.clone()), "to_s", &[])?;
-            let s2 = match &s2.value {
-                RValue::String(s, _) => s.borrow(),
-                _ => unreachable!("to_s must return string"),
-            };
-            for c in s2.to_vec().iter() {
-                s1.push(*c);
-            }
-        }
-        _ => {
-            unreachable!("strcat supports only string")
-        }
+    let s1 = match &val1.value {
+        RValue::String(s, _) => s,
+        _ => unreachable!("strcat supports only string"),
     };
+    // Append by memcpy (not per-byte push); `to_s` only runs for operands
+    // that are not already a String or Integer.
+    match &val2.value {
+        RValue::String(s2, _) => {
+            // Copy out first so a self-append cannot hold two borrows.
+            let bytes = s2.borrow().to_vec();
+            s1.borrow_mut().extend_from_slice(&bytes);
+        }
+        RValue::Integer(i) => {
+            let bytes = i.to_string().into_bytes();
+            s1.borrow_mut().extend_from_slice(&bytes);
+        }
+        _ => append_to_string(vm, s1, &val2)?,
+    }
+    Ok(())
+}
+
+/// Slow path of `OP_STRCAT`: coerce the right operand through `to_s`.
+fn append_to_string(vm: &mut VM, s1: &RefCell<Vec<u8>>, val2: &Rc<RObject>) -> Result<(), Error> {
+    let s2 = mrb_funcall(vm, Some(val2.clone()), "to_s", &[])?;
+    let bytes = match &s2.value {
+        RValue::String(s, _) => s.borrow().to_vec(),
+        _ => unreachable!("to_s must return string"),
+    };
+    s1.borrow_mut().extend_from_slice(&bytes);
     Ok(())
 }
 
