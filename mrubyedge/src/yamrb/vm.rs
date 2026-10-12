@@ -99,6 +99,10 @@ pub struct VM {
     pub current_kargs: RefCell<Option<Rc<KArgs>>>,
     pub target_class: TargetContext,
     pub exception: Option<Rc<RException>>,
+    // call_block temporarily detaches callinfos to establish an execution
+    // boundary. Keep them visible to debug stack traversal.
+    pub(crate) suspended_callinfos: Vec<Rc<CALLINFO>>,
+    pub(crate) pending_exception: Option<Rc<RException>>,
 
     pub flag_preemption: Cell<bool>,
 
@@ -320,6 +324,8 @@ impl VM {
             current_kargs,
             target_class,
             exception,
+            suspended_callinfos: Vec::new(),
+            pending_exception: None,
             flag_preemption,
             #[cfg(feature = "insn-limit")]
             insn_count,
@@ -340,6 +346,65 @@ impl VM {
         prelude(&mut vm);
 
         vm
+    }
+
+    /// Captures Ruby source frames, innermost first, before stack unwinding.
+    pub fn backtrace(&self) -> Vec<String> {
+        let mut trace = Vec::new();
+        let mut irep = self.current_irep.clone();
+        let mut pc = self.pc.get();
+        let chains = std::iter::once(self.current_callinfo.clone())
+            .chain(self.suspended_callinfos.iter().rev().cloned().map(Some));
+        for mut chain in chains {
+            while let Some(ci) = chain {
+                if let Some(location) = Self::frame_location(&irep, pc, Some(&ci.method_id.name)) {
+                    trace.push(location);
+                }
+                irep = ci.pc_irep.clone();
+                pc = ci.pc;
+                chain = ci.prev.clone();
+            }
+        }
+        if let Some(location) = Self::frame_location(&irep, pc, None) {
+            trace.push(location);
+        }
+        trace
+    }
+
+    fn frame_location(irep: &IREP, next_pc: usize, method: Option<&str>) -> Option<String> {
+        // The interpreter increments its instruction index before dispatch.
+        // DBG indexes bytes, so resolve through the previous Op's position.
+        let op = irep.code.get(next_pc.checked_sub(1)?)?;
+        let filename = irep.debug_filename(op.pos)?;
+        let line = irep.debug_line(op.pos).unwrap_or(0);
+        let mut location = format!("{}:{}", filename.to_string_lossy(), line);
+        if let Some(method) = method {
+            location.push_str(":in ");
+            location.push_str(method);
+        }
+        Some(location)
+    }
+
+    pub(crate) fn prepare_exception(&mut self, error: &Error, native_method: Option<&str>) {
+        if native_method.is_some() && matches!(error, Error::Break(_) | Error::BlockReturn(_, _)) {
+            return;
+        }
+        if self
+            .pending_exception
+            .as_ref()
+            .is_some_and(|exception| *exception.error_type.borrow() == *error)
+        {
+            return;
+        }
+        let mut exception = RException::from_error(self, error);
+        if !matches!(error, Error::Break(_) | Error::BlockReturn(_, _)) {
+            if let Some(name) = native_method {
+                let location = Self::frame_location(&self.current_irep, self.pc.get(), Some(name))
+                    .unwrap_or_else(|| format!("(unknown):0:in {name}"));
+                exception.backtrace.insert(0, location);
+            }
+        }
+        self.pending_exception = Some(Rc::new(exception));
     }
 
     /// Resets the instruction counter. Only available when the `insn-limit` feature is enabled.
@@ -531,11 +596,14 @@ impl VM {
                 );
             }
 
+            // Only an exception propagated by this dispatch may be reused.
+            // Host calls can leave a pending exception after returning Err.
+            self.pending_exception = None;
             match consume_expr(self, op.code, &operand, op.pos, op.len) {
                 Ok(_) => {}
                 Err(e) => {
-                    let exception = RException::from_error(self, &e);
-                    self.exception = Some(Rc::new(exception));
+                    self.prepare_exception(&e, None);
+                    self.exception = self.pending_exception.take();
                     unwinding = true;
                     continue;
                 }

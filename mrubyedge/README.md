@@ -79,6 +79,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Debug locations and backtraces
+
+RITE bytecode compiled with a `DBG` section retains source filenames and line
+numbers in each VM `IREP`, including nested methods and blocks. The
+`IREP::debug_line` and `IREP::debug_filename` methods take an original bytecode
+offset, not an index into `IREP::code`; use `Op::pos` when starting from a decoded
+instruction. Missing debug information and out-of-range offsets return `None`.
+
+Exceptions capture their source frames before unwinding. Ruby code can read
+`error.backtrace`, an array of strings such as `example.rb:12:in calculate`,
+ordered from the innermost frame to the caller. Blocks use the name `<block>`.
+`ensure` propagation and `raise error` preserve the original trace. Ruby frames
+without debug information are omitted; a failing native method without a known
+source location uses `(unknown):0:in method_name`.
+
+Rust callers can inspect `vm.exception.as_ref().map(|error| &error.backtrace)`
+after `VM::run` or `VM::eval_rite` returns an error. `VM::backtrace()` captures the
+currently executing Ruby stack instead. Source locations require debug bytecode;
+the default `mruby-compiler2-sys` compilation API does not emit a `DBG` section.
+
 ## Use Cases
 
 - **Embedded Systems**: Run Ruby in resource-constrained devices

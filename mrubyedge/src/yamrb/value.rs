@@ -1262,7 +1262,7 @@ pub struct RException {
     pub class: Rc<RClass>,
     pub error_type: RefCell<Error>,
     pub message: String,
-    pub backtrace: Vec<String>, // TODO
+    pub backtrace: Vec<String>,
 }
 
 impl RClass {
@@ -1302,7 +1302,11 @@ impl RException {
             class: RClass::from_error(vm, e),
             error_type: RefCell::new(e.clone()),
             message: e.message(),
-            backtrace: Vec::new(),
+            backtrace: if matches!(e, Error::Break(_) | Error::BlockReturn(_, _)) {
+                Vec::new()
+            } else {
+                vm.backtrace()
+            },
         }
     }
 }

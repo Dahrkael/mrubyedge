@@ -23,6 +23,9 @@ fn call_block(
     push_callinfo(vm, method_id, args.len(), method_owner, return_register);
 
     let old_callinfo = vm.current_callinfo.take();
+    if let Some(ci) = &old_callinfo {
+        vm.suspended_callinfos.push(ci.clone());
+    }
 
     // Since call_block does not move the registers offset,
     // keep the state before the call.
@@ -48,6 +51,17 @@ fn call_block(
     vm.upper = block.environ;
 
     let res = vm.run_internal();
+    if res.is_err() {
+        vm.pending_exception = vm.exception.clone().filter(|exception| {
+            !matches!(
+                *exception.error_type.borrow(),
+                Error::Break(_) | Error::BlockReturn(_, _)
+            )
+        });
+    }
+    if old_callinfo.is_some() {
+        vm.suspended_callinfos.pop();
+    }
 
     if let Some(prev) = prev_self {
         vm.current_regs()[0].replace(prev);
@@ -231,6 +245,9 @@ pub fn mrb_funcall(
         let prev = vm.current_regs()[0].replace(recv.clone());
         let func = vm.fn_table.get(method.func.unwrap()).unwrap();
         let res = func(vm, args);
+        if let Err(error) = &res {
+            vm.prepare_exception(error, Some(name));
+        }
         if let Some(prev) = prev {
             vm.current_regs()[0].replace(prev);
         } else {

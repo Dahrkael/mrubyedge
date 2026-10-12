@@ -361,7 +361,11 @@ pub fn mrb_object_to_s(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>
     Ok(RObject::string(format!("#<{}:{}>", class.full_name(), addr)).to_refcount_assigned())
 }
 
-pub fn mrb_object_raise(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+pub fn mrb_object_raise(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+    if let Some(RValue::Exception(exception)) = args.first().map(|arg| &arg.value) {
+        vm.pending_exception = Some(exception.clone());
+        return Err(exception.error_type.borrow().clone());
+    }
     // raise SomeClass, "message" (or raise SomeClass)
     if let Some(RValue::Class(klass)) = args.first().map(|a| &a.value) {
         let class_name = klass.full_name();
