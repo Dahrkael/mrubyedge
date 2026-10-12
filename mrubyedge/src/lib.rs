@@ -37,6 +37,7 @@
 //!         pool: Vec::new(),
 //!         reps: Vec::new(),
 //!         lv: None,
+//!     debug_info: None,
 //!         catch_handlers: Vec::new(),
 //!     };
 //!

@@ -156,24 +156,6 @@ fn a_chunk_of_an_unknown_format_version_is_refused_test() {
 
 #[test]
 fn dbg_lines_from_ruby_source_are_retained_test() {
-    // The compiler wrapper uses dump flags = 0. Call its underlying C API
-    // with MRC_DUMP_DEBUG_INFO to exercise real compiler-generated DBG data.
-    use std::ffi::{c_int, c_void};
-    unsafe extern "C" {
-        fn mrc_ccontext_new(mrb: *mut c_void) -> *mut c_void;
-        fn mrc_ccontext_free(c: *mut c_void);
-        fn mrc_load_string_cxt(c: *mut c_void, source: *mut *const u8, len: usize) -> *mut c_void;
-        fn mrc_dump_irep(
-            c: *mut c_void,
-            irep: *const c_void,
-            flags: u8,
-            bin: *mut *mut u8,
-            size: *mut usize,
-        ) -> c_int;
-        fn mrc_irep_free(c: *mut c_void, irep: *mut c_void);
-        fn free(ptr: *mut c_void);
-    }
-
     let code = r#"
     def answer
       x = 40
@@ -181,29 +163,7 @@ fn dbg_lines_from_ruby_source_are_retained_test() {
     end
     answer
     "#;
-    let binary = unsafe {
-        let context = mrc_ccontext_new(std::ptr::null_mut());
-        assert!(!context.is_null());
-        let mut source = code.as_ptr();
-        let irep = mrc_load_string_cxt(context, &mut source, code.len());
-        if irep.is_null() {
-            mrc_ccontext_free(context);
-            panic!("Failed to compile Ruby source");
-        }
-        let mut bin = std::ptr::null_mut();
-        let mut size = 0;
-        let result = mrc_dump_irep(context, irep, 1, &mut bin, &mut size);
-        let binary = if result == 0 && !bin.is_null() {
-            std::slice::from_raw_parts(bin, size).to_vec()
-        } else {
-            Vec::new()
-        };
-        free(bin.cast());
-        mrc_irep_free(context, irep);
-        mrc_ccontext_free(context);
-        assert_eq!(result, 0, "Failed to dump debug bytecode");
-        binary
-    };
+    let binary = mrbc_compile_with_debug(code);
 
     let rite = mrubyedge::rite::load(&binary).unwrap();
     assert_eq!(rite.irep.len(), 2);
@@ -337,4 +297,31 @@ fn chunk_without_dbg_section_still_loads_with_empty_lines_test() {
     let binary = mrbc_compile("no_dbg", "x = 1");
     let rite = mrubyedge::rite::load(&binary).unwrap();
     assert!(rite.irep[0].lines.is_empty());
+}
+
+#[test]
+fn vm_irep_retains_source_lines_test() {
+    let binary = mrbc_compile_with_debug("def answer\n  x = 40\n  x + 2\nend\nanswer\n");
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    drop(rite);
+    drop(binary);
+
+    assert_eq!(vm.irep.debug_line(0), Some(1));
+    assert_eq!(vm.irep.debug_line(4), Some(5));
+    let method = &vm.irep.reps[0];
+    assert_eq!(method.debug_line(4), Some(2));
+    assert_eq!(method.debug_line(6), Some(2));
+    assert_eq!(method.debug_line(7), Some(3));
+    assert_eq!(
+        method.debug_line(method.debug_info.as_ref().unwrap().pc_count),
+        None
+    );
+    assert_eq!(method.debug_line(usize::MAX), None);
+
+    let binary = mrbc_compile("no_debug", "1");
+    let mut rite = mrubyedge::rite::load(&binary).unwrap();
+    let vm = mrubyedge::yamrb::vm::VM::open(&mut rite);
+    assert!(vm.irep.debug_info.is_none());
+    assert_eq!(vm.irep.debug_line(0), None);
 }

@@ -77,6 +77,7 @@ fn main() {
         pool: Vec::new(),
         reps: Vec::new(),
         lv: None,
+        debug_info: None,
         catch_handlers: Vec::new(),
     };
     let mut vm = vm::VM::new_by_raw_irep(irep);

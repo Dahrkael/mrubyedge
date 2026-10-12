@@ -246,6 +246,7 @@ impl VM {
             pool: Vec::new(),
             reps: Vec::new(),
             lv: None,
+            debug_info: None,
             catch_handlers: Vec::new(),
         };
         Self::new_by_raw_irep(irep)
@@ -858,6 +859,7 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
         pool: Vec::new(),
         reps: Vec::new(),
         lv: None,
+        debug_info: None,
         catch_handlers: Vec::new(),
     };
     for sym in irep.syms.iter() {
@@ -910,6 +912,12 @@ fn load_irep_1(reps: &mut [Irep], pos: usize) -> (IREP, usize) {
         irep1.lv = Some(map);
     }
 
+    if !irep.lines.is_empty() {
+        irep1.debug_info = Some(DebugInfo {
+            pc_count: irep.insn.len(),
+            lines: irep.lines.clone(),
+        });
+    }
     irep1.code = code;
     (irep1, pos + 1)
 }
@@ -943,7 +951,27 @@ pub struct IREP {
     pub pool: Vec<RPool>,
     pub reps: Vec<Rc<IREP>>,
     pub lv: Option<RHashMap<usize, String>>,
+    pub debug_info: Option<DebugInfo>,
     pub catch_handlers: Vec<CatchTarget>,
+}
+
+/// Debug locations use byte offsets in the original instruction sequence.
+#[derive(Debug, Clone)]
+pub struct DebugInfo {
+    pub pc_count: usize,
+    pub lines: Vec<(u32, u32)>,
+}
+
+impl IREP {
+    /// Returns the source line at an instruction byte offset, like mruby's
+    /// mrb_debug_get_line. Missing debug data and out-of-range PCs return None.
+    pub fn debug_line(&self, pc: usize) -> Option<u32> {
+        let info = self.debug_info.as_ref()?;
+        if pc >= info.pc_count {
+            return None;
+        }
+        crate::rite::line_at(&info.lines, u32::try_from(pc).ok()?).filter(|line| *line > 0)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
