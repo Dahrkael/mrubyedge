@@ -1141,6 +1141,7 @@ pub(crate) fn op_raiseif(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     if let Some(val) = val
         && let RValue::Exception(e) = &val.value
     {
+        vm.pending_exception = Some(e.clone());
         return Err(e.as_ref().error_type.borrow().clone());
     }
     Ok(())
@@ -1309,6 +1310,9 @@ pub(crate) fn do_op_send_with_id(
         vm.current_regs_offset += a as usize;
 
         let res = func(vm, &args);
+        if let Err(error) = &res {
+            vm.prepare_exception(error, Some(&method_id.name));
+        }
 
         kwarg_op_return(vm);
 

@@ -42,6 +42,15 @@ pub struct Irep<'a> {
     /// Source line changes (instruction-byte offset, line), ascending.
     /// Empty when the chunk was compiled without debug info.
     pub lines: Vec<(u32, u32)>,
+    pub debug_files: Vec<DebugFile>,
+}
+
+/// One source file's range and line map, mirroring mrb_irep_debug_info_file.
+#[derive(Debug, Clone)]
+pub struct DebugFile {
+    pub start_pos: u32,
+    pub filename: CString,
+    pub lines: Vec<(u32, u32)>,
 }
 
 impl Irep<'_> {
@@ -286,6 +295,7 @@ pub fn section_irep_1(head: &[u8]) -> Result<(usize, SectionIrepHeader, Vec<Irep
             catch_handlers,
             lv: Vec::new(), // Will be filled by section_lvar if present
             lines: Vec::new(),
+            debug_files: Vec::new(),
         };
         ireps.push(irep);
     }
@@ -413,9 +423,7 @@ fn u32_at(head: &[u8], cur: usize) -> Result<u32, Error> {
     ]))
 }
 
-/// Parses the DBG section. File names are consumed but not kept: only the
-/// per-irep source line maps are stored, in the same DFS pre-order as the
-/// irep records.
+/// Parses filenames and per-file line maps in IREP DFS pre-order.
 fn parse_debug_section(head: &[u8], ireps: &mut [Irep]) -> Result<usize, Error> {
     let header = SectionMiscHeader::from_bytes(head)?;
     let section_size = be32_to_u32(header.size) as usize;
@@ -430,13 +438,17 @@ fn parse_debug_section(head: &[u8], ireps: &mut [Irep]) -> Result<usize, Error> 
     // Filename table: (u16 len, bytes) entries, not null-terminated.
     let file_count = u16_at(sec, cur)? as usize;
     cur += 2;
+    let mut filenames = Vec::with_capacity(file_count);
     for _ in 0..file_count {
         let len = u16_at(sec, cur)? as usize;
-        cur += 2 + len;
+        cur += 2;
+        let bytes = sec.get(cur..cur + len).ok_or(Error::TooShort)?;
+        filenames.push(CString::new(bytes).map_err(|_| Error::InvalidFormat)?);
+        cur += len;
     }
 
     let mut idx = 0usize;
-    cur = read_debug_record(sec, cur, ireps, &mut idx, section_size)?;
+    cur = read_debug_record(sec, cur, ireps, &mut idx, section_size, &filenames)?;
 
     // Tolerate a short section (trailing padding), reject an overrun.
     if cur > section_size {
@@ -451,6 +463,7 @@ fn read_debug_record(
     ireps: &mut [Irep],
     irep_idx: &mut usize,
     limit: usize,
+    filenames: &[CString],
 ) -> Result<usize, Error> {
     if *irep_idx >= ireps.len() || cur >= limit {
         return Ok(cur);
@@ -464,11 +477,20 @@ fn read_debug_record(
     let file_count = u16_at(head, cur)? as usize;
     cur += 2;
 
-    let mut lines: Vec<(u32, u32)> = Vec::new();
+    let mut all_lines = Vec::new();
+    let mut files: Vec<DebugFile> = Vec::new();
     for _ in 0..file_count {
+        let mut lines = Vec::new();
         let start_pos = u32_at(head, cur)?;
         cur += 4;
-        let _filename_idx = u16_at(head, cur)?;
+        if files.last().is_some_and(|file| file.start_pos >= start_pos) {
+            return Err(Error::InvalidFormat);
+        }
+        let filename_idx = u16_at(head, cur)? as usize;
+        let filename = filenames
+            .get(filename_idx)
+            .ok_or(Error::InvalidFormat)?
+            .clone();
         cur += 2;
         let entry_count = u32_at(head, cur)? as usize;
         cur += 4;
@@ -518,16 +540,23 @@ fn read_debug_record(
             }
             _ => return Err(Error::InvalidFormat),
         }
+        all_lines.extend_from_slice(&lines);
+        files.push(DebugFile {
+            start_pos,
+            filename,
+            lines,
+        });
     }
 
-    ireps[*irep_idx].lines = lines;
+    ireps[*irep_idx].lines = all_lines;
+    ireps[*irep_idx].debug_files = files;
     if cur - record_start != _record_size {
         return Err(Error::InvalidFormat);
     }
     *irep_idx += 1;
     let mut child = *irep_idx;
     for _ in 0..rlen {
-        cur = read_debug_record(head, cur, ireps, &mut child, limit)?;
+        cur = read_debug_record(head, cur, ireps, &mut child, limit, filenames)?;
     }
     *irep_idx = child;
     Ok(cur)

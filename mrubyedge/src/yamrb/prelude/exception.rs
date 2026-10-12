@@ -37,6 +37,12 @@ pub(crate) fn initialize_exception(vm: &mut VM) {
     let _ = vm.define_standard_class("_Break");
     let _ = vm.define_standard_class("_BlockReturn");
 
+    mrb_define_cmethod(
+        vm,
+        exp_class.clone(),
+        "backtrace",
+        Box::new(mrb_exception_backtrace),
+    );
     mrb_define_cmethod(vm, exp_class, "message", Box::new(mrb_exception_message));
 }
 
@@ -49,6 +55,23 @@ pub fn mrb_exception_message(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RO
         }
         _ => Err(Error::RuntimeError(
             "Exception#message must be called on an Exception".to_string(),
+        )),
+    }
+}
+
+pub fn mrb_exception_backtrace(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+    let receiver = vm.getself()?;
+    match &receiver.value {
+        RValue::Exception(exception) => Ok(RObject::array(
+            exception
+                .backtrace
+                .iter()
+                .map(|line| RObject::string(line.clone()).to_refcount_assigned())
+                .collect(),
+        )
+        .to_refcount_assigned()),
+        _ => Err(Error::RuntimeError(
+            "Exception#backtrace must be called on an Exception".to_string(),
         )),
     }
 }
