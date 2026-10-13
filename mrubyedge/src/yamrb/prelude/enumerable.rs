@@ -128,6 +128,8 @@ pub(crate) fn initialize_enumerable(vm: &mut VM) {
 fn rproc_from_rust_block(vm: &mut VM, rfn: RFn) -> Result<Rc<RObject>, Error> {
     vm.push_fnblock(Rc::new(rfn))?;
     let block = RProc {
+        is_lambda: false,
+        return_target: None,
         is_rb_func: false,
         is_fnblock: true,
         sym_id: None,

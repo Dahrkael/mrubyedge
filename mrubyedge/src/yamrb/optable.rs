@@ -1,8 +1,6 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-#[cfg(feature = "mrubyedge-debug")]
-use std::env;
 use std::rc::Rc;
 
 use crate::Error;
@@ -542,6 +540,7 @@ pub(crate) fn push_callinfo(
     method_owner: Option<Rc<RModule>>,
     return_reg: usize,
 ) {
+    vm.enter_frame();
     vm.current_n_args.set(n_args);
     let callinfo = CALLINFO {
         prev: vm.current_callinfo.clone(),
@@ -566,6 +565,7 @@ pub(crate) fn pop_callinfo(vm: &mut VM) {
     }
 
     let ci = ci.unwrap();
+    vm.leave_frame();
     if let Some(prev) = &ci.prev {
         vm.current_callinfo.replace(prev.clone());
     }
@@ -1044,60 +1044,13 @@ pub(crate) fn op_jmpnil(vm: &mut VM, operand: &Fetched, end_pos: usize) -> Resul
 }
 
 pub(crate) fn op_jmpuw(vm: &mut VM, operand: &Fetched, end_pos: usize) -> Result<(), Error> {
-    match vm.find_handler_pos(Some(CATCH_TYPE_ENSURE)) {
-        None => op_jmp(vm, operand, end_pos),
-        Some(target_pos) => {
-            vm.pc.set(target_pos);
-
-            consume_ensure_block(vm)?;
-            op_jmp(vm, operand, end_pos)
-        }
-    }
-}
-
-fn consume_ensure_block(vm: &mut VM) -> Result<(), Error> {
-    loop {
-        let pc = vm.pc.get();
-        if vm.current_irep.code.len() <= pc {
-            // reached end of the IREP
-            return Err(Error::internal(
-                "end of opcode reached while consuming ensure block",
-            ));
-        }
-        let op = *vm
-            .current_irep
-            .code
-            .get(pc)
-            .ok_or_else(|| Error::internal("end of opcode reached"))?;
-        let operand = op.operand;
-        vm.pc.set(pc + 1);
-
-        if matches!(op.code, OpCode::RAISEIF) {
-            return Ok(());
-        }
-
-        #[cfg(feature = "mrubyedge-debug")]
-        if let Ok(v) = env::var("MRUBYEDGE_DEBUG") {
-            let level: i32 = v.parse().unwrap_or(1);
-            if level >= 2 {
-                vm.debug_dump_to_stdout(32);
-            }
-            eprintln!(
-                "{:?}: {:?} (pos={} len={})",
-                op.code, &operand, op.pos, op.len
-            );
-        }
-
-        match consume_expr(vm, op.code, &operand, op.pos, op.len) {
-            Ok(_) => {}
-            Err(e @ (Error::Break(_) | Error::BlockReturn(_, _))) => {
-                let exception = RException::from_error(vm, &e);
-                vm.exception = Some(Rc::new(exception));
-                continue;
-            }
-            Err(e) => return Err(e),
-        }
-    }
+    let offset = operand.as_s()? as i16;
+    let target = calcurate_pc(
+        &vm.current_irep,
+        0,
+        (end_pos as isize + offset as isize) as usize,
+    );
+    Err(Error::UnwindJump(target))
 }
 
 pub(crate) fn op_except(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
@@ -1344,6 +1297,27 @@ pub(crate) fn do_op_send_with_id(
                     .replace(upper.expect("should have upper breadcrumb"));
             }
             Err(e) => {
+                // A native send has no execution frame to unwind. Remove its
+                // breadcrumb here, before the Ruby unwinder pops a real frame.
+                let cur = vm.current_breadcrumb.take().expect("send breadcrumb");
+                vm.current_breadcrumb = cur.upper.clone();
+                let anchored = vm
+                    .break_landing
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|(target, _)| Rc::ptr_eq(target, &cur));
+                if anchored {
+                    let mut cursor = vm.current_breadcrumb.clone();
+                    let mut landing = None;
+                    while let Some(bc) = cursor {
+                        if let Some(reg) = bc.return_reg {
+                            landing = Some((bc.clone(), reg));
+                            break;
+                        }
+                        cursor = bc.upper.clone();
+                    }
+                    vm.break_landing.replace(landing);
+                }
                 vm.current_regs()[a as usize].replace(Rc::new(RObject::nil()));
                 return Err(e);
             }
@@ -1714,47 +1688,13 @@ pub(crate) fn op_retfalse(vm: &mut VM, _operand: &Fetched) -> Result<(), Error> 
     do_return(vm, Some(RObject::boolean(false).to_refcount_assigned()))
 }
 
-fn do_return(vm: &mut VM, value: Option<Rc<RObject>>) -> Result<(), Error> {
-    let old_irep = vm.current_irep.clone();
-    let nregs = old_irep.nregs;
-    // let no_return = vm.current_callinfo.is_some();
-
-    let regs0_cloned: Vec<_> = vm.current_regs()[0..nregs].to_vec();
-    if let Some(environ) = vm.cur_env.get(&vm.current_irep.__id) {
-        // A captured slot may hold the block proc whose environ is this env,
-        // forming an env -> proc -> env cycle that keeps both alive. Drop
-        // those slots so the proc alone owns the env.
-        environ.capture_no_clone(regs0_cloned);
-        let mut captured = environ.captured.borrow_mut();
-        if let Some(captured) = captured.as_mut() {
-            for slot in captured.iter_mut() {
-                let self_ref = matches!(
-                    slot.as_ref().map(|o| &o.value),
-                    Some(RValue::Proc(p))
-                        if p.environ
-                            .as_ref()
-                            .is_some_and(|pe| Rc::ptr_eq(environ, pe))
-                );
-                if self_ref {
-                    *slot = None;
-                }
-            }
-        }
-        environ.as_ref().expire();
-        vm.has_env_ref.remove(&vm.current_irep.__id);
-    }
+pub(crate) fn do_return(vm: &mut VM, value: Option<Rc<RObject>>) -> Result<(), Error> {
+    vm.leave_frame();
 
     let regs0 = vm.current_regs();
     if let Some(value) = value {
         regs0[0].replace(value);
     }
-    // TODO: inspect if this is needed
-    // if nregs > 0 && no_return {
-    //     regs0[1..=nregs].iter_mut().for_each(|reg| {
-    //         reg.take();
-    //     });
-    // }
-
     let ci = vm.current_callinfo.take();
     if ci.is_none() {
         let cur = vm.current_breadcrumb.take().expect("not found breadcrumb");
@@ -1795,17 +1735,22 @@ fn do_return(vm: &mut VM, value: Option<Rc<RObject>>) -> Result<(), Error> {
 pub(crate) fn op_return_blk(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let val = vm.get_current_regs_cloned(a)?;
-    let target_irep_id = vm
-        .get_outermost_env()
-        .expect("not found outermost env")
-        .__irep_id;
-
-    Err(Error::BlockReturn(target_irep_id, val))
+    let target = vm.return_target();
+    if !vm.frames.iter().any(|f| f.id == target) {
+        return Err(Error::TaggedError(
+            "LocalJumpError".into(),
+            "unexpected return".into(),
+        ));
+    }
+    Err(Error::BlockReturn(target, val))
 }
 
 pub(crate) fn op_break(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let val = vm.get_current_regs_cloned(a)?;
+    if vm.frames.last().is_some_and(|f| f.is_lambda) {
+        return Err(Error::BlockReturn(vm.frame_id(), val));
+    }
     // Record where this break must land: the nearest do_op_send breadcrumb in
     // the chain, captured before any unwinding can pop crumbs.
     let mut cursor = vm.current_breadcrumb.clone();
@@ -2372,22 +2317,13 @@ pub(crate) fn op_hashcat(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_lambda(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let irep = Some(vm.current_irep.reps[b as usize].clone());
-    let environ = ENV {
-        __irep_id: vm.current_irep.__id,
-        upper: vm.upper.clone(),
-        current_regs_offset: vm.current_regs_offset,
-        is_expired: Cell::new(false),
-        captured: RefCell::new(None),
-    };
-    //let nregs = vm.current_irep.nregs;
-    //environ.capture(&vm.current_regs()[0..nregs]);
-    let environ = Rc::new(environ);
-    vm.cur_env.insert(vm.current_irep.__id, environ.clone());
-    vm.has_env_ref.insert(vm.current_irep.__id, true);
+    let environ = vm.capture_env();
 
     let val = RObject {
         tt: RType::Proc,
         value: RValue::Proc(RProc {
+            is_lambda: true,
+            return_target: None,
             irep,
             is_rb_func: true,
             is_fnblock: false,
@@ -2408,20 +2344,13 @@ pub(crate) fn op_lambda(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_block(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let irep = Some(vm.current_irep.reps[b as usize].clone());
-    let environ = ENV {
-        __irep_id: vm.current_irep.__id,
-        upper: vm.upper.clone(),
-        current_regs_offset: vm.current_regs_offset,
-        is_expired: Cell::new(false),
-        captured: RefCell::new(None),
-    };
-    let environ = Rc::new(environ);
-    vm.cur_env.insert(vm.current_irep.__id, environ.clone());
-    vm.has_env_ref.insert(vm.current_irep.__id, true);
+    let environ = vm.capture_env();
 
     let val = RObject {
         tt: RType::Proc,
         value: RValue::Proc(RProc {
+            is_lambda: false,
+            return_target: Some(vm.return_target()),
             irep,
             is_rb_func: true,
             is_fnblock: false,
@@ -2445,6 +2374,8 @@ pub(crate) fn op_method(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val = RObject {
         tt: super::value::RType::Proc,
         value: super::value::RValue::Proc(super::value::RProc {
+            is_lambda: false,
+            return_target: None,
             irep,
             is_rb_func: true,
             is_fnblock: false,
@@ -2708,6 +2639,8 @@ pub(crate) fn op_tclass(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 fn method_from_irep(vm: &VM, index: usize, sym: RSym) -> RProc {
     RProc {
+        is_lambda: false,
+        return_target: None,
         irep: Some(vm.current_irep.reps[index].clone()),
         is_rb_func: true,
         is_fnblock: false,

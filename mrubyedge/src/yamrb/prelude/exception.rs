@@ -37,6 +37,7 @@ pub(crate) fn initialize_exception(vm: &mut VM) {
     // Dummy class for 'break' control flow
     let _ = vm.define_standard_class("_Break");
     let _ = vm.define_standard_class("_BlockReturn");
+    let _ = vm.define_standard_class("_UnwindJump");
 
     mrb_define_cmethod(
         vm,
