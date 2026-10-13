@@ -1192,12 +1192,6 @@ pub(crate) fn do_op_send_with_id(
     } else {
         vm.get_current_regs_cloned(recv_index)?
     };
-    let mut args = (0..n)
-        .map(|i| {
-            vm.get_current_regs_cloned(a as usize + i + 1)
-                .expect("args too short for required")
-        })
-        .collect::<Vec<_>>();
 
     let mut map = RHashMap::default();
     for i in 0..k {
@@ -1215,7 +1209,14 @@ pub(crate) fn do_op_send_with_id(
         let block = match &value.value {
             RValue::Nil | RValue::Proc(_) => value,
             _ => {
-                let converted = mrb_funcall(vm, Some(value), "to_proc", &[])?;
+                // Ruby to_proc can reuse argument registers. Preserve them
+                // only on this conversion path; ordinary Ruby sends allocate
+                // no argument vector.
+                let start = a as usize + 1;
+                let saved = vm.current_regs()[start..start + n].to_vec();
+                let converted = mrb_funcall(vm, Some(value), "to_proc", &[]);
+                vm.current_regs()[start..start + n].clone_from_slice(&saved);
+                let converted = converted?;
                 if !matches!(converted.value, RValue::Proc(_)) {
                     return Err(Error::TaggedError(
                         "TypeError".into(),
@@ -1225,8 +1226,6 @@ pub(crate) fn do_op_send_with_id(
                 converted
             }
         };
-        // Native methods retain their existing trailing-block convention.
-        args.push(block.clone());
         block
     } else {
         Rc::new(RObject::nil())
@@ -1241,7 +1240,7 @@ pub(crate) fn do_op_send_with_id(
     };
     let (owner_module, method) = resolve_method(&klass, &method_id.name)
         .or_else(|| {
-            unshift_method_name(vm, &mut args, &method_id, a as usize, n + k * 2 + 1);
+            unshift_method_name(vm, &method_id, a as usize, n + k * 2 + 1);
             n += 1;
             resolve_method(&klass, "method_missing")
         })
@@ -1266,6 +1265,16 @@ pub(crate) fn do_op_send_with_id(
 
     vm.current_regs()[a as usize].replace(recv.clone());
     if !method.is_rb_func {
+        // Ruby callees read registers directly. method_missing has already
+        // inserted the method name and shifted the positional arguments.
+        let mut args = Vec::with_capacity(n + usize::from(blk_index.is_some()));
+        for i in 0..n {
+            args.push(vm.get_current_regs_cloned(a as usize + i + 1)?);
+        }
+        if blk_index.is_some() {
+            args.push(block.clone());
+        }
+
         kwarg_op_enter(vm, 0);
 
         let func = vm
@@ -1329,10 +1338,6 @@ pub(crate) fn do_op_send_with_id(
     // Keywords have already been extracted into vm.kargs. Ruby callees enter
     // with positional arguments followed by the block, before OP_ENTER lays
     // them out according to the method's parameter declaration.
-    // A Ruby to_proc conversion may have reused these argument registers.
-    for (i, arg) in args.iter().take(n).enumerate() {
-        vm.current_regs()[a as usize + i + 1].replace(arg.clone());
-    }
     vm.current_regs()[a as usize + n + 1].replace(block.clone());
     push_callinfo(vm, method_id, n, Some(owner_module), a as usize);
 
@@ -1347,20 +1352,13 @@ pub(crate) fn do_op_send_with_id(
     Ok(())
 }
 
-fn unshift_method_name(
-    vm: &mut VM,
-    args: &mut Vec<Rc<RObject>>,
-    method_id: &RSym,
-    a: usize,
-    total_args: usize,
-) {
+fn unshift_method_name(vm: &mut VM, method_id: &RSym, a: usize, total_args: usize) {
     let method_name = RObject::symbol(method_id.clone()).to_refcount_assigned();
     for i in (a + 1..=a + total_args).rev() {
         let val = vm.current_regs().get(i).and_then(|r| r.as_ref().cloned());
         val.as_ref().cloned().map(|v| mrb_call_inspect(vm, v));
         vm.current_regs()[i + 1].replace(val.unwrap_or_else(|| Rc::new(RObject::nil())));
     }
-    args.insert(0, method_name.clone());
     vm.current_regs()[a + 1].replace(method_name);
 }
 
