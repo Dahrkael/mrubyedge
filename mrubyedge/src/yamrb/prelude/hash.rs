@@ -95,7 +95,7 @@ fn mrb_hash_get_index_self(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObje
 
 pub fn mrb_hash_get_index(this: Rc<RObject>, key: Rc<RObject>) -> Result<Rc<RObject>, Error> {
     let hash = match &this.value {
-        RValue::Hash(a) => a.clone(),
+        RValue::Hash(a) => a,
         _ => {
             return Err(Error::RuntimeError(
                 "Hash#[] must called on a hash".to_string(),
