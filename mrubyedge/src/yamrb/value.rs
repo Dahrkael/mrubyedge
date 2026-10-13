@@ -126,6 +126,16 @@ pub struct RObject {
 
 const UNSET_OBJECT_ID: u64 = u64::MAX;
 
+// Shared instances for MRI immediates: nil, true, false and small integers.
+// Their object_id is value-derived (4, 20, 0, n*2+1), so sharing never
+// changes identity semantics. Per-thread because Rc<RObject> is !Sync.
+thread_local! {
+    static NIL: Rc<RObject> = Rc::new(RObject::nil());
+    static TRUE: Rc<RObject> = Rc::new(RObject::boolean(true));
+    static FALSE: Rc<RObject> = Rc::new(RObject::boolean(false));
+    static SMALL_INTS: Vec<Rc<RObject>> = (0..=255).map(|n| Rc::new(RObject::integer(n))).collect();
+}
+
 impl RObject {
     pub fn nil() -> Self {
         RObject {
@@ -325,6 +335,30 @@ impl RObject {
         rc
     }
 
+    /// Shared instance for nil (object_id 4).
+    pub fn nil_rc() -> Rc<Self> {
+        NIL.with(|n| n.clone())
+    }
+
+    /// Shared instance for true (object_id 20) or false (object_id 0).
+    pub fn boolean_rc(b: bool) -> Rc<Self> {
+        if b {
+            TRUE.with(|t| t.clone())
+        } else {
+            FALSE.with(|f| f.clone())
+        }
+    }
+
+    /// Shared instance for small integers 0..=255 (object_id n*2+1); larger
+    /// values allocate a fresh instance as before.
+    pub fn integer_rc(n: i64) -> Rc<Self> {
+        if (0..=255).contains(&n) {
+            SMALL_INTS.with(|v| v[n as usize].clone())
+        } else {
+            Rc::new(RObject::integer(n))
+        }
+    }
+
     pub fn is_falsy(&self) -> bool {
         match self.tt {
             RType::Nil => true,
@@ -344,6 +378,12 @@ impl RObject {
         matches!(self.tt, RType::Nil)
     }
 
+    /// MRI immediates share one instance per value, so they must never
+    /// carry per-instance state (singleton class).
+    pub fn is_immediate(&self) -> bool {
+        matches!(self.tt, RType::Nil | RType::Bool | RType::Integer)
+    }
+
     pub fn is_main(&self) -> bool {
         self.object_id.get() == 0
     }
@@ -357,7 +397,7 @@ impl RObject {
             .borrow()
             .get(key)
             .cloned()
-            .or_else(|| Some(RObject::nil().to_refcount_assigned()))
+            .or_else(|| Some(RObject::nil_rc()))
             .unwrap()
     }
 
@@ -457,10 +497,21 @@ impl RObject {
     }
 
     pub(crate) fn initialize_or_get_singleton_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
+        // immediates are shared flyweights; caching a singleton class on one
+        // would leak to every instance of that value. Build a throwaway class
+        // instead.
+        if self.is_immediate() {
+            return self.build_singleton_class(vm);
+        }
         if let Some(sclass) = self.get_singleton_class() {
             return sclass;
         }
+        let sclass = self.build_singleton_class(vm);
+        self.set_singleton_class(Some(sclass.clone()));
+        sclass
+    }
 
+    fn build_singleton_class(self: &Rc<Self>, vm: &mut VM) -> Rc<RClass> {
         let class_name = {
             let inspect = mrb_call_inspect(vm, self.clone());
             match inspect {
@@ -479,8 +530,6 @@ impl RObject {
             parent_module.clone(),
         ));
         sclass.update_module_weakref();
-
-        self.set_singleton_class(Some(sclass.clone()));
         sclass
     }
 
