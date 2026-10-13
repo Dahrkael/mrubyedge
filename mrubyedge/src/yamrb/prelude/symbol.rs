@@ -47,6 +47,8 @@ fn mrb_symbol_to_proc(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>,
     });
     vm.push_fnblock(Rc::new(rfn))?;
     let block = RProc {
+        is_lambda: false,
+        return_target: None,
         is_rb_func: false,
         is_fnblock: true,
         sym_id: None,

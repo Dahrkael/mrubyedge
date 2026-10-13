@@ -13,15 +13,37 @@ fn call_block(
     block: RProc,
     recv: Rc<RObject>,
     args: &[Rc<RObject>],
+    passed_block: Option<Rc<RObject>>,
     method_info: Option<(RSym, Rc<RModule>)>,
     return_register: usize,
 ) -> Result<Rc<RObject>, Error> {
+    let irep = block
+        .irep
+        .clone()
+        .ok_or_else(|| Error::RuntimeError("No IREP".to_string()))?;
+    let is_method = method_info.is_some();
+    let frame_depth = vm.frames.len();
+    let prev_upper = vm.upper.clone();
     let (method_id, method_owner) = match method_info {
         Some((id, owner)) => (id, Some(owner)),
         None => (RSym::new("<block>".to_string()), None),
     };
+    let prev_n_args = vm.current_n_args.get();
     push_callinfo(vm, method_id, args.len(), method_owner, return_register);
 
+    if !is_method {
+        let frame = vm.frames.last_mut().unwrap();
+        frame.is_lambda = block.is_lambda;
+        frame.return_target = block.return_target.unwrap_or(frame.id);
+    }
+
+    if let Some(ci) = &vm.current_callinfo {
+        ci.has_block.set(
+            passed_block
+                .as_ref()
+                .is_some_and(|b| !matches!(b.value, RValue::Nil)),
+        );
+    }
     let old_callinfo = vm.current_callinfo.take();
     if let Some(ci) = &old_callinfo {
         vm.suspended_callinfos.push(ci.clone());
@@ -37,27 +59,28 @@ fn call_block(
         prev_args.push(old);
     }
 
+    // Keep the block separate from positional arguments, including when it
+    // is absent, and restore the caller's register after the call.
+    let prev_block = vm.current_regs()[args.len() + 1]
+        .replace(passed_block.unwrap_or_else(|| Rc::new(RObject::nil())));
+
     vm.pc.set(0);
-    vm.current_irep = block
-        .irep
-        .as_ref()
-        .ok_or_else(|| Error::RuntimeError("No IREP".to_string()))?
-        .clone();
+    vm.current_irep = irep;
     // The callee's environ becomes the active upper env, but the caller's must
     // be restored on return. Deriving the restore from the callee's environ
     // chain used to clobber `vm.upper` to `None` after native->Ruby calls,
     // corrupting the upvar chain of enclosing blocks.
-    let prev_upper = vm.upper.take();
     vm.upper = block.environ;
 
     let res = vm.run_internal();
+    while vm.frames.len() > frame_depth {
+        vm.leave_frame();
+    }
     if res.is_err() {
-        vm.pending_exception = vm.exception.clone().filter(|exception| {
-            !matches!(
-                *exception.error_type.borrow(),
-                Error::Break(_) | Error::BlockReturn(_, _)
-            )
-        });
+        vm.pending_exception = vm
+            .exception
+            .clone()
+            .filter(|exception| !exception.error_type.borrow().is_control_flow());
     }
     if old_callinfo.is_some() {
         vm.suspended_callinfos.pop();
@@ -75,6 +98,9 @@ fn call_block(
             vm.current_regs()[i + 1].take();
         }
     }
+
+    vm.current_regs()[args.len() + 1] = prev_block;
+    vm.current_n_args.set(prev_n_args);
 
     if let Some(ci) = old_callinfo {
         if let Some(prev) = &ci.prev {
@@ -140,7 +166,7 @@ pub fn mrb_call_block(
     });
     vm.current_breadcrumb.replace(new_breadcrumb);
     let res = if block.is_rb_func {
-        call_block(vm, block, recv, args, None, return_register)
+        call_block(vm, block, recv, args, None, None, return_register)
     } else if block.is_fnblock {
         let func = vm.pop_fnblock()?;
         let res = func(vm, args);
@@ -173,6 +199,7 @@ pub fn mrb_call_block_breakable(
         Ok(_) => Ok(None),
         Err(Error::Break(v)) => {
             vm.exception.take();
+            vm.break_landing.take();
             Ok(Some(v))
         }
         Err(e) => Err(e),
@@ -199,6 +226,19 @@ pub fn mrb_funcall(
     name: &str,
     args: &[Rc<RObject>],
 ) -> Result<Rc<RObject>, Error> {
+    mrb_funcall_with_block(vm, top_self, name, args, None)
+}
+
+/// Calls a method with positional arguments and a separate optional block.
+/// A Proc in `args` is an ordinary positional argument, not an implicit block.
+/// Native methods receive the block appended to their argument slice.
+pub fn mrb_funcall_with_block(
+    vm: &mut VM,
+    top_self: Option<Rc<RObject>>,
+    name: &str,
+    args: &[Rc<RObject>],
+    block: Option<Rc<RObject>>,
+) -> Result<Rc<RObject>, Error> {
     let recv: Rc<RObject> = match &top_self {
         Some(obj) => obj.clone(),
         None => vm.getself()?,
@@ -215,7 +255,7 @@ pub fn mrb_funcall(
 
             let mut mm_args = vec![Rc::new(RObject::symbol(RSym::new(name.to_string())))];
             mm_args.extend_from_slice(args);
-            return mrb_funcall(vm, top_self, "method_missing", &mm_args);
+            return mrb_funcall_with_block(vm, top_self, "method_missing", &mm_args, block);
         }
     };
 
@@ -238,13 +278,18 @@ pub fn mrb_funcall(
             method,
             recv.clone(),
             args,
+            block,
             Some((method_id, owner_module)),
             0, // unused
         )
     } else {
         let prev = vm.current_regs()[0].replace(recv.clone());
         let func = vm.fn_table.get(method.func.unwrap()).unwrap();
-        let res = func(vm, args);
+        let mut native_args = args.to_vec();
+        if let Some(block) = block {
+            native_args.push(block);
+        }
+        let res = func(vm, &native_args);
         if let Err(error) = &res {
             vm.prepare_exception(error, Some(name));
         }
@@ -278,6 +323,7 @@ pub fn mrb_call_inspect(vm: &mut VM, recv: Rc<RObject>) -> Result<Rc<RObject>, E
             method,
             recv.clone(),
             &[],
+            None,
             Some((method_id, owner_module)),
             0, // unused
         )
@@ -314,6 +360,8 @@ pub fn mrb_call_p(vm: &mut VM, recv: Rc<RObject>) {
 pub fn mrb_define_cmethod(vm: &mut VM, klass: Rc<RClass>, name: &str, cmethod: RFn) {
     let index = vm.register_fn(cmethod);
     let method = RProc {
+        is_lambda: false,
+        return_target: None,
         is_rb_func: false,
         is_fnblock: false,
         sym_id: Some(RSym::new(name.to_string())),
@@ -343,6 +391,8 @@ pub fn mrb_define_method(_vm: &mut VM, klass: Rc<RClass>, name: &str, method: RP
 pub fn mrb_define_class_cmethod(vm: &mut VM, klass: Rc<RClass>, name: &str, cmethod: RFn) {
     let index = vm.register_fn(cmethod);
     let method = RProc {
+        is_lambda: false,
+        return_target: None,
         is_rb_func: false,
         is_fnblock: false,
         sym_id: Some(RSym::new(name.to_string())),
@@ -370,6 +420,8 @@ pub fn mrb_define_class_cmethod(vm: &mut VM, klass: Rc<RClass>, name: &str, cmet
 pub fn mrb_define_singleton_cmethod(vm: &mut VM, dest: Rc<RObject>, name: &str, cmethod: RFn) {
     let index = vm.register_fn(cmethod);
     let method = RProc {
+        is_lambda: false,
+        return_target: None,
         is_rb_func: false,
         is_fnblock: false,
         sym_id: Some(RSym::new(name.to_string())),
@@ -411,6 +463,8 @@ pub fn mrb_define_singleton_method(vm: &mut VM, dest: Rc<RObject>, name: &str, m
 pub fn mrb_define_module_cmethod(vm: &mut VM, module: Rc<RModule>, name: &str, cmethod: RFn) {
     let index = vm.register_fn(cmethod);
     let method = RProc {
+        is_lambda: false,
+        return_target: None,
         is_rb_func: false,
         is_fnblock: false,
         sym_id: Some(RSym::new(name.to_string())),

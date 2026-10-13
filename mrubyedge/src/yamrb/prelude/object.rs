@@ -85,12 +85,7 @@ pub(crate) fn initialize_object(vm: &mut VM) {
         "lambda",
         Box::new(mrb_object_lambda),
     );
-    mrb_define_cmethod(
-        vm,
-        object_class.clone(),
-        "proc",
-        Box::new(mrb_object_lambda),
-    );
+    mrb_define_cmethod(vm, object_class.clone(), "proc", Box::new(mrb_object_proc));
     mrb_define_cmethod(vm, object_class.clone(), "is_a?", Box::new(mrb_object_is_a));
     mrb_define_cmethod(
         vm,
@@ -388,7 +383,11 @@ fn mrb_object_nil_p(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
 
 fn mrb_object_block_given(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
     // CALLINFO の has_block フラグをチェック
-    let has_block = if let Some(ci) = vm.current_callinfo.as_ref() {
+    let has_block = if let Some(ci) = vm
+        .current_callinfo
+        .as_ref()
+        .or_else(|| vm.suspended_callinfos.last())
+    {
         ci.has_block.get()
     } else {
         false
@@ -402,14 +401,27 @@ pub fn mrb_object_initialize(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<R
     Ok(Rc::new(RObject::nil()))
 }
 
-pub fn mrb_object_lambda(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
-    let proc = args[args.len() - 1].clone();
-    if matches!(proc.value, RValue::Proc(_)) {
-        Ok(proc)
-    } else {
-        Err(Error::RuntimeError(
-            "Object#lambda expects a Proc as the last argument".to_string(),
-        ))
+pub fn mrb_object_lambda(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+    let block = mrb_object_proc(vm, args)?;
+    let RValue::Proc(proc) = &block.value else {
+        unreachable!()
+    };
+    if proc.is_lambda {
+        return Ok(block);
+    }
+    // As in mruby, convert a copy so the source Proc keeps its return target.
+    let mut proc = proc.clone();
+    proc.is_lambda = true;
+    proc.return_target = None;
+    Ok(RObject::proc(proc).to_refcount_assigned())
+}
+
+pub fn mrb_object_proc(_vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
+    match args.last() {
+        Some(block) if matches!(block.value, RValue::Proc(_)) => Ok(block.clone()),
+        _ => Err(Error::ArgumentError(
+            "tried to create Proc object without a block".into(),
+        )),
     }
 }
 

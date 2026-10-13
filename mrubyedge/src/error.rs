@@ -22,7 +22,10 @@ pub enum Error {
     TaggedError(String, String),
 
     Break(Rc<RObject>),
+    /// Return to a live execution frame, not an IREP.
     BlockReturn(usize, Rc<RObject>),
+    /// Resume at an instruction after running the ensures left by a jump.
+    UnwindJump(usize),
 }
 
 impl fmt::Display for Error {
@@ -34,6 +37,13 @@ impl fmt::Display for Error {
 impl error::Error for Error {}
 
 impl Error {
+    pub(crate) fn is_control_flow(&self) -> bool {
+        matches!(
+            self,
+            Self::Break(_) | Self::BlockReturn(..) | Self::UnwindJump(_)
+        )
+    }
+
     pub fn internal(msg: impl Into<String>) -> Error {
         Error::Internal(msg.into())
     }
@@ -53,6 +63,7 @@ impl Error {
 
             Error::TaggedError(tag, msg) => format!("[{}] {}", tag, msg),
 
+            Error::UnwindJump(_) => "[UnwindJump]".to_string(),
             Error::Break(_) => "[Break]".to_string(),
             Error::BlockReturn(_, _) => "[BlockReturn]".to_string(),
         }
@@ -121,6 +132,7 @@ impl From<Error> for StaticError {
 
             Error::TaggedError(tag, msg) => StaticError::General(format!("[{}] {}", tag, msg)),
 
+            Error::UnwindJump(_) => StaticError::General("[UnwindJump]".to_string()),
             Error::Break(_) => StaticError::General("[Break]".to_string()),
             Error::BlockReturn(_, _) => StaticError::General("[BlockReturn]".to_string()),
         }
