@@ -345,3 +345,34 @@ fn ensure_return_overrides_pending_exception() {
     "#,
     );
 }
+
+#[test]
+fn kernel_lambda_return_and_break_are_local() {
+    check(
+        r#"
+      $trace = []
+      def yielding
+        yield
+      ensure
+        $trace << :ensure
+      end
+      fn = lambda { yielding { return 7 } }
+      value = fn.call
+      other = lambda { break 9 }
+      [value, other.call, $trace, :continued] == [7, 9, [:ensure], :continued]
+    "#,
+    );
+}
+
+#[test]
+fn kernel_proc_retains_its_nonlocal_return_target() {
+    check(
+        r#"
+      def f
+        proc { return 7 }.call
+        99
+      end
+      f == 7
+    "#,
+    );
+}
