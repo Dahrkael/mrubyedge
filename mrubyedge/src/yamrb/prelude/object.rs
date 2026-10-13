@@ -388,7 +388,11 @@ fn mrb_object_nil_p(_vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
 
 fn mrb_object_block_given(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Error> {
     // CALLINFO の has_block フラグをチェック
-    let has_block = if let Some(ci) = vm.current_callinfo.as_ref() {
+    let has_block = if let Some(ci) = vm
+        .current_callinfo
+        .as_ref()
+        .or_else(|| vm.suspended_callinfos.last())
+    {
         ci.has_block.get()
     } else {
         false

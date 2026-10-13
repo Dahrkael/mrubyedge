@@ -6,7 +6,7 @@ use std::{
 use crate::{
     Error,
     yamrb::{
-        helpers::{mrb_call_block, mrb_define_module_cmethod, mrb_funcall},
+        helpers::{mrb_call_block, mrb_define_module_cmethod, mrb_funcall, mrb_funcall_with_block},
         value::{RFn, RObject, RProc},
         vm::VM,
     },
@@ -177,7 +177,7 @@ fn mrb_enumerable_to_a(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     Ok(results)
@@ -207,7 +207,7 @@ fn mrb_enumerable_map(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -247,7 +247,7 @@ fn mrb_enumerable_find(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>,
     });
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -283,7 +283,7 @@ fn mrb_enumerable_select(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -317,7 +317,7 @@ fn mrb_enumerable_all(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -351,7 +351,7 @@ fn mrb_enumerable_any(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -386,7 +386,7 @@ fn mrb_enumerable_delete_if(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObj
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -424,7 +424,7 @@ fn mrb_enumerable_each_with_index(vm: &mut VM, args: &[Rc<RObject>]) -> Result<R
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -616,7 +616,7 @@ fn mrb_enumerable_compact(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObje
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     Ok(results)
@@ -636,7 +636,7 @@ fn mrb_enumerable_count(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>
 
         let this = vm.getself()?;
         let block = rproc_from_rust_block(vm, wrapping_block)?;
-        mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+        mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
         vm.pop_fnblock()?;
     } else {
         // Count elements matching the block condition
@@ -655,7 +655,7 @@ fn mrb_enumerable_count(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>
 
         let this = vm.getself()?;
         let block = rproc_from_rust_block(vm, wrapping_block)?;
-        mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+        mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
         vm.pop_fnblock()?;
 
         if let Some(v) = broken.borrow_mut().take() {
@@ -742,7 +742,7 @@ fn mrb_enumerable_reduce(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     if let Some(v) = broken.borrow_mut().take() {
@@ -788,7 +788,7 @@ fn mrb_enumerable_sum(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, 
 
     let this = vm.getself()?;
     let block = rproc_from_rust_block(vm, wrapping_block)?;
-    mrb_funcall(vm, Some(this.clone()), "each", &[block])?;
+    mrb_funcall_with_block(vm, Some(this.clone()), "each", &[], Some(block))?;
     vm.pop_fnblock()?;
 
     // Return the final accumulator value

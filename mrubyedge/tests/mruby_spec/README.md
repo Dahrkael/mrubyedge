@@ -29,9 +29,8 @@ The runner appends an end-of-file marker in memory to detect premature returns;
 the vendored files are never rewritten.
 
 `helpers.rb` implements assertions, exception checks, floating-point comparison,
-reporting, skip, and stress handling. Native test-only helpers supply printing,
-glob matching, and block capture around the VM's current optional/rest argument
-limitation. Missing core APIs are not monkey-patched. Nested assertion failures
+reporting, skip, and stress handling. Native test-only helpers supply printing
+and glob matching. Missing core APIs are not monkey-patched. Nested assertion failures
 propagate through a failure counter; reporting is intentionally simpler than
 mruby's numbered assertion tree. Stress cases remain disabled by default.
 
@@ -42,8 +41,9 @@ to Ruby language compatibility failures and are not replaced with success stubs.
 An abort or top-level error prevents the remainder of that file from running,
 but does not prevent the other files from running.
 
-On the initial default-feature run, 8 files passed and 40 failed. Passing files:
-`bs_literal`, `iterations`, `lang`, `rangeerror`, `regexperror`, `runtimeerror`,
+After the block argument fixes, the default-feature run has 9 files passing
+and 39 failing. Passing files:
+`bs_literal`, `iterations`, `lang`, `localjumperror`, `rangeerror`, `regexperror`, `runtimeerror`,
 `standarderror`, and `typeerror`. This is a file-level snapshot, not a count of
 individual assertions or a guarantee for other feature configurations.
 

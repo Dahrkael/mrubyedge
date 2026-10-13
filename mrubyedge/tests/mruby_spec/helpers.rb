@@ -15,8 +15,7 @@ $warning_test = 0
 $spec_checks = 0
 $spec_failures = 0
 
-def assert(*args)
-  block = __spec_block
+def assert(*args, &block)
   description = args[0] || 'assert'
   before = $spec_failures
   checks = $spec_checks
@@ -65,8 +64,7 @@ def assertion_diff(expected, actual)
   "expected #{expected.inspect}, actual #{actual.inspect}"
 end
 
-def assert_equal(*args)
-  block = __spec_block
+def assert_equal(*args, &block)
   expected = args[0]
   actual = args[1]
   message = args[2]
@@ -78,8 +76,7 @@ def assert_equal(*args)
   assert_true(result, message, result ? nil : assertion_diff(expected, actual))
 end
 
-def assert_not_equal(*args)
-  block = __spec_block
+def assert_not_equal(*args, &block)
   expected = args[0]
   actual = args[1]
   message = args[2]
@@ -164,8 +161,7 @@ def assert_float(expected, actual, message = nil)
   end
 end
 
-def assert_raise(*exceptions)
-  block = __spec_block
+def assert_raise(*exceptions, &block)
   message = exceptions.last.is_a?(String) ? exceptions.pop : nil
   exceptions = [StandardError] if exceptions.empty?
   caught = nil
@@ -185,8 +181,7 @@ def assert_raise(*exceptions)
   end
 end
 
-def assert_nothing_raised(*args)
-  block = __spec_block
+def assert_nothing_raised(*args, &block)
   message = args[0]
   caught = nil
   begin
@@ -197,8 +192,7 @@ def assert_nothing_raised(*args)
   caught ? flunk(message, caught.message) : pass
 end
 
-def assert_raise_with_message(*args)
-  block = __spec_block
+def assert_raise_with_message(*args, &block)
   klass = args[0]
   message = args[1]
   description = args[2]
@@ -206,8 +200,7 @@ def assert_raise_with_message(*args)
   assert_equal(message, e.message, description) if e
 end
 
-def assert_raise_with_message_pattern(*args)
-  block = __spec_block
+def assert_raise_with_message_pattern(*args, &block)
   klass = args[0]
   pattern = args[1]
   description = args[2]

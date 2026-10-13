@@ -72,32 +72,6 @@ fn execute(file: &str) {
 }
 
 fn install(vm: &mut VM) {
-    // OP_ENTER does not yet relocate an optional/rest method's block into
-    // the compiler's named-block register. Capture it before Ruby locals
-    // overwrite that slot, without changing the VM or the imported tests.
-    mrb_define_cmethod(
-        vm,
-        vm.object_class.clone(),
-        "__spec_block",
-        Box::new(|vm, _| {
-            let has_block = vm
-                .current_callinfo
-                .as_ref()
-                .is_some_and(|ci| ci.has_block.get());
-            if !has_block {
-                return Ok(Rc::new(RObject::nil()));
-            }
-            let offset = vm
-                .current_breadcrumb
-                .as_ref()
-                .and_then(|b| b.return_reg)
-                .unwrap();
-            let index = vm.current_regs_offset - offset + vm.current_n_args.get() + 1;
-            Ok(vm.regs[index]
-                .clone()
-                .unwrap_or_else(|| Rc::new(RObject::nil())))
-        }),
-    );
     mrb_define_cmethod(
         vm,
         vm.object_class.clone(),
