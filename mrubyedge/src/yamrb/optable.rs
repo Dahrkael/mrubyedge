@@ -1,8 +1,6 @@
 use std::cell::Cell;
 use std::cell::RefCell;
 
-#[cfg(feature = "mrubyedge-debug")]
-use std::env;
 use std::rc::Rc;
 
 use crate::Error;
@@ -542,6 +540,7 @@ pub(crate) fn push_callinfo(
     method_owner: Option<Rc<RModule>>,
     return_reg: usize,
 ) {
+    vm.enter_frame();
     vm.current_n_args.set(n_args);
     let callinfo = CALLINFO {
         prev: vm.current_callinfo.clone(),
@@ -566,6 +565,7 @@ pub(crate) fn pop_callinfo(vm: &mut VM) {
     }
 
     let ci = ci.unwrap();
+    vm.leave_frame();
     if let Some(prev) = &ci.prev {
         vm.current_callinfo.replace(prev.clone());
     }
@@ -1044,60 +1044,13 @@ pub(crate) fn op_jmpnil(vm: &mut VM, operand: &Fetched, end_pos: usize) -> Resul
 }
 
 pub(crate) fn op_jmpuw(vm: &mut VM, operand: &Fetched, end_pos: usize) -> Result<(), Error> {
-    match vm.find_handler_pos(Some(CATCH_TYPE_ENSURE)) {
-        None => op_jmp(vm, operand, end_pos),
-        Some(target_pos) => {
-            vm.pc.set(target_pos);
-
-            consume_ensure_block(vm)?;
-            op_jmp(vm, operand, end_pos)
-        }
-    }
-}
-
-fn consume_ensure_block(vm: &mut VM) -> Result<(), Error> {
-    loop {
-        let pc = vm.pc.get();
-        if vm.current_irep.code.len() <= pc {
-            // reached end of the IREP
-            return Err(Error::internal(
-                "end of opcode reached while consuming ensure block",
-            ));
-        }
-        let op = *vm
-            .current_irep
-            .code
-            .get(pc)
-            .ok_or_else(|| Error::internal("end of opcode reached"))?;
-        let operand = op.operand;
-        vm.pc.set(pc + 1);
-
-        if matches!(op.code, OpCode::RAISEIF) {
-            return Ok(());
-        }
-
-        #[cfg(feature = "mrubyedge-debug")]
-        if let Ok(v) = env::var("MRUBYEDGE_DEBUG") {
-            let level: i32 = v.parse().unwrap_or(1);
-            if level >= 2 {
-                vm.debug_dump_to_stdout(32);
-            }
-            eprintln!(
-                "{:?}: {:?} (pos={} len={})",
-                op.code, &operand, op.pos, op.len
-            );
-        }
-
-        match consume_expr(vm, op.code, &operand, op.pos, op.len) {
-            Ok(_) => {}
-            Err(e @ (Error::Break(_) | Error::BlockReturn(_, _))) => {
-                let exception = RException::from_error(vm, &e);
-                vm.exception = Some(Rc::new(exception));
-                continue;
-            }
-            Err(e) => return Err(e),
-        }
-    }
+    let offset = operand.as_s()? as i16;
+    let target = calcurate_pc(
+        &vm.current_irep,
+        0,
+        (end_pos as isize + offset as isize) as usize,
+    );
+    Err(Error::UnwindJump(target))
 }
 
 pub(crate) fn op_except(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
@@ -1256,20 +1209,29 @@ pub(crate) fn do_op_send_with_id(
             .clone();
         map.insert(key, val);
     }
-    vm.kargs.borrow_mut().replace(map);
 
-    if let Some(blk_index) = blk_index {
-        let blk_val = vm.get_current_regs_cloned(blk_index)?;
-        if matches!(blk_val.tt, RType::Symbol) {
-            let proc_val = mrb_funcall(vm, Some(blk_val), "to_proc", &[])?;
-            args.push(proc_val);
-        } else {
-            args.push(blk_val);
-        }
+    let block = if let Some(blk_index) = blk_index {
+        let value = vm.get_current_regs_cloned(blk_index)?;
+        let block = match &value.value {
+            RValue::Nil | RValue::Proc(_) => value,
+            _ => {
+                let converted = mrb_funcall(vm, Some(value), "to_proc", &[])?;
+                if !matches!(converted.value, RValue::Proc(_)) {
+                    return Err(Error::TaggedError(
+                        "TypeError".into(),
+                        "to_proc must return a Proc".into(),
+                    ));
+                }
+                converted
+            }
+        };
+        // Native methods retain their existing trailing-block convention.
+        args.push(block.clone());
+        block
     } else {
-        // When no block is provided, do not push a nil placeholder
-        vm.current_regs()[block_index].replace(Rc::new(RObject::nil()));
-    }
+        Rc::new(RObject::nil())
+    };
+    vm.current_regs()[block_index].replace(block.clone());
 
     let klass = recv.get_class(vm);
     let klass = if klass.is_singleton {
@@ -1290,6 +1252,8 @@ pub(crate) fn do_op_send_with_id(
                 klass.full_name()
             ))
         })?;
+
+    vm.kargs.borrow_mut().replace(map);
 
     let upper = vm.current_breadcrumb.take();
     let new_breadcrumb = Rc::new(Breadcrumb {
@@ -1333,6 +1297,27 @@ pub(crate) fn do_op_send_with_id(
                     .replace(upper.expect("should have upper breadcrumb"));
             }
             Err(e) => {
+                // A native send has no execution frame to unwind. Remove its
+                // breadcrumb here, before the Ruby unwinder pops a real frame.
+                let cur = vm.current_breadcrumb.take().expect("send breadcrumb");
+                vm.current_breadcrumb = cur.upper.clone();
+                let anchored = vm
+                    .break_landing
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|(target, _)| Rc::ptr_eq(target, &cur));
+                if anchored {
+                    let mut cursor = vm.current_breadcrumb.clone();
+                    let mut landing = None;
+                    while let Some(bc) = cursor {
+                        if let Some(reg) = bc.return_reg {
+                            landing = Some((bc.clone(), reg));
+                            break;
+                        }
+                        cursor = bc.upper.clone();
+                    }
+                    vm.break_landing.replace(landing);
+                }
                 vm.current_regs()[a as usize].replace(Rc::new(RObject::nil()));
                 return Err(e);
             }
@@ -1341,11 +1326,19 @@ pub(crate) fn do_op_send_with_id(
         return Ok(());
     }
 
+    // Keywords have already been extracted into vm.kargs. Ruby callees enter
+    // with positional arguments followed by the block, before OP_ENTER lays
+    // them out according to the method's parameter declaration.
+    // A Ruby to_proc conversion may have reused these argument registers.
+    for (i, arg) in args.iter().take(n).enumerate() {
+        vm.current_regs()[a as usize + i + 1].replace(arg.clone());
+    }
+    vm.current_regs()[a as usize + n + 1].replace(block.clone());
     push_callinfo(vm, method_id, n, Some(owner_module), a as usize);
 
     // Set has_block flag based on whether a block was provided
     if let Some(ci) = vm.current_callinfo.as_ref() {
-        ci.has_block.set(blk_index.is_some());
+        ci.has_block.set(!matches!(block.value, RValue::Nil));
     }
 
     vm.pc.set(0);
@@ -1536,74 +1529,75 @@ pub(crate) fn op_enter(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     // funcall-invoked methods.
     let argc = vm.current_n_args.get();
     let arg_info = EnterArgInfo::from(a);
-    // proc.h MRB_ASPEC_NOBLOCK: n1 (bit 23) refuses a block argument.
-    let has_block = vm
-        .current_callinfo
-        .as_ref()
-        .is_some_and(|ci| ci.has_block.get());
-    if arg_info.n1 == 1 && has_block {
+    // Save incoming values before rest/post/optional argument placement can
+    // overwrite the block or another argument's source register.
+    let block = vm.get_current_regs_cloned(argc + 1)?;
+    if arg_info.n1 == 1 && !matches!(block.value, RValue::Nil) {
         return Err(Error::ArgumentError("no block accepted".to_string()));
     }
-    let m1_argc = arg_info.m1 as usize;
-    for i in 0..m1_argc {
-        match vm.current_regs()[i + 1].as_ref() {
-            Some(_) => {}
-            None => {
-                return Err(Error::ArgumentError(format!(
-                    "argument {} not passed",
-                    i + 1
-                )));
-            }
-        }
-    }
-    let optional_arg = arg_info.o as usize;
-    if optional_arg > 0 {
-        let m2_argc = arg_info.m2 as usize;
-        let total_preset_args = argc.saturating_sub(m1_argc + m2_argc);
-        for peek_pc in 0..total_preset_args {
-            match vm.current_irep.code[vm.pc.get() + peek_pc].code {
-                OpCode::JMP => {}
-                _ => {
-                    unreachable!("unexpected opcode while processing optional args")
-                }
-            }
-        }
-        vm.pc.set(vm.pc.get() + total_preset_args);
+    let args = (1..=argc)
+        .map(|i| vm.get_current_regs_cloned(i))
+        .collect::<Result<Vec<_>, _>>()?;
+    let required = arg_info.m1 as usize;
+    let optional = arg_info.o as usize;
+    let rest = arg_info.r as usize;
+    let post = arg_info.m2 as usize;
+    let keyword_slot = usize::from(arg_info.k > 0 || arg_info.d > 0);
+    let positional_slots = required + optional + rest + post;
+    let nil = Rc::new(RObject::nil());
+
+    // Ruby methods have strict arity. Iterator blocks may omit parameters;
+    // those slots are initialized to nil below.
+    let method_frame = vm
+        .current_callinfo
+        .as_ref()
+        .or_else(|| vm.suspended_callinfos.last());
+    if method_frame.is_some_and(|ci| ci.method_owner.is_some())
+        && (argc < required + post || (rest == 0 && argc > required + optional + post))
+    {
+        return Err(Error::ArgumentError("wrong number of arguments".into()));
     }
 
-    let splat_arg = arg_info.r as usize;
-    if splat_arg == 1 {
-        let total_args = argc;
-        let passed_args = total_args.saturating_sub(m1_argc);
-        let mut array = Vec::new();
-        for i in 0..passed_args {
-            if let Some(val) = vm.current_regs()[m1_argc + i + 1].take() {
-                array.push(val);
-            }
-        }
-        let splat = RObject::array(array);
-        vm.current_regs()[m1_argc + splat_arg].replace(splat.to_refcount_assigned());
+    for i in 0..required {
+        vm.current_regs()[i + 1].replace(args.get(i).cloned().unwrap_or_else(|| nil.clone()));
     }
-    let kwrest_arg = arg_info.d as usize;
-    let kwrest_pos = if kwrest_arg == 1 {
-        m1_argc + splat_arg + kwrest_arg
-    } else {
-        0
-    };
-    kwarg_op_enter(vm, kwrest_pos);
-    if kwrest_arg == 1 {
+    let post_count = post.min(argc.saturating_sub(required));
+    let optional_count = optional.min(argc.saturating_sub(required + post_count));
+    for i in 0..optional {
+        let value = if i < optional_count {
+            args[required + i].clone()
+        } else {
+            nil.clone()
+        };
+        vm.current_regs()[required + i + 1].replace(value);
+    }
+    if rest == 1 {
+        let start = (required + optional_count).min(argc);
+        let end = argc - post_count;
+        vm.current_regs()[required + optional + 1]
+            .replace(RObject::array(args[start..end].to_vec()).to_refcount_assigned());
+    }
+    for i in 0..post {
+        let value = if i < post_count {
+            args[argc - post_count + i].clone()
+        } else {
+            nil.clone()
+        };
+        vm.current_regs()[required + optional + rest + i + 1].replace(value);
+    }
+    let kwrest_pos = positional_slots + keyword_slot;
+    let block_pos = kwrest_pos + 1;
+    vm.current_regs()[block_pos].replace(block);
+    vm.pc.set(vm.pc.get() + optional_count);
+
+    kwarg_op_enter(vm, if arg_info.d > 0 { kwrest_pos } else { 0 });
+    if keyword_slot > 0 {
         let mut map = RHashMap::default();
-        for (k, v) in vm
-            .get_kwargs()
-            .ok_or_else(|| Error::RuntimeError("kwargs not defined".to_string()))?
-            .iter()
-        {
+        for (k, v) in vm.get_kwargs().unwrap_or_default().iter() {
             let k = RObject::symbol(RSym::new(k.clone())).to_refcount_assigned();
             map.insert(k.as_hash_key()?, (k, v.clone()));
         }
-
-        let kwrest = RObject::hash(map);
-        vm.current_regs()[kwrest_pos].replace(kwrest.to_refcount_assigned());
+        vm.current_regs()[kwrest_pos].replace(RObject::hash(map).to_refcount_assigned());
     }
 
     Ok(())
@@ -1694,47 +1688,13 @@ pub(crate) fn op_retfalse(vm: &mut VM, _operand: &Fetched) -> Result<(), Error> 
     do_return(vm, Some(RObject::boolean(false).to_refcount_assigned()))
 }
 
-fn do_return(vm: &mut VM, value: Option<Rc<RObject>>) -> Result<(), Error> {
-    let old_irep = vm.current_irep.clone();
-    let nregs = old_irep.nregs;
-    // let no_return = vm.current_callinfo.is_some();
-
-    let regs0_cloned: Vec<_> = vm.current_regs()[0..nregs].to_vec();
-    if let Some(environ) = vm.cur_env.get(&vm.current_irep.__id) {
-        // A captured slot may hold the block proc whose environ is this env,
-        // forming an env -> proc -> env cycle that keeps both alive. Drop
-        // those slots so the proc alone owns the env.
-        environ.capture_no_clone(regs0_cloned);
-        let mut captured = environ.captured.borrow_mut();
-        if let Some(captured) = captured.as_mut() {
-            for slot in captured.iter_mut() {
-                let self_ref = matches!(
-                    slot.as_ref().map(|o| &o.value),
-                    Some(RValue::Proc(p))
-                        if p.environ
-                            .as_ref()
-                            .is_some_and(|pe| Rc::ptr_eq(environ, pe))
-                );
-                if self_ref {
-                    *slot = None;
-                }
-            }
-        }
-        environ.as_ref().expire();
-        vm.has_env_ref.remove(&vm.current_irep.__id);
-    }
+pub(crate) fn do_return(vm: &mut VM, value: Option<Rc<RObject>>) -> Result<(), Error> {
+    vm.leave_frame();
 
     let regs0 = vm.current_regs();
     if let Some(value) = value {
         regs0[0].replace(value);
     }
-    // TODO: inspect if this is needed
-    // if nregs > 0 && no_return {
-    //     regs0[1..=nregs].iter_mut().for_each(|reg| {
-    //         reg.take();
-    //     });
-    // }
-
     let ci = vm.current_callinfo.take();
     if ci.is_none() {
         let cur = vm.current_breadcrumb.take().expect("not found breadcrumb");
@@ -1775,17 +1735,22 @@ fn do_return(vm: &mut VM, value: Option<Rc<RObject>>) -> Result<(), Error> {
 pub(crate) fn op_return_blk(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let val = vm.get_current_regs_cloned(a)?;
-    let target_irep_id = vm
-        .get_outermost_env()
-        .expect("not found outermost env")
-        .__irep_id;
-
-    Err(Error::BlockReturn(target_irep_id, val))
+    let target = vm.return_target();
+    if !vm.frames.iter().any(|f| f.id == target) {
+        return Err(Error::TaggedError(
+            "LocalJumpError".into(),
+            "unexpected return".into(),
+        ));
+    }
+    Err(Error::BlockReturn(target, val))
 }
 
 pub(crate) fn op_break(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let a = operand.as_b()? as usize;
     let val = vm.get_current_regs_cloned(a)?;
+    if vm.frames.last().is_some_and(|f| f.is_lambda) {
+        return Err(Error::BlockReturn(vm.frame_id(), val));
+    }
     // Record where this break must land: the nearest do_op_send breadcrumb in
     // the chain, captured before any unwinding can pop crumbs.
     let mut cursor = vm.current_breadcrumb.clone();
@@ -1802,10 +1767,39 @@ pub(crate) fn op_break(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 }
 
 pub(crate) fn op_blkpush(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
-    let (a, _s) = operand.as_bs()?;
-    let n = vm.current_callinfo.as_ref().unwrap().n_args;
-    let block = vm.get_current_regs_cloned(n + 1)?;
+    let (a, layout) = operand.as_bs()?;
+    let pre = (layout >> 11) & 0x3f;
+    let rest = (layout >> 10) & 1;
+    let post = (layout >> 5) & 0x1f;
+    let keywords = (layout >> 4) & 1;
+    let level = layout & 0xf;
+    let index = (pre + rest + post + keywords + 1) as usize;
+    let missing = || Error::TaggedError("LocalJumpError".into(), "no block given".into());
+    let block = if level == 0 {
+        vm.current_regs().get(index).and_then(Clone::clone)
+    } else {
+        let mut env = vm.upper.clone().ok_or_else(missing)?;
+        for _ in 1..level {
+            env = env.upper.clone().ok_or_else(missing)?;
+        }
+        if env.expired() {
+            env.captured
+                .borrow()
+                .as_ref()
+                .and_then(|regs| regs.get(index))
+                .and_then(Clone::clone)
+        } else {
+            vm.regs
+                .get(env.current_regs_offset + index)
+                .and_then(Clone::clone)
+        }
+    }
+    .ok_or_else(missing)?;
+    if matches!(block.value, RValue::Nil) {
+        return Err(missing());
+    }
     vm.current_regs()[a as usize].replace(block);
+
     Ok(())
 }
 
@@ -2323,22 +2317,13 @@ pub(crate) fn op_hashcat(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_lambda(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let irep = Some(vm.current_irep.reps[b as usize].clone());
-    let environ = ENV {
-        __irep_id: vm.current_irep.__id,
-        upper: vm.upper.clone(),
-        current_regs_offset: vm.current_regs_offset,
-        is_expired: Cell::new(false),
-        captured: RefCell::new(None),
-    };
-    //let nregs = vm.current_irep.nregs;
-    //environ.capture(&vm.current_regs()[0..nregs]);
-    let environ = Rc::new(environ);
-    vm.cur_env.insert(vm.current_irep.__id, environ.clone());
-    vm.has_env_ref.insert(vm.current_irep.__id, true);
+    let environ = vm.capture_env();
 
     let val = RObject {
         tt: RType::Proc,
         value: RValue::Proc(RProc {
+            is_lambda: true,
+            return_target: None,
             irep,
             is_rb_func: true,
             is_fnblock: false,
@@ -2359,20 +2344,13 @@ pub(crate) fn op_lambda(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 pub(crate) fn op_block(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let (a, b) = operand.as_bb()?;
     let irep = Some(vm.current_irep.reps[b as usize].clone());
-    let environ = ENV {
-        __irep_id: vm.current_irep.__id,
-        upper: vm.upper.clone(),
-        current_regs_offset: vm.current_regs_offset,
-        is_expired: Cell::new(false),
-        captured: RefCell::new(None),
-    };
-    let environ = Rc::new(environ);
-    vm.cur_env.insert(vm.current_irep.__id, environ.clone());
-    vm.has_env_ref.insert(vm.current_irep.__id, true);
+    let environ = vm.capture_env();
 
     let val = RObject {
         tt: RType::Proc,
         value: RValue::Proc(RProc {
+            is_lambda: false,
+            return_target: Some(vm.return_target()),
             irep,
             is_rb_func: true,
             is_fnblock: false,
@@ -2396,6 +2374,8 @@ pub(crate) fn op_method(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
     let val = RObject {
         tt: super::value::RType::Proc,
         value: super::value::RValue::Proc(super::value::RProc {
+            is_lambda: false,
+            return_target: None,
             irep,
             is_rb_func: true,
             is_fnblock: false,
@@ -2659,6 +2639,8 @@ pub(crate) fn op_tclass(vm: &mut VM, operand: &Fetched) -> Result<(), Error> {
 
 fn method_from_irep(vm: &VM, index: usize, sym: RSym) -> RProc {
     RProc {
+        is_lambda: false,
+        return_target: None,
         irep: Some(vm.current_irep.reps[index].clone()),
         is_rb_func: true,
         is_fnblock: false,

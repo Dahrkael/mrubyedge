@@ -1205,6 +1205,10 @@ pub struct RData {
 /// Ruby procedure (so-called `Proc`) representation (Ruby-defined or native function pointer).
 #[derive(Debug, Clone)]
 pub struct RProc {
+    /// Lambda returns (and breaks) terminate its own invocation.
+    pub is_lambda: bool,
+    /// Defining invocation for a block return; None for methods/lambdas.
+    pub return_target: Option<usize>,
     pub is_rb_func: bool,
     pub is_fnblock: bool,
     pub sym_id: Option<RSym>,
@@ -1292,6 +1296,7 @@ impl RClass {
 
             Error::Break(_) => vm.get_class_by_name("_Break"),
             Error::BlockReturn(_, _) => vm.get_class_by_name("_BlockReturn"),
+            Error::UnwindJump(_) => vm.get_class_by_name("_UnwindJump"),
         }
     }
 }
@@ -1302,7 +1307,7 @@ impl RException {
             class: RClass::from_error(vm, e),
             error_type: RefCell::new(e.clone()),
             message: e.message(),
-            backtrace: if matches!(e, Error::Break(_) | Error::BlockReturn(_, _)) {
+            backtrace: if e.is_control_flow() {
                 Vec::new()
             } else {
                 vm.backtrace()

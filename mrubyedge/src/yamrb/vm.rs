@@ -13,11 +13,8 @@ use super::value::RHashMap;
 use super::value::*;
 use super::{op, optable::*};
 
-// IREP ids must be unique across every loaded script: the VM keys closure
-// environments by the enclosing irep's id (`cur_env`, `has_env_ref` and the
-// `__irep_id` equality in op_return). Per-file numbering collides, letting a
-// returning method from one file capture its registers into another file's
-// live block environment.
+// Keep code identities unique across separately loaded scripts. Execution
+// frames use their own IDs so recursive calls never share return targets.
 static NEXT_IREP_ID: AtomicUsize = AtomicUsize::new(1);
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -75,6 +72,15 @@ impl Breadcrumb {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct ExecutionFrame {
+    pub id: usize,
+    pub return_target: usize,
+    pub is_lambda: bool,
+    caller_upper: Option<Rc<ENV>>,
+    caller_n_args: usize,
+}
+
 pub struct VM {
     pub irep: Rc<IREP>,
 
@@ -89,6 +95,8 @@ pub struct VM {
     /// while the callee runs, so `op_enter` cannot read it from there for
     /// funcall-invoked methods.
     pub current_n_args: Cell<usize>,
+    pub(crate) frames: Vec<ExecutionFrame>,
+    next_frame_id: usize,
     pub current_breadcrumb: Option<Rc<Breadcrumb>>,
     /// Landing pad captured by `OP_BREAK`: the nearest `do_op_send` breadcrumb
     /// and its return register. Held by `Rc` so breadcrumbs popped during
@@ -121,6 +129,7 @@ pub struct VM {
 
     pub upper: Option<Rc<ENV>>,
     // TODO: using fixed array?
+    /// Captured environments keyed by live execution frame ID.
     pub cur_env: RHashMap<usize, Rc<ENV>>,
     pub has_env_ref: RHashMap<usize, bool>,
 
@@ -318,6 +327,8 @@ impl VM {
             current_regs_offset,
             current_callinfo,
             current_n_args,
+            frames: Vec::new(),
+            next_frame_id: 0,
             current_breadcrumb,
             break_landing,
             kargs,
@@ -386,7 +397,7 @@ impl VM {
     }
 
     pub(crate) fn prepare_exception(&mut self, error: &Error, native_method: Option<&str>) {
-        if native_method.is_some() && matches!(error, Error::Break(_) | Error::BlockReturn(_, _)) {
+        if native_method.is_some() && error.is_control_flow() {
             return;
         }
         if self
@@ -397,7 +408,7 @@ impl VM {
             return;
         }
         let mut exception = RException::from_error(self, error);
-        if !matches!(error, Error::Break(_) | Error::BlockReturn(_, _)) {
+        if !error.is_control_flow() {
             if let Some(name) = native_method {
                 let location = Self::frame_location(&self.current_irep, self.pc.get(), Some(name))
                     .unwrap_or_else(|| format!("(unknown):0:in {name}"));
@@ -419,10 +430,74 @@ impl VM {
         self.insn_count.get()
     }
 
+    pub(crate) fn enter_frame(&mut self) {
+        self.next_frame_id += 1;
+        let id = self.next_frame_id;
+        self.frames.push(ExecutionFrame {
+            id,
+            return_target: id,
+            is_lambda: false,
+            caller_upper: self.upper.take(),
+            caller_n_args: self.current_n_args.get(),
+        });
+    }
+
+    pub(crate) fn frame_id(&self) -> usize {
+        self.frames.last().expect("active execution frame").id
+    }
+
+    pub(crate) fn return_target(&self) -> usize {
+        self.frames
+            .last()
+            .expect("active execution frame")
+            .return_target
+    }
+
+    pub(crate) fn capture_env(&mut self) -> Rc<ENV> {
+        let id = self.frame_id();
+        if let Some(env) = self.cur_env.get(&id) {
+            return env.clone();
+        }
+        let env = Rc::new(ENV {
+            __irep_id: self.current_irep.__id,
+            upper: self.upper.clone(),
+            current_regs_offset: self.current_regs_offset,
+            is_expired: Cell::new(false),
+            captured: RefCell::new(None),
+        });
+        self.cur_env.insert(id, env.clone());
+        self.has_env_ref.insert(id, true);
+        env
+    }
+
+    pub(crate) fn leave_frame(&mut self) {
+        let frame = self.frames.pop().expect("active execution frame");
+        if let Some(env) = self.cur_env.remove(&frame.id) {
+            let nregs = self.current_irep.nregs;
+            env.capture_no_clone(self.current_regs()[..nregs].to_vec());
+            // Avoid a frame owning a Proc which owns that same environment.
+            if let Some(slots) = env.captured.borrow_mut().as_mut() {
+                for slot in slots {
+                    if matches!(slot.as_ref().map(|v| &v.value), Some(RValue::Proc(p))
+                        if p.environ.as_ref().is_some_and(|e| Rc::ptr_eq(e, &env)))
+                    {
+                        *slot = None;
+                    }
+                }
+            }
+            env.expire();
+        }
+        self.has_env_ref.remove(&frame.id);
+        self.upper = frame.caller_upper;
+        self.current_n_args.set(frame.caller_n_args);
+    }
+
     /// Executes the current IREP until completion, returning the value in
     /// register 0 or propagating any raised exception as an error. The
     /// top-level `self` is initialized automatically before evaluation.
     pub fn run(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
+        let depth = self.frames.len();
+        self.enter_frame();
         self.current_irep = self.irep.clone();
         self.pc.set(0);
 
@@ -434,7 +509,11 @@ impl VM {
             return_reg: None,
         });
         self.current_breadcrumb.replace(new_breadcrumb);
-        self.__run()
+        let result = self.__run();
+        while self.frames.len() > depth {
+            self.leave_frame();
+        }
+        result
     }
 
     /// Internal run method that manages breadcrumb stack for internal calls.
@@ -454,6 +533,8 @@ impl VM {
         &mut self,
         rite: &mut Rite,
     ) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
+        let depth = self.frames.len();
+        self.enter_frame();
         let irep = rite_to_irep(rite);
         self.pc.set(0);
         self.current_irep = Rc::new(irep);
@@ -471,7 +552,11 @@ impl VM {
             return_reg: None,
         });
         self.current_breadcrumb.replace(new_breadcrumb);
-        self.__run()
+        let result = self.__run();
+        while self.frames.len() > depth {
+            self.leave_frame();
+        }
+        result
     }
 
     fn __run(&mut self) -> Result<Rc<RObject>, Box<dyn std::error::Error>> {
@@ -506,7 +591,8 @@ impl VM {
                     } else {
                         None
                     };
-                if let Some(pos) = self.find_handler_pos(None) {
+                let error = e.error_type.borrow().clone();
+                if let Some(pos) = self.find_unwind_handler(&error) {
                     // The handler runs as ordinary code; EXCEPT picks the
                     // exception up from here.
                     self.pc.set(pos);
@@ -514,34 +600,36 @@ impl VM {
                     continue;
                 }
 
-                if let Error::BlockReturn(id, v) = e.error_type.borrow().clone()
-                    && self.current_irep.__id == id
-                {
-                    // reached caller method's IREP, just return
-                    let operand = insn::Fetched::B(16); // FIXME: just a bit far reg
-                    self.current_regs()[16].replace(v);
+                if let Error::UnwindJump(target) = error {
                     self.exception.take();
-                    op_return(self, &operand).expect("[bug]cannot return");
+                    self.pc.set(target);
+                    unwinding = false;
                     continue;
                 }
 
-                // Deliver when this return pops the anchored send crumb: its
-                // frame is the one the break must exit, and the register
-                // window already belongs to its caller. The pop may come from
-                // a normal frame return (Ok) or from the funcall boundary
-                // (Err), because native calls like Proc#call unpair crumbs
-                // from callinfos.
+                if let Error::BlockReturn(id, v) = e.error_type.borrow().clone()
+                    && self.frame_id() == id
+                {
+                    self.exception.take();
+                    super::optable::do_return(self, Some(v))?;
+                    if self.flag_preemption.get() {
+                        break;
+                    }
+                    unwinding = false;
+                    continue;
+                }
+
+                // Deliver after the Ruby frame owning the anchored send has
+                // returned. Native sends remove their own breadcrumbs before
+                // propagating control flow into this loop.
                 let crumb_before = self.current_breadcrumb.clone();
                 let landed_on_anchor = break_landing.as_ref().is_some_and(|(target, _)| {
                     crumb_before.as_ref().is_some_and(|b| Rc::ptr_eq(b, target))
                 });
-                match op_return(self, &operand) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        if !landed_on_anchor {
-                            break;
-                        }
-                    }
+                if op_return(self, &operand).is_err() {
+                    // The native caller restores its own register window and
+                    // propagates the transfer. Never unwind through it here.
+                    break;
                 }
                 if landed_on_anchor
                     && let Some((_, treg)) = break_landing.as_ref()
@@ -629,16 +717,21 @@ impl VM {
         retval
     }
 
-    pub(crate) fn find_handler_pos(&self, type_: Option<u8>) -> Option<usize> {
-        // pc already points at the instruction after the one that raised, so the
-        // range is half-open the other way round: begin < pc <= end. The innermost
-        // handler is the one written last.
+    fn find_unwind_handler(&self, error: &Error) -> Option<usize> {
+        // PC points after the interrupted instruction. Jumps only run handlers
+        // whose protected range they leave; returns and breaks skip rescues.
         let pc = self.pc.get();
         self.current_irep
             .catch_handlers
             .iter()
             .rev()
-            .find(|ch| type_.is_none_or(|t| ch.type_ == t) && ch.begin < pc && pc <= ch.end)
+            .find(|ch| {
+                (!error.is_control_flow() || ch.type_ == CATCH_TYPE_ENSURE)
+                    && ch.begin < pc
+                    && pc <= ch.end
+                    && !matches!(error, Error::UnwindJump(target)
+                    if ch.begin <= *target && *target < ch.end)
+            })
             .map(|ch| ch.target)
     }
 
