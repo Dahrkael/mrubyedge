@@ -123,7 +123,8 @@ fn assertion_driver() {
         assert_equal(3) { 1 + 2 }
         assert_equal(3, 'block with message') { 1 + 2 }
         assert_not_equal(4) { 1 + 2 }
-        assert_raise(RuntimeError) { raise 'expected' }
+        error = assert_raise(RuntimeError) { raise 'expected' }
+        assert_equal 'expected', error.message
         assert_raise(RuntimeError, ArgumentError, 'multiple classes') { raise 'expected' }
         assert_raise_with_message(RuntimeError, 'expected') { raise 'expected' }
         assert_raise_with_message_pattern(RuntimeError, 'exp*') { raise 'expected' }
@@ -136,11 +137,19 @@ fn assertion_driver() {
       assert('skipped') { skip 'reason' }
       assert('stress') { stress }
       assert('warning') { true }
-      assert('wrong exception') { assert_raise(ArgumentError) { raise 'wrong' } }
-      assert('missing exception') { assert_raise(RuntimeError) { 1 } }
+      assert('wrong exception') do
+        $wrong_exception_result = assert_raise(ArgumentError) { raise 'wrong' }
+      end
+      assert('missing exception') do
+        $missing_exception_result = assert_raise(RuntimeError) { 1 }
+      end
+      $driver_completed = true
     "#,
         "driver self-test",
     );
+    assert!(vm.globals["$driver_completed"].is_truthy());
+    assert!(vm.globals["$wrong_exception_result"].is_nil());
+    assert!(vm.globals["$missing_exception_result"].is_nil());
     for (name, expected) in [
         ("$ok_test", 1),
         ("$ko_test", 3),

@@ -164,21 +164,16 @@ end
 def assert_raise(*exceptions, &block)
   message = exceptions.last.is_a?(String) ? exceptions.pop : nil
   exceptions = [StandardError] if exceptions.empty?
-  caught = nil
   begin
     block.call
   rescue Exception => e
-    caught = e
-  end
-  if caught
     matched = false
-    exceptions.each { |klass| matched = true if caught.kind_of?(klass) }
+    exceptions.each { |klass| matched = true if e.kind_of?(klass) }
     assert_true(matched, message)
-    matched ? caught : nil
-  else
-    flunk(message, 'expected exception, but nothing was raised')
-    nil
+    return matched ? e : nil
   end
+  flunk(message, 'expected exception, but nothing was raised')
+  nil
 end
 
 def assert_nothing_raised(*args, &block)

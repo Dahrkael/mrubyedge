@@ -41,8 +41,8 @@ to Ruby language compatibility failures and are not replaced with success stubs.
 An abort or top-level error prevents the remainder of that file from running,
 but does not prevent the other files from running.
 
-After the block argument fixes, the default-feature run has 9 files passing
-and 39 failing. Passing files:
+After the block argument and return-unwinding fixes, the default-feature run
+has 9 files passing and 39 failing. Passing files:
 `bs_literal`, `iterations`, `lang`, `localjumperror`, `rangeerror`, `regexperror`, `runtimeerror`,
 `standarderror`, and `typeerror`. This is a file-level snapshot, not a count of
 individual assertions or a guarantee for other feature configurations.
