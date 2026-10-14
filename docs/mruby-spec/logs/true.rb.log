@@ -1,0 +1,22 @@
+
+running 1 test
+TrueClass : OK
+TrueClass true : ERROR: Method not found: undefined method `method_defined?` for Class
+TrueClass#& : OK
+TrueClass#^ : OK
+TrueClass#to_s : OK
+TrueClass#| : OK
+OK: 5, FAIL: 0, ERROR: 1, WARN: 0, SKIP: 0, STRESS: 0
+
+thread 'spec_true' (3522) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+true.rb: upstream assertions failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test spec_true ... FAILED
+
+failures:
+
+failures:
+    spec_true
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.00s
+

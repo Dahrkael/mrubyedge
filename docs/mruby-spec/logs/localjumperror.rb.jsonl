@@ -1,0 +1,8 @@
+["phase","compile","helpers.rb"]
+["phase","execute","helpers.rb"]
+["phase","compile","localjumperror.rb"]
+["phase","execute","localjumperror.rb"]
+["start",1,"LocalJumpError"]
+["pass",1,null]
+["phase","returned","localjumperror.rb"]
+["phase","completed","localjumperror.rb"]

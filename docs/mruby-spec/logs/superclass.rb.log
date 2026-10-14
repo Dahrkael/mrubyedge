@@ -1,0 +1,44 @@
+
+running 1 test
+Direct superclass of [:Module, :Object, "15.2.2.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:Class, :Module, "15.2.3.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:NilClass, :Object, "15.2.4.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:TrueClass, :Object, "15.2.5.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:FalseClass, :Object, "15.2.6.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:Numeric, :Object, "15.2.7.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:Integer, :Numeric, "15.2.8.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:Float, :Numeric, "15.2.9.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:String, :Object, "15.2.10.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:Symbol, :Object, "15.2.11.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:Array, :Object, "15.2.12.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:Hash, :Object, "15.2.13.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:Range, :Object, "15.2.14.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:Proc, :Object, "15.2.17.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:Exception, :Object, "15.2.22.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:StandardError, :Exception, "15.2.23.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:ArgumentError, :StandardError, "15.2.24.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:LocalJumpError, :StandardError, "15.2.25.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:RangeError, :StandardError, "15.2.26.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:RegexpError, :StandardError, "15.2.27.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:RuntimeError, :StandardError, "15.2.28.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:TypeError, :StandardError, "15.2.29.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:ZeroDivisionError, :StandardError, "15.2.30.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:NameError, :StandardError, "15.2.31.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:NoMethodError, :NameError, "15.2.32.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:IndexError, :StandardError, "15.2.33.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:ScriptError, :Exception, "15.2.37.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+Direct superclass of [:SyntaxError, :ScriptError, "15.2.38.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
+OK: 0, FAIL: 0, ERROR: 28, WARN: 0, SKIP: 0, STRESS: 0
+
+thread 'spec_superclass' (3504) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+superclass.rb: upstream assertions failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test spec_superclass ... FAILED
+
+failures:
+
+failures:
+    spec_superclass
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.01s
+

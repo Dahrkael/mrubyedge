@@ -1,0 +1,8 @@
+["phase","compile","helpers.rb"]
+["phase","execute","helpers.rb"]
+["phase","compile","indexerror.rb"]
+["phase","execute","indexerror.rb"]
+["start",1,"IndexError"]
+["error",1,"Cannot found name: IndexError"]
+["phase","returned","indexerror.rb"]
+["phase","completed","indexerror.rb"]

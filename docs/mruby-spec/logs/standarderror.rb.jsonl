@@ -1,0 +1,8 @@
+["phase","compile","helpers.rb"]
+["phase","execute","helpers.rb"]
+["phase","compile","standarderror.rb"]
+["phase","execute","standarderror.rb"]
+["start",1,"StandardError"]
+["pass",1,null]
+["phase","returned","standarderror.rb"]
+["phase","completed","standarderror.rb"]

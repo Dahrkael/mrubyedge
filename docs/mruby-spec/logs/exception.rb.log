@@ -1,0 +1,11 @@
+
+running 1 test
+Exception : OK
+Exception.exception : ERROR: Method not found: undefined method `exception` for Class
+Exception#exception : ERROR: Method not found: undefined method `exception` for Exception
+Exception#message : ERROR: Method not found: undefined method `exception` for Class
+Exception#to_s : ERROR: Method not found: undefined method `exception` for Class
+Exception.exception : ERROR: Method not found: undefined method `exception` for Class
+NameError : 
+thread 'spec_exception' (3422) has overflowed its stack
+fatal runtime error: stack overflow, aborting

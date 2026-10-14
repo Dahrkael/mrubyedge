@@ -1,0 +1,7 @@
+["phase","compile","helpers.rb"]
+["phase","execute","helpers.rb"]
+["phase","compile","proc.rb"]
+["phase","execute","proc.rb"]
+["start",1,"Proc"]
+["pass",1,null]
+["start",2,"Proc.new"]

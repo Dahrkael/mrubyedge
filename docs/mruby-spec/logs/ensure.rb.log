@@ -1,0 +1,24 @@
+
+running 1 test
+ensure - context - yield : OK
+ensure - context - yield and break : OK
+ensure - context - yield and return : OK
+ensure with local ||= preserves return value : OK
+ensure with an op-assign of every kind preserves the return value : ERROR: Class#new must be called from class
+begin with an empty ensure keeps its value in a register of its own : 
+  assertion failed:  expected [[1, nil, 2], 1, 2], actual 1
+ERROR: [Internal Error] register 2 is not assigned
+OK: 4, FAIL: 0, ERROR: 2, WARN: 0, SKIP: 0, STRESS: 0
+
+thread 'spec_ensure' (3416) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+ensure.rb: upstream assertions failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test spec_ensure ... FAILED
+
+failures:
+
+failures:
+    spec_ensure
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.00s
+

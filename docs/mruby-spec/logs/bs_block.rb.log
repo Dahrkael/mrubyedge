@@ -1,0 +1,47 @@
+
+running 1 test
+BS Block 1 : OK
+BS Block 2 : OK
+BS Block 3 : OK
+BS Block 3 : OK
+BS Block 4 : OK
+BS Block 5 : OK
+BS Block 6 : OK
+BS Block 7 : OK
+BS Block 8 : OK
+BS Block 9 : OK
+BS Block 10 : OK
+BS Block 11 : OK
+BS Block 12 : OK
+BS Block 13 : OK
+BS Block 14 : OK
+BS Block 15 : OK
+BS Block 16 : OK
+BS Block 17 : OK
+BS Block 18 : OK
+BS Block 19 : OK
+BS Block 20 : OK
+BS Block 21 : OK
+BS Block 22 : OK
+BS Block 23 : OK
+BS Block 24 : OK
+BS Block 25 : OK
+BS Block 26 : OK
+BS Block 27 : OK
+BS Block 28 : OK
+BS Block 29 : OK
+BS Block 30 : OK
+BS Block [ruby-dev:31147] : OK
+BS Block [ruby-dev:31160] : 
+thread 'spec_bs_block' (3405) panicked at mrubyedge/src/yamrb/optable.rs:2165:13:
+internal error: entered unreachable code: aref supports only array
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test spec_bs_block ... FAILED
+
+failures:
+
+failures:
+    spec_bs_block
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.01s
+

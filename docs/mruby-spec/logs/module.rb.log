@@ -1,0 +1,133 @@
+
+running 1 test
+Module : OK
+Module#alias_method : ERROR: Method not found: undefined method `alias_method` for Class
+Module#ancestors : OK
+Module#attr NameError : 
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+
+  assertion failed:  
+FAIL
+Module#attr : 
+  assertion failed:  
+
+  assertion failed:  
+FAIL
+Module#attr_accessor : ERROR: Class#attr_reader must be called with symbols
+Module#attr_reader : ERROR: Class#attr_reader must be called with symbols
+Module#attr_writer : ERROR: Class#attr_reader must be called with symbols
+Module#attr_* answer the names they define : 
+  assertion failed:  expected [:x, :y], actual nil
+
+  assertion failed:  expected [:x=], actual nil
+
+  assertion failed:  expected [:x, :x=, :y, :y=], actual nil
+ERROR: Class#new must be called from class
+Module#attr_* take the visibility of the scope they are called in : ERROR: Class#new must be called from class
+Module#class_eval : ERROR: Method not found: undefined method `class_eval` for Class
+Module#const_defined? : ERROR: Method not found: undefined method `const_defined?` for Module
+Module#const_get : ERROR: Method not found: undefined method `const_get` for Module
+Module#const_set : ERROR: Method not found: undefined method `const_set` for Module
+Module#remove_const : ERROR: Method not found: undefined method `__send__` for Module
+Module#const_missing : ERROR: Method not found: undefined method `const_get` for Module
+Module#include : ERROR: Method not found: undefined method `const_get` for Module
+Module#include? : ERROR: Method not found: undefined method `include?` for Class
+Module#included : ERROR: Method not found: undefined method `const_get` for Module
+Module#initialize : ERROR: Class#new must be called from class
+Module#method_defined? : ERROR: Method not found: undefined method `method_defined?` for Module
+Module#method_defined? reports the methods a listing reports : ERROR: Method not found: undefined method `method_defined?` for Class
+Module#method_defined? with inherit false reports only the module's own methods : ERROR: Method not found: undefined method `method_defined?` for Class
+Module#module_eval : ERROR: Method not found: undefined method `module_eval` for Module
+Module#undef_method : ERROR: Method not found: undefined method `class_eval` for Class
+Module#dup : ERROR: Method not found: undefined method `dup` for Module
+Module#define_method : ERROR: Class#new must be called from class
+Module#define_method takes the visibility of the scope it is called in : ERROR: Class#new must be called from class
+a `private` in the body of a `class << self` reaches the defs below it : ERROR: Method not found: undefined method `call_priv` for Class
+Module#prepend : ERROR: Method not found: undefined method `prepend` for Class
+Module#prepend result : ERROR: Method not found: undefined method `prepend` for Module
+Module#prepend public : 
+  assertion failed: ruby/ruby #8846 Method not found: undefined method `prepend` for Class
+FAIL
+Module#prepend inheritance : ERROR: Module#ancestors must be called on class or module
+Module#prepend + Class#ancestors : ERROR: Module#ancestors must be called on class or module
+Module#prepend + Module#ancestors : ERROR: Module#ancestors must be called on class or module
+cyclic Module#prepend : ERROR: Method not found: undefined method `instance_eval` for Module
+Module#prepend each class : ERROR: Module#ancestors must be called on class or module
+Module#prepend no duplication : ERROR: Module#ancestors must be called on class or module
+Module#prepend in superclass : ERROR: Method not found: undefined method `class_eval` for Class
+Module#prepend to frozen class : ERROR: Cannot found name: FrozenError
+Module#prepend leaves a frozen class frozen : ERROR: Method not found: undefined method `freeze` for Class
+Module#private on a method a prepended module also defines : ERROR: Class#new must be called from class
+Module#to_s : ERROR: Method not found: undefined method `const_set` for Module
+Module#inspect : OK
+Issue 1467 : ERROR: [Internal Error] no current callinfo
+clone Module : ERROR: Method not found: undefined method `clone` for Module
+method visibility : ERROR: Method not found: undefined method `private` for Class
+protected method with an explicit receiver : ERROR: Method not found: undefined method `protected` for Class
+method_missing is dispatched regardless of its visibility : ERROR: Method not found: undefined method `private` for Class
+method visibility with meta programming : ERROR: Method not found: undefined method `call` for NilClass
+Module#module_function : ERROR: Method not found: undefined method `module_function` for Module
+Module#module_function with no arguments (toggle mode) : ERROR: Method not found: undefined method `foo` for Module
+module with non-class/module outer raises TypeError : 
+  assertion failed:  expected exception, but nothing was raised
+
+  assertion failed:  expected exception, but nothing was raised
+FAIL
+module to return the last value : OK
+module to return nil if body is empty : OK
+get constant of parent module in singleton class; issue #3568 : ERROR: Cannot found name: EXPECTED
+shared empty iv_tbl (include) : ERROR: Type mismatch
+shared empty iv_tbl (prepend) : ERROR: Type mismatch
+constant lookup #6506 : WARN (no assertions)
+constant lookup: ancestors before the top level : ERROR: Method not found: undefined method `__defined_const?` for Class
+constant lookup: def self.name looks up from the class body : 
+  assertion failed:  expected :base, actual :top
+
+  assertion failed:  expected :base, actual :top
+ERROR: Method not found: undefined method `__defined_const?` for Class
+Module#module_function - where a def in the body lands : ERROR: Method not found: undefined method `module_function` for Module
+constant lookup: a block given a class to run under keeps its own : ERROR: Method not found: undefined method `class_eval` for Module
+constant definition: a block given a class to run under keeps its own : ERROR: Method not found: undefined method `class_eval` for Module
+constant and class variable lookup: a method written in a block given a class keeps the block's scope : ERROR: Class#new must be called from class
+OK: 5, FAIL: 4, ERROR: 55, WARN: 1, SKIP: 0, STRESS: 0
+
+thread 'spec_module' (3469) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+module.rb: upstream assertions failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test spec_module ... FAILED
+
+failures:
+
+failures:
+    spec_module
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.02s
+

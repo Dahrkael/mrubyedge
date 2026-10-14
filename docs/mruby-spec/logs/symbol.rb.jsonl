@@ -1,0 +1,5 @@
+["phase","compile","helpers.rb"]
+["phase","execute","helpers.rb"]
+["phase","compile","symbol.rb"]
+["phase","execute","symbol.rb"]
+["start",1,"Symbol"]

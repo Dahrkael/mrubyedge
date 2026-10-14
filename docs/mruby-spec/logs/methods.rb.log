@@ -1,0 +1,48 @@
+
+running 1 test
+The alias statement : OK
+The alias statement (overwrite original) : OK
+The alias statement : 
+  assertion failed:  
+
+  assertion failed:  
+FAIL
+The undef statement : OK
+The undef statement (method undefined) : 
+  assertion failed:  expected exception, but nothing was raised
+
+  assertion failed:  expected exception, but nothing was raised
+FAIL
+method_added hook : ERROR: Method not found: undefined method `name` for Class
+singleton_method_added hook : 
+  assertion failed:  expected :foo, actual nil
+
+  assertion failed:  expected :bar, actual nil
+FAIL
+The def statement in a method with a receiver : 
+  assertion failed:  expected exception, but nothing was raised
+
+  assertion failed:  expected exception, but nothing was raised
+
+  assertion failed:  expected exception, but nothing was raised
+FAIL
+The def statement in a class body written as a block : ERROR: Method not found: undefined method `go` for Class
+The alias statement in a method with a receiver : ERROR: Method not found: original
+The undef statement in a method with a receiver : 
+  assertion failed:  expected exception, but nothing was raised
+FAIL
+super in a method with a receiver : ERROR: [Internal Error] no current callinfo
+OK: 3, FAIL: 5, ERROR: 4, WARN: 0, SKIP: 0, STRESS: 0
+
+thread 'spec_methods' (3467) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+methods.rb: upstream assertions failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test spec_methods ... FAILED
+
+failures:
+
+failures:
+    spec_methods
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.01s
+
