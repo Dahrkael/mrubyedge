@@ -108,3 +108,9 @@ When updating upstream, replace the entire `upstream/t/` directory from an
 explicit commit, refresh the license and assertion reference, update
 `SHA256SUMS` and the revision above, and keep the file list in
 `../mruby_spec.rs` in sync. Do not edit imported test bodies to make them pass.
+
+## GitHub Actions
+
+The normal mruby/edge CI explicitly filters out the upstream spec cases and
+the report-driver test module (`--skip spec_ --skip mruby_spec::`). Run the
+compatibility suite separately with the report command above.
