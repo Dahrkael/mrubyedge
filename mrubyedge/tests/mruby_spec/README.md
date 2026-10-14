@@ -20,6 +20,56 @@ cargo test -p mrubyedge --test mruby_spec -- --ignored --test-threads=1
 cargo test -p mrubyedge --test mruby_spec spec_array -- --ignored --exact
 ```
 
+## Generate a compatibility report
+
+Python 3 (standard library only) and Cargo are required. From the workspace root:
+
+```sh
+# Markdown is the default; writes target/mruby-spec-report.md
+python3 scripts/mruby_spec_report.py
+
+# Alternative formats
+python3 scripts/mruby_spec_report.py --format json
+python3 scripts/mruby_spec_report.py --format html
+
+# Select files, Cargo features, and a destination
+python3 scripts/mruby_spec_report.py --file array --file ensure \
+  --features mruby-random,mruby-regexp --output target/selected-specs.md
+```
+
+The report contains a file summary and every reached `assert` block, including
+its result, failure details, and parent ID for nested assertions. It counts
+`assert` blocks, not individual `assert_equal` or `assert_true` calls. Results
+are `pass`, `fail`, `error`, `warn` (no assertions), `skip`, `stress` (disabled),
+or `interrupted` (started but did not finish).
+
+File status distinguishes `passed`, `failed` (completed with assertion failures
+or rescued errors), `compile_error`, `runtime_error`, `panic`, `aborted`,
+`timeout`, `premature_return`, and `incomplete`. After an interrupted file,
+remaining tests are **unevaluated**, with no guessed count. Conditional tests
+that were never entered are not counted as skips.
+
+Each report links to raw logs and append-only JSONL events in a unique sibling
+`mruby-spec-logs-*` directory. Keep this directory with the report. Markdown
+contains all assertion rows; HTML groups them in expandable file sections.
+JSON uses `schema_version: 1`, with `metadata`, `files`, `file_counts`, and
+`assert_counts`; file entries include assertion records and log paths. All
+formats record the commit, dirty state, selected features, upstream revision,
+and generation time. `--no-default-features` and `--timeout SECONDS` are also
+supported (30 seconds per file by default).
+
+The command writes a report even when compatibility tests fail, then exits
+with **1**. It exits with **0** only if all selected files pass, and **2** for
+build or reporting errors. This keeps failures visible to CI. The existing
+`cargo test` command remains available and does not write report files.
+
+Reporter self-tests:
+
+```sh
+python3 -m unittest discover -s scripts -p 'test_mruby_spec_report.py'
+cargo test -p mrubyedge --test mruby_spec
+```
+
 The upstream tests are explicitly ignored by default because this is a
 compatibility suite with known failures, not a passing regression baseline.
 A failing assertion, unhandled error, compiler failure, VM panic, premature

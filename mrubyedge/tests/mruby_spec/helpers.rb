@@ -14,31 +14,41 @@ $stress_test = 0
 $warning_test = 0
 $spec_checks = 0
 $spec_failures = 0
+$spec_assert_id = 0
 
 def assert(*args, &block)
   description = args[0] || 'assert'
+  $spec_assert_id += 1
+  id = $spec_assert_id
+  _spec_event('start', id, description)
   before = $spec_failures
   checks = $spec_checks
   t_print(description, ' : ')
   begin
     block.call
     if $spec_failures > before
+      _spec_event('fail', id, nil)
       $ko_test += 1
       t_print("FAIL\n")
     elsif $spec_checks == checks
+      _spec_event('warn', id, 'no assertions')
       $warning_test += 1
       t_print("WARN (no assertions)\n")
     else
+      _spec_event('pass', id, nil)
       $ok_test += 1
       t_print("OK\n")
     end
   rescue MRubyTestStress
+    _spec_event('stress', id, 'stress test disabled')
     $stress_test += 1
     t_print("STRESS (not run)\n")
   rescue MRubyTestSkip => e
+    _spec_event('skip', id, e.message)
     $skip_test += 1
     t_print("SKIP: ", e.message, "\n")
   rescue Exception => e
+    _spec_event('error', id, e.message)
     $kill_test += 1
     $spec_failures += 1
     t_print("ERROR: ", e.message, "\n")
@@ -51,6 +61,7 @@ def assert_true(value, message = nil, diff = nil)
     true
   else
     $spec_failures += 1
+    _spec_event('check_failure', 0, message, diff)
     t_print("\n  assertion failed: ", message, ' ', diff, "\n")
     false
   end
