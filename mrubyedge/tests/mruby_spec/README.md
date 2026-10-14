@@ -121,3 +121,23 @@ and manual dispatch. It uses the default Cargo features, writes Markdown to
 the workflow summary, and uploads the report and logs as an artifact. Both
 exit 0 (compatible) and exit 1 (compatibility failures) are accepted; build or
 reporting failures still fail the job. The reporting self-tests run here.
+
+`mruby-spec-publish.yml` runs after each push to master (including PR merges),
+or manually on master. It generates HTML using the same default features and
+accepts compatibility failures, replaces the generated `docs/mruby-spec/` site,
+and commits it to master as `github-actions[bot]`. Logs use stable paths and
+source links point to the exact tested commit on GitHub. The published URL is
+`https://mrubyedge.github.io/mrubyedge/mruby-spec/`.
+
+The workflow then calls `docs.yml` with the report commit to build rustdoc,
+copy `docs/` into the Pages artifact, and deploy. This explicit call is needed
+because pushes made with `GITHUB_TOKEN` do not start another push workflow.
+`docs.yml` still checks documentation on pull requests and supports manual
+publication on master. The publish job needs permission to commit directly to
+master; repository rules must allow these bot commits.
+
+Publishing runs are serialized. If master advances while an older run is
+collecting results or pushing its report, that run skips publication and the
+newer master run publishes its own report. Generated commits do not recursively
+start spec workflows. `docs/mruby-spec/` is managed by the publisher; do not edit
+its report or logs by hand.
