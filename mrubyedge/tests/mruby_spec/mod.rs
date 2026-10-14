@@ -7,6 +7,7 @@ use mrubyedge::yamrb::{helpers::mrb_funcall, vm::VM};
 use std::io::Write;
 use std::rc::Rc;
 
+mod events;
 mod pattern;
 
 // Isolate VM panics, stack overflows, and nonterminating upstream cases.
@@ -38,14 +39,18 @@ pub fn run(file: &str, test: &str) {
 }
 
 fn eval(vm: &mut VM, source: &str, label: &str) {
+    events::phase("compile", label);
     let binary = unsafe {
         mruby_compiler2_sys::MRubyCompiler2Context::new()
             .compile(source)
             .unwrap_or_else(|e| panic!("{label}: compile failed: {e:?}"))
     };
     let mut rite = mrubyedge::rite::load(&binary).unwrap();
-    vm.eval_rite(&mut rite)
-        .unwrap_or_else(|e| panic!("{label}: {e}; backtrace: {:?}", vm.backtrace()));
+    events::phase("execute", label);
+    vm.eval_rite(&mut rite).unwrap_or_else(|e| {
+        events::phase("runtime_error", label);
+        panic!("{label}: {e}; backtrace: {:?}", vm.backtrace())
+    });
 }
 
 fn execute(file: &str) {
@@ -61,17 +66,20 @@ fn execute(file: &str) {
         &format!("{source}\n$spec_completed = true\n"),
         file,
     );
+    events::phase("returned", file);
     assert!(
         vm.globals
             .get("$spec_completed")
             .is_some_and(|v| v.is_truthy()),
         "{file}: VM returned before the end of the test file"
     );
+    events::phase("completed", file);
     let result = mrb_funcall(&mut vm, None, "report", &[]).expect("report failed");
     assert!(result.is_truthy(), "{file}: upstream assertions failed");
 }
 
 fn install(vm: &mut VM) {
+    events::install(vm);
     mrb_define_cmethod(
         vm,
         vm.object_class.clone(),

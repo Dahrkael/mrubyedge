@@ -43,7 +43,8 @@ jobs:
           set +e
           cargo test -p mrubyedge \
             --features "mrubyedge-debug,mruby-random,mruby-regexp${{ matrix.ENABLE_FNV_HASH }}" \
-            --profile ${{ matrix.BUILD_TARGET }}
+            --profile ${{ matrix.BUILD_TARGET }} \
+            -- --skip spec_ --skip mruby_spec::
           TEST_RESULT=$?
           if [ $TEST_RESULT != 0 ]; then
             echo "Some tests failed. Debug:"

@@ -20,6 +20,57 @@ cargo test -p mrubyedge --test mruby_spec -- --ignored --test-threads=1
 cargo test -p mrubyedge --test mruby_spec spec_array -- --ignored --exact
 ```
 
+## Generate a compatibility report
+
+Python 3 (standard library only) and Cargo are required. From the workspace root:
+
+```sh
+# Markdown is the default; writes target/mruby-spec-report.md
+python3 scripts/mruby_spec_report.py
+
+# Alternative formats
+python3 scripts/mruby_spec_report.py --format json
+python3 scripts/mruby_spec_report.py --format html
+
+# Select files, Cargo features, and a destination
+python3 scripts/mruby_spec_report.py --file array --file ensure \
+  --features mruby-random,mruby-regexp --output target/selected-specs.md
+```
+
+The report contains a file summary and every reached `assert` block, including
+its result, failure details, and parent ID for nested assertions. It counts
+`assert` blocks, not individual `assert_equal` or `assert_true` calls. Results
+are `pass`, `fail`, `error`, `warn` (no assertions), `skip`, `stress` (disabled),
+or `interrupted` (started but did not finish).
+
+File status distinguishes `passed`, `failed` (completed with assertion failures
+or rescued errors), `compile_error`, `runtime_error`, `panic`, `aborted`,
+`timeout`, `premature_return`, and `incomplete`. After an interrupted file,
+remaining tests are **unevaluated**, with no guessed count. Conditional tests
+that were never entered are not counted as skips.
+
+Each report links to raw logs and append-only JSONL events in a unique sibling
+`mruby-spec-logs-*` directory. Keep this directory with the report. Markdown
+contains all assertion rows; HTML groups them in expandable file sections.
+JSON uses `schema_version: 1`, with `metadata`, `files`, `file_counts`, and
+`assert_counts`; file entries include assertion records and log paths. All
+formats record the commit, dirty state, selected features, upstream revision,
+and generation time. `--no-default-features` and `--timeout SECONDS` are also
+supported (30 seconds per file by default). `--source-url URL` replaces local
+source links with links under an HTTP(S) base URL for published reports.
+
+The command writes a report even when compatibility tests fail, then exits
+with **1**. It exits with **0** only if all selected files pass, and **2** for
+build or reporting errors. This keeps failures visible to CI. The existing
+`cargo test` command remains available and does not write report files.
+
+Reporter self-tests:
+
+```sh
+python3 -m unittest discover -s scripts -p 'test_mruby_spec_report.py'
+cargo test -p mrubyedge --test mruby_spec
+```
+
 The upstream tests are explicitly ignored by default because this is a
 compatibility suite with known failures, not a passing regression baseline.
 A failing assertion, unhandled error, compiler failure, VM panic, premature
@@ -58,3 +109,35 @@ When updating upstream, replace the entire `upstream/t/` directory from an
 explicit commit, refresh the license and assertion reference, update
 `SHA256SUMS` and the revision above, and keep the file list in
 `../mruby_spec.rs` in sync. Do not edit imported test bodies to make them pass.
+
+## GitHub Actions
+
+The normal mruby/edge CI explicitly filters out the upstream spec cases and
+the report-driver test module (`--skip spec_ --skip mruby_spec::`). Run the
+compatibility suite separately with the report command above.
+
+`mruby-spec.yml` runs separately on relevant pull requests, pushes to master,
+and manual dispatch. It uses the default Cargo features, writes Markdown to
+the workflow summary, and uploads the report and logs as an artifact. Both
+exit 0 (compatible) and exit 1 (compatibility failures) are accepted; build or
+reporting failures still fail the job. The reporting self-tests run here.
+
+`mruby-spec-publish.yml` runs after each push to master (including PR merges),
+or manually on master. It generates HTML using the same default features and
+accepts compatibility failures, replaces the generated `docs/mruby-spec/` site,
+and commits it to master as `github-actions[bot]`. Logs use stable paths and
+source links point to the exact tested commit on GitHub. The published URL is
+`https://mrubyedge.github.io/mrubyedge/mruby-spec/`.
+
+The workflow then calls `docs.yml` with the report commit to build rustdoc,
+copy `docs/` into the Pages artifact, and deploy. This explicit call is needed
+because pushes made with `GITHUB_TOKEN` do not start another push workflow.
+`docs.yml` still checks documentation on pull requests and supports manual
+publication on master. The publish job needs permission to commit directly to
+master; repository rules must allow these bot commits.
+
+Publishing runs are serialized. If master advances while an older run is
+collecting results or pushing its report, that run skips publication and the
+newer master run publishes its own report. Generated commits do not recursively
+start spec workflows. `docs/mruby-spec/` is managed by the publisher; do not edit
+its report or logs by hand.

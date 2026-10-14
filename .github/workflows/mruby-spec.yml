@@ -1,0 +1,59 @@
+name: mruby spec report
+
+on:
+  pull_request:
+    branches: [master]
+    paths: ['mrubyedge/**', 'scripts/**', 'Cargo.lock', '.github/workflows/mruby-spec.yml']
+  push:
+    branches: [master]
+    paths: ['mrubyedge/**', 'scripts/**', 'Cargo.lock', '.github/workflows/mruby-spec.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-spec-${{ hashFiles('**/Cargo.lock') }}
+      - name: Check report driver
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_mruby_spec_report.py'
+          cargo test -p mrubyedge --test mruby_spec
+      - name: Generate Markdown report
+        shell: bash
+        env:
+          SOURCE_URL: https://github.com/${{ github.repository }}/blob/${{ github.sha }}/mrubyedge/tests/mruby_spec/upstream/t
+        run: |
+          rm -rf target/mruby-spec-ci
+          set +e
+          python3 scripts/mruby_spec_report.py --output target/mruby-spec-ci/report.md \
+            --source-url "$SOURCE_URL"
+          result=$?
+          set -e
+          # 1 means compatibility failures; 2 means build/reporting failure.
+          if [ "$result" -gt 1 ]; then
+            exit "$result"
+          fi
+          test -s target/mruby-spec-ci/report.md
+          cat target/mruby-spec-ci/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload report and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mruby-spec-markdown
+          path: target/mruby-spec-ci/
+          if-no-files-found: warn
+          retention-days: 14

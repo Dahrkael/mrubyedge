@@ -1,0 +1,115 @@
+name: Publish mruby spec report
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize report commits and deployments. A newer master is checked again
+# before committing, so a slow older run cannot publish stale results.
+concurrency:
+  group: mruby-spec-publish
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    outputs:
+      ref: ${{ steps.commit.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-spec-${{ hashFiles('**/Cargo.lock') }}
+      - name: Generate HTML report
+        shell: bash
+        env:
+          SOURCE_URL: https://github.com/${{ github.repository }}/blob/${{ github.sha }}/mrubyedge/tests/mruby_spec/upstream/t
+        run: |
+          rm -rf target/mruby-spec-site
+          set +e
+          python3 scripts/mruby_spec_report.py --format html \
+            --output target/mruby-spec-site/index.html --source-url "$SOURCE_URL"
+          result=$?
+          set -e
+          if [ "$result" -gt 1 ]; then
+            exit "$result"
+          fi
+          test -s target/mruby-spec-site/index.html
+          # Stable log paths avoid committing a new random directory each run.
+          python3 - <<'PY'
+          from pathlib import Path
+          site = Path('target/mruby-spec-site')
+          folders = list(site.glob('mruby-spec-logs-*'))
+          assert len(folders) == 1, 'expected one report log directory'
+          logs = folders[0]
+          page = site / 'index.html'
+          page.write_text(page.read_text().replace(logs.name + '/', 'logs/'))
+          logs.rename(site / 'logs')
+          PY
+      - name: Commit report to master
+        id: commit
+        shell: bash
+        run: |
+          source=$(git rev-parse HEAD)
+          git fetch origin master
+          if [ "$(git rev-parse origin/master)" != "$source" ]; then
+            echo "::notice::Master advanced during reporting; the newer run will publish."
+            exit 0
+          fi
+          git switch -C master
+          rm -rf docs/mruby-spec
+          mkdir -p docs
+          cp -R target/mruby-spec-site docs/mruby-spec
+          git add -- docs/mruby-spec
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'Update mruby spec report' \
+              -m "Report source: $source" \
+              -m 'Co-authored-by: Codex <codex@openai.com>'
+            if ! git push origin HEAD:master; then
+              git fetch origin master
+              if [ "$(git rev-parse origin/master)" != "$source" ]; then
+                echo "::notice::Master advanced before push; the newer run will publish."
+                exit 0
+              fi
+              exit 1
+            fi
+          fi
+          echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Upload report and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mruby-spec-html
+          path: target/mruby-spec-site/
+          if-no-files-found: warn
+          retention-days: 14
+
+  deploy:
+    needs: report
+    if: needs.report.outputs.ref != ''
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+    with:
+      ref: ${{ needs.report.outputs.ref }}

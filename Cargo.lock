@@ -616,6 +616,7 @@ dependencies = [
  "rand_core 0.10.1",
  "rand_xorshift",
  "regex",
+ "serde_json",
  "simple_endian",
 ]
 
