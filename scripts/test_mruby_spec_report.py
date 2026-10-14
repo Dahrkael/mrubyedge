@@ -46,6 +46,16 @@ class Reports(unittest.TestCase):
             path.write_text('["start",1,"name"]\n["pass",1,null]\n["start",')
             self.assertEqual(len(read_events(path)), 2)
 
+    def test_source_links_keep_the_url_scheme(self):
+        item = summarize([['phase', 'completed', 'example.rb']], 0, False, '')
+        item.update(file='example.rb', elapsed_seconds=0, source='https://github.com/owner/repo/blob/abc/a.rb',
+                    log='raw.log', events='events.jsonl')
+        report = {'metadata': {'commit': 'abc', 'dirty': False, 'generated_at': 'now', 'features': '',
+                               'default_features': True, 'upstream_revision': '1234'},
+                  'files': [item], 'file_counts': {'passed': 1}}
+        self.assertIn(item['source'], markdown(report))
+        self.assertIn(item['source'], html_report(report))
+
     def test_renderers_escape_descriptions_and_details(self):
         item = summarize([['start', 1, '<script>x</script>|[link]'], ['error', 1, 'a\nb'],
                           ['phase', 'completed', 'example.rb']], 101, False, '')

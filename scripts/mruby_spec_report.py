@@ -106,7 +106,7 @@ def markdown(report):
     for f in report["files"]:
         lines += ["", f"## {Path(f['file']).stem}", "",
                   f"Status: **{f['status']}**; elapsed: {f['elapsed_seconds']:.2f}s; "
-                  f"[source]({quote(f['source'])}) · [log]({quote(f['log'])}) · [events]({quote(f['events'])})", ""]
+                  f"[source]({quote(f['source'], safe='/:' )}) · [log]({quote(f['log'])}) · [events]({quote(f['events'])})", ""]
         if not f["completed"]:
             lines += ["**Execution stopped before completion. Remaining tests are unevaluated.**", ""]
         lines += ["| ID | Parent | Assert | Result | Details |", "|---:|---:|---|---|---|"]
@@ -141,7 +141,7 @@ def html_report(report):
     for f in report["files"]:
         parts.append(f'<details id="{esc(Path(f["file"]).stem)}"><summary>{esc(f["file"])} — {esc(f["status"])}</summary>')
         parts.append(f'<p>Elapsed: {f["elapsed_seconds"]:.2f}s · ' + ' · '.join(
-            f'<a href="{esc(quote(f[key]))}">{key}</a>' for key in ('source', 'log', 'events')) + '</p>')
+            f'<a href="{esc(quote(f[key], safe="/:"))}">{key}</a>' for key in ('source', 'log', 'events')) + '</p>')
         if not f["completed"]:
             parts.append('<p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>')
         parts.append('<table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>')
@@ -173,10 +173,13 @@ def main():
     parser.add_argument('--format', choices=['markdown', 'json', 'html'], default='markdown')
     parser.add_argument('--output', type=Path, help='default: target/mruby-spec-report.{md,json,html}')
     parser.add_argument('--file', action='append', help='run only this upstream file (repeatable, .rb optional)')
+    parser.add_argument('--source-url', help='HTTP(S) base URL for links to upstream source files')
     parser.add_argument('--features', default='', help='Cargo features, comma separated')
     parser.add_argument('--no-default-features', action='store_true')
     parser.add_argument('--timeout', type=float, default=30, help='seconds per file (default: 30)')
     args = parser.parse_args()
+    if args.source_url and not args.source_url.startswith(('https://', 'http://')):
+        parser.error('--source-url must be an HTTP(S) URL')
     if not 0 < args.timeout < float('inf'):
         parser.error('--timeout must be finite and positive')
     files = re.findall(r'(spec_\w+)\s*=>\s*"([^"]+)"', (SUITE.parent / 'mruby_spec.rs').read_text())
@@ -217,7 +220,8 @@ def main():
         item = summarize(read_events(events), returncode, timed_out, log.read_text(errors='replace'))
         item.update(file=filename, elapsed_seconds=round(time.monotonic() - start, 3),
                     log=os.path.relpath(log, output.parent), events=os.path.relpath(events, output.parent),
-                    source=os.path.relpath(SUITE / 'upstream/t' / filename, output.parent))
+                    source=(args.source_url.rstrip('/') + '/' + quote(filename) if args.source_url else
+                            os.path.relpath(SUITE / 'upstream/t' / filename, output.parent)))
         report['files'].append(item)
         print(f'{filename}: {item["status"]}', file=sys.stderr)
     report['file_counts'] = dict(Counter(f['status'] for f in report['files']))

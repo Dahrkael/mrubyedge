@@ -56,7 +56,8 @@ JSON uses `schema_version: 1`, with `metadata`, `files`, `file_counts`, and
 `assert_counts`; file entries include assertion records and log paths. All
 formats record the commit, dirty state, selected features, upstream revision,
 and generation time. `--no-default-features` and `--timeout SECONDS` are also
-supported (30 seconds per file by default).
+supported (30 seconds per file by default). `--source-url URL` replaces local
+source links with links under an HTTP(S) base URL for published reports.
 
 The command writes a report even when compatibility tests fail, then exits
 with **1**. It exits with **0** only if all selected files pass, and **2** for
@@ -114,3 +115,9 @@ explicit commit, refresh the license and assertion reference, update
 The normal mruby/edge CI explicitly filters out the upstream spec cases and
 the report-driver test module (`--skip spec_ --skip mruby_spec::`). Run the
 compatibility suite separately with the report command above.
+
+`mruby-spec.yml` runs separately on relevant pull requests, pushes to master,
+and manual dispatch. It uses the default Cargo features, writes Markdown to
+the workflow summary, and uploads the report and logs as an artifact. Both
+exit 0 (compatible) and exit 1 (compatibility failures) are accepted; build or
+reporting failures still fail the job. The reporting self-tests run here.
