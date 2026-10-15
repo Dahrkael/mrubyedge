@@ -30,18 +30,9 @@ pub enum RType {
     Nil,
 }
 
-#[cfg(feature = "mruby-hash-fnv")]
 pub type RHashMap<K, V> = fnv::FnvHashMap<K, V>;
-#[cfg(feature = "mruby-hash-fnv")]
 pub type RHashSet<K> = fnv::FnvHashSet<K>;
-#[cfg(feature = "mruby-hash-fnv")]
 pub type RHash = fnv::FnvHashMap<ValueHasher, (Rc<RObject>, Rc<RObject>)>;
-#[cfg(not(feature = "mruby-hash-fnv"))]
-pub type RHashMap<K, V> = std::collections::HashMap<K, V>;
-#[cfg(not(feature = "mruby-hash-fnv"))]
-pub type RHashSet<K> = std::collections::HashSet<K>;
-#[cfg(not(feature = "mruby-hash-fnv"))]
-pub type RHash = std::collections::HashMap<ValueHasher, (Rc<RObject>, Rc<RObject>)>;
 
 /// Actual storage for Ruby values, including boxed objects and immediates.
 #[derive(Debug, Clone)]
