@@ -4,7 +4,7 @@ NoMethodError : OK
 NoMethodError#args : ERROR: Method not found: undefined method `args` for NoMethodError
 OK: 1, FAIL: 0, ERROR: 1, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_nomethoderror' (3476) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_nomethoderror' (3474) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 nomethoderror.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_nomethoderror ... FAILED

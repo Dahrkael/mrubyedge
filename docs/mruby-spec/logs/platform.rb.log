@@ -4,7 +4,7 @@ MRUBY_PLATFORM : ERROR: Cannot found name: MRUBY_PLATFORM
 MRUBY_PLATFORM is a cpu-os pair : ERROR: Cannot found name: MRUBY_PLATFORM
 OK: 0, FAIL: 0, ERROR: 2, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_platform' (3483) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_platform' (3480) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 platform.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_platform ... FAILED

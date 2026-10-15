@@ -7,5 +7,5 @@ Exception#message : ERROR: Method not found: undefined method `exception` for Cl
 Exception#to_s : ERROR: Method not found: undefined method `exception` for Class
 Exception.exception : ERROR: Method not found: undefined method `exception` for Class
 NameError : 
-thread 'spec_exception' (3422) has overflowed its stack
+thread 'spec_exception' (3419) has overflowed its stack
 fatal runtime error: stack overflow, aborting

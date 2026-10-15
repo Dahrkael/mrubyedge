@@ -1,7 +1,7 @@
 
 running 1 test
 
-thread 'spec_codegen' (3412) panicked at mrubyedge/src/yamrb/vm.rs:999:50:
+thread 'spec_codegen' (3409) panicked at mrubyedge/src/yamrb/vm.rs:999:50:
 called `Result::unwrap()` on an `Err` value: InvalidOpCode
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_codegen ... FAILED
@@ -11,5 +11,5 @@ failures:
 failures:
     spec_codegen
 
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.01s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.00s
 

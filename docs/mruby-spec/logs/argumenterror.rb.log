@@ -27,7 +27,7 @@ Call to MRB_ARGS_NONE method :
 FAIL
 OK: 1, FAIL: 8, ERROR: 0, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_argumenterror' (3399) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_argumenterror' (3397) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 argumenterror.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_argumenterror ... FAILED

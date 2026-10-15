@@ -8,7 +8,7 @@ FalseClass#to_s : OK
 FalseClass#| : OK
 OK: 5, FAIL: 0, ERROR: 1, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_false' (3434) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_false' (3431) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 false.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_false ... FAILED

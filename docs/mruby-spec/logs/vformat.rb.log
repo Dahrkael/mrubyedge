@@ -1,7 +1,7 @@
 
 running 1 test
 
-thread 'spec_vformat' (3530) panicked at mrubyedge/tests/mruby_spec/mod.rs:48:51:
+thread 'spec_vformat' (3527) panicked at mrubyedge/tests/mruby_spec/mod.rs:48:51:
 called `Result::unwrap()` on an `Err` value: InvalidFormat
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_vformat ... FAILED
