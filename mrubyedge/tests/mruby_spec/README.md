@@ -144,3 +144,16 @@ HTML and logs are also uploaded as the `mruby-spec-html` artifact.
 The old self-committing workflow has been removed. `docs.yml` publishes rustdoc
 independently on relevant master pushes and supports manual publication. The
 old `/mrubyedge/mruby-spec/` page redirects to the new site.
+
+### HTML report interface
+
+The HTML report includes file and assertion progress bars, links to the tested
+mrubyedge commit, file-name search, result filters, and collapsible assertion
+details. The overall totals remain unchanged when filtering. The assertion
+percentage uses only reached assert blocks; unevaluated assertions have an
+unknown count and are not treated as passed or skipped.
+
+Styles and filtering logic live in `scripts/mruby_spec_report/` and are embedded
+into the generated HTML, with no external libraries or network dependencies.
+The page follows the system light/dark preference and adapts to narrow screens.
+Without JavaScript, all file details and links remain accessible.
