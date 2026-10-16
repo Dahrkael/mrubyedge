@@ -1,7 +1,7 @@
 
 running 1 test
 
-thread 'spec_hash' (3657) panicked at mrubyedge/tests/mruby_spec/mod.rs:52:9:
+thread 'spec_hash' (2248) panicked at mrubyedge/tests/mruby_spec/mod.rs:52:9:
 hash.rb: error nr NoMethodError("undefined method `alias_method` for Class"); backtrace: []
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_hash ... FAILED

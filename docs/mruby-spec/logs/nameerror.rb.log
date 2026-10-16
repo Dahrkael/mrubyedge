@@ -5,7 +5,7 @@ NameError#name : ERROR: Method not found: bar
 NameError#initialize : ERROR: Exception#message must be called on an Exception
 OK: 1, FAIL: 0, ERROR: 2, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_nameerror' (3691) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_nameerror' (2279) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 nameerror.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_nameerror ... FAILED

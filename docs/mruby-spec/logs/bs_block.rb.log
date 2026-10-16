@@ -33,7 +33,7 @@ BS Block 29 : OK
 BS Block 30 : OK
 BS Block [ruby-dev:31147] : OK
 BS Block [ruby-dev:31160] : 
-thread 'spec_bs_block' (3623) panicked at mrubyedge/src/yamrb/optable.rs:2165:13:
+thread 'spec_bs_block' (2213) panicked at mrubyedge/src/yamrb/optable.rs:2165:13:
 internal error: entered unreachable code: aref supports only array
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_bs_block ... FAILED

@@ -33,5 +33,5 @@ Kernel#method_missing : ERROR: Method not found: no_super_method_named_this for 
 Kernel#nil? : OK
 Kernel#object_id : ERROR: Cannot found name: Numeric
 Kernel#raise : 
-thread 'spec_kernel' (3665) has overflowed its stack
+thread 'spec_kernel' (2256) has overflowed its stack
 fatal runtime error: stack overflow, aborting

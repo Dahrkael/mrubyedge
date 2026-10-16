@@ -11,7 +11,7 @@ NilClass#=~ : ERROR: Method not found: undefined method `=~` for NilClass
 safe navigation : OK
 OK: 4, FAIL: 0, ERROR: 5, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_nil' (3693) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_nil' (2281) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 nil.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_nil ... FAILED

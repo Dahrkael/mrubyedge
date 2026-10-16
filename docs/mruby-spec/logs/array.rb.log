@@ -18,7 +18,7 @@ Array#[] with a Float index that stands for no Integer : ERROR: Method not found
 Array#[] redefined on Array itself reaches the redefinition : ERROR: Method not found: undefined method `class_eval` for Class
 Array#[]= redefined on Array itself reaches the redefinition : ERROR: Method not found: undefined method `class_eval` for Class
 Array#[]= : 
-thread 'spec_array' (3619) panicked at mrubyedge/src/yamrb/prelude/array.rs:247:22:
+thread 'spec_array' (2209) panicked at mrubyedge/src/yamrb/prelude/array.rs:247:22:
 index out of bounds: the len is 0 but the index is 0
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_array ... FAILED

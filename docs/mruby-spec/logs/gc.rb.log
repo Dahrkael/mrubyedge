@@ -29,7 +29,7 @@ OP_ADDI does not retain a boxed Float in the GC arena : STRESS (not run)
 OP_LOADL does not retain a boxed Float in the GC arena : STRESS (not run)
 OK: 0, FAIL: 0, ERROR: 13, WARN: 0, SKIP: 0, STRESS: 14
 
-thread 'spec_gc' (3655) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_gc' (2246) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 gc.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_gc ... FAILED

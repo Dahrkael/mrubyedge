@@ -10,7 +10,7 @@ Integer#/ :
   assertion failed:  expected -1, actual 0
 ERROR: Method not found: undefined method `const_defined?` for Class
 
-thread 'spec_integer' (3661) panicked at mrubyedge/tests/mruby_spec/mod.rs:52:9:
+thread 'spec_integer' (2252) panicked at mrubyedge/tests/mruby_spec/mod.rs:52:9:
 integer.rb: error nr NoMethodError("undefined method `const_defined?` for Class"); backtrace: []
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_integer ... FAILED
