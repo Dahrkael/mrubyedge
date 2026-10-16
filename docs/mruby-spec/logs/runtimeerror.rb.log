@@ -1,8 +1,0 @@
-
-running 1 test
-RuntimeError : OK
-OK: 1, FAIL: 0, ERROR: 0, WARN: 0, SKIP: 0, STRESS: 0
-test spec_runtimeerror ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.00s
-

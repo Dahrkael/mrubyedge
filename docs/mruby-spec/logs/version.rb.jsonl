@@ -1,8 +1,0 @@
-["phase","compile","helpers.rb"]
-["phase","execute","helpers.rb"]
-["phase","compile","version.rb"]
-["phase","execute","version.rb"]
-["start",1,"MRUBY_REVISION"]
-["error",1,"Cannot found name: MRUBY_REVISION"]
-["phase","returned","version.rb"]
-["phase","completed","version.rb"]

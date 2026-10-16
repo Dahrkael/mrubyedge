@@ -8,8 +8,7 @@ on:
 permissions:
   contents: read
 
-# Serialize report commits and deployments. A newer master is checked again
-# before committing, so a slow older run cannot publish stale results.
+# Serialize writes to the report repository and skip results from an older master.
 concurrency:
   group: mruby-spec-publish
   cancel-in-progress: false
@@ -19,14 +18,11 @@ jobs:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    permissions:
-      contents: write
-    outputs:
-      ref: ${{ steps.commit.outputs.ref }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
@@ -62,9 +58,16 @@ jobs:
           page = site / 'index.html'
           page.write_text(page.read_text().replace(logs.name + '/', 'logs/'))
           logs.rename(site / 'logs')
+          (site / '.nojekyll').touch()
           PY
-      - name: Commit report to master
-        id: commit
+      - name: Check out report repository
+        uses: actions/checkout@v5
+        with:
+          repository: mrubyedge/mruby-spec
+          ref: main
+          path: _spec_publish
+          ssh-key: ${{ secrets.MRUBY_SPEC_DEPLOY_KEY }}
+      - name: Publish report to mruby-spec
         shell: bash
         run: |
           source=$(git rev-parse HEAD)
@@ -73,27 +76,17 @@ jobs:
             echo "::notice::Master advanced during reporting; the newer run will publish."
             exit 0
           fi
-          git switch -C master
-          rm -rf docs/mruby-spec
-          mkdir -p docs
-          cp -R target/mruby-spec-site docs/mruby-spec
-          git add -- docs/mruby-spec
-          if ! git diff --cached --quiet; then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Update mruby spec report' \
-              -m "Report source: $source" \
-              -m 'Co-authored-by: Codex <codex@openai.com>'
-            if ! git push origin HEAD:master; then
-              git fetch origin master
-              if [ "$(git rev-parse origin/master)" != "$source" ]; then
-                echo "::notice::Master advanced before push; the newer run will publish."
-                exit 0
-              fi
-              exit 1
-            fi
+          rsync -a --delete target/mruby-spec-site/ _spec_publish/docs/
+          git -C _spec_publish add -- docs
+          if git -C _spec_publish diff --cached --quiet; then
+            exit 0
           fi
-          echo "ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git -C _spec_publish config user.name 'github-actions[bot]'
+          git -C _spec_publish config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C _spec_publish commit -m 'Update mruby spec report' \
+            -m "Report source: https://github.com/mrubyedge/mrubyedge/commit/$source" \
+            -m 'Co-authored-by: Codex <codex@openai.com>'
+          git -C _spec_publish push origin HEAD:main
       - name: Upload report and logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -102,14 +95,3 @@ jobs:
           path: target/mruby-spec-site/
           if-no-files-found: warn
           retention-days: 14
-
-  deploy:
-    needs: report
-    if: needs.report.outputs.ref != ''
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    uses: ./.github/workflows/docs.yml
-    with:
-      ref: ${{ needs.report.outputs.ref }}
