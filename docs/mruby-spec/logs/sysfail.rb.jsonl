@@ -1,8 +1,0 @@
-["phase","compile","helpers.rb"]
-["phase","execute","helpers.rb"]
-["phase","compile","sysfail.rb"]
-["phase","execute","sysfail.rb"]
-["start",1,"mrb_sys_fail without SystemCallError"]
-["error",1,"Cannot found name: TestSysFail"]
-["phase","returned","sysfail.rb"]
-["phase","completed","sysfail.rb"]

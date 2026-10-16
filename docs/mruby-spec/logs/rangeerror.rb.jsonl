@@ -1,8 +1,0 @@
-["phase","compile","helpers.rb"]
-["phase","execute","helpers.rb"]
-["phase","compile","rangeerror.rb"]
-["phase","execute","rangeerror.rb"]
-["start",1,"RangeError"]
-["pass",1,null]
-["phase","returned","rangeerror.rb"]
-["phase","completed","rangeerror.rb"]

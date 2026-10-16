@@ -1,13 +1,9 @@
 name: Deploy mrubyedge docs
 
 on:
-  workflow_call:
-    inputs:
-      ref:
-        description: Commit containing the generated spec report
-        required: false
-        type: string
-        default: ''
+  push:
+    branches: [ "master" ]
+    paths: [ "mrubyedge/**", "docs/**", ".github/workflows/docs.yml" ]
   workflow_dispatch:
   pull_request:
     branches: [ "master" ]
@@ -24,8 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-      with:
-        ref: ${{ inputs.ref || github.sha }}
     - name: Run doc on mrubyedge
       run: cargo doc --no-deps -p mrubyedge
     - name: Copy root/docs
