@@ -81,7 +81,7 @@ ERROR: Cannot found name: FrozenError
 a `def` in a method written in a block given a class adds to that class : ERROR: Class#new must be called from class
 OK: 16, FAIL: 7, ERROR: 26, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_class' (3410) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_class' (3627) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 class.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_class ... FAILED
@@ -91,5 +91,5 @@ failures:
 failures:
     spec_class
 
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.01s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.02s
 

@@ -7,7 +7,7 @@ BasicObject#== defined by a class is asked about the receiver itself : ERROR: Cl
 BasicObject#== defined on NilClass, TrueClass or FalseClass : ERROR: Method not found: undefined method `class_eval` for Array
 OK: 0, FAIL: 0, ERROR: 5, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_basicobject' (3403) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_basicobject' (3621) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 basicobject.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_basicobject ... FAILED

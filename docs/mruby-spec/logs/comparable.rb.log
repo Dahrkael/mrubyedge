@@ -9,7 +9,7 @@ Comparable#between? : ERROR: Cannot found name: Comparable
 Comparable#between? - a comparison with no answer : ERROR: Class#new must be called from class
 OK: 0, FAIL: 0, ERROR: 7, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_comparable' (3414) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_comparable' (3631) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 comparable.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_comparable ... FAILED

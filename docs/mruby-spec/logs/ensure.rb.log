@@ -10,7 +10,7 @@ begin with an empty ensure keeps its value in a register of its own :
 ERROR: [Internal Error] register 2 is not assigned
 OK: 4, FAIL: 0, ERROR: 2, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_ensure' (3416) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_ensure' (3633) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 ensure.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_ensure ... FAILED

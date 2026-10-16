@@ -1,7 +1,7 @@
 
 running 1 test
 
-thread 'spec_float' (3436) panicked at mrubyedge/tests/mruby_spec/mod.rs:52:9:
+thread 'spec_float' (3653) panicked at mrubyedge/tests/mruby_spec/mod.rs:52:9:
 float.rb: error nr NoMethodError("undefined method `const_defined?` for Class"); backtrace: []
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_float ... FAILED

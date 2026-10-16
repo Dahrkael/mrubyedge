@@ -6,8 +6,8 @@ table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{padding:.5rem;bord
 th{background:#eef2f6}.pass,.passed{color:#166534}.fail,.failed,.error,.panic,.aborted,.timeout,.interrupted{color:#b42318}
 details{margin:1rem 0}summary{cursor:pointer;font-weight:bold}.detail{white-space:pre-wrap;overflow-wrap:anywhere}
 </style><body><h1>mruby compatibility report</h1>
-<p>Commit: <code>b31d3346f5a3ca73e4768bb6173d434a5af5c4a8</code> · dirty: False</p>
-<p>Generated: 2026-10-14T05:47:04.352900+00:00 · Features: (none requested) · default features: True</p>
+<p>Commit: <code>f95a388af43c6ce849c37ea41a8685116b49e1d2</code> · dirty: False</p>
+<p>Generated: 2026-10-16T05:23:46.375880+00:00 · Features: (none requested) · default features: True</p>
 <p>Upstream: <code>891d1d9dc90f1578eedd1003d645250d94eb07e9</code></p>
 <p>Counts include only reached assert blocks (including nested blocks), not individual assert_equal calls. Interrupted files may have further unevaluated tests; their count is unknown. Conditional tests not entered by this build are not counted as skips.</p>
 <p>Files: 48; passed: 9</p>
@@ -62,7 +62,7 @@ details{margin:1rem 0}summary{cursor:pointer;font-weight:bold}.detail{white-spac
 <tr><td><a href="#vformat">vformat.rb</a></td><td class="compile_error">compile_error</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
 </tbody></table>
 <details id="argumenterror"><summary>argumenterror.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/argumenterror.rb">source</a> · <a href="logs/argumenterror.rb.log">log</a> · <a href="logs/argumenterror.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/argumenterror.rb">source</a> · <a href="logs/argumenterror.rb.log">log</a> · <a href="logs/argumenterror.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>ArgumentError</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>&#x27;wrong number of arguments&#x27; from mrb_get_args</td><td class="fail">fail</td><td class="detail"></td></tr>
@@ -76,7 +76,7 @@ details{margin:1rem 0}summary{cursor:pointer;font-weight:bold}.detail{white-spac
 expected exception, but nothing was raised</td></tr>
 </tbody></table></details>
 <details id="array"><summary>array.rb — panic</summary>
-<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/array.rb">source</a> · <a href="logs/array.rb.log">log</a> · <a href="logs/array.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/array.rb">source</a> · <a href="logs/array.rb.log">log</a> · <a href="logs/array.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Array</td><td class="pass">pass</td><td class="detail"></td></tr>
@@ -96,7 +96,7 @@ Type mismatch</td></tr>
 <tr><td>12</td><td></td><td>Array#[]=</td><td class="interrupted">interrupted</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="basicobject"><summary>basicobject.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/basicobject.rb">source</a> · <a href="logs/basicobject.rb.log">log</a> · <a href="logs/basicobject.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/basicobject.rb">source</a> · <a href="logs/basicobject.rb.log">log</a> · <a href="logs/basicobject.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>BasicObject</td><td class="error">error</td><td class="detail">Cannot found name: BasicObject</td></tr>
 <tr><td>2</td><td></td><td>BasicObject superclass</td><td class="error">error</td><td class="detail">Cannot found name: BasicObject</td></tr>
@@ -105,7 +105,7 @@ Type mismatch</td></tr>
 <tr><td>5</td><td></td><td>BasicObject#== defined on NilClass, TrueClass or FalseClass</td><td class="error">error</td><td class="detail">Method not found: undefined method `class_eval` for Array</td></tr>
 </tbody></table></details>
 <details id="bs_block"><summary>bs_block.rb — panic</summary>
-<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/bs_block.rb">source</a> · <a href="logs/bs_block.rb.log">log</a> · <a href="logs/bs_block.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/bs_block.rb">source</a> · <a href="logs/bs_block.rb.log">log</a> · <a href="logs/bs_block.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>BS Block 1</td><td class="pass">pass</td><td class="detail"></td></tr>
@@ -143,7 +143,7 @@ Type mismatch</td></tr>
 <tr><td>33</td><td></td><td>BS Block [ruby-dev:31160]</td><td class="interrupted">interrupted</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="bs_literal"><summary>bs_literal.rb — passed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/bs_literal.rb">source</a> · <a href="logs/bs_literal.rb.log">log</a> · <a href="logs/bs_literal.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/bs_literal.rb">source</a> · <a href="logs/bs_literal.rb.log">log</a> · <a href="logs/bs_literal.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>BS Literal 1</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>BS Literal 2</td><td class="pass">pass</td><td class="detail"></td></tr>
@@ -156,7 +156,7 @@ Type mismatch</td></tr>
 <tr><td>9</td><td></td><td>BS Literal 9</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="class"><summary>class.rb — failed</summary>
-<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/class.rb">source</a> · <a href="logs/class.rb.log">log</a> · <a href="logs/class.rb.jsonl">events</a></p>
+<p>Elapsed: 0.03s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/class.rb">source</a> · <a href="logs/class.rb.log">log</a> · <a href="logs/class.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Class</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>Class#initialize</td><td class="error">error</td><td class="detail">Class#new must be called from class</td></tr>
@@ -217,12 +217,12 @@ Cannot found name: FrozenError</td></tr>
 <tr><td>49</td><td></td><td>a `def` in a method written in a block given a class adds to that class</td><td class="error">error</td><td class="detail">Class#new must be called from class</td></tr>
 </tbody></table></details>
 <details id="codegen"><summary>codegen.rb — panic</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/codegen.rb">source</a> · <a href="logs/codegen.rb.log">log</a> · <a href="logs/codegen.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/codegen.rb">source</a> · <a href="logs/codegen.rb.log">log</a> · <a href="logs/codegen.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 </tbody></table></details>
 <details id="comparable"><summary>comparable.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/comparable.rb">source</a> · <a href="logs/comparable.rb.log">log</a> · <a href="logs/comparable.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/comparable.rb">source</a> · <a href="logs/comparable.rb.log">log</a> · <a href="logs/comparable.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Comparable#&lt;</td><td class="error">error</td><td class="detail">Cannot found name: Comparable</td></tr>
 <tr><td>2</td><td></td><td>Comparable#&lt;=</td><td class="error">error</td><td class="detail">Cannot found name: Comparable</td></tr>
@@ -233,7 +233,7 @@ Cannot found name: FrozenError</td></tr>
 <tr><td>7</td><td></td><td>Comparable#between? - a comparison with no answer</td><td class="error">error</td><td class="detail">Class#new must be called from class</td></tr>
 </tbody></table></details>
 <details id="ensure"><summary>ensure.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/ensure.rb">source</a> · <a href="logs/ensure.rb.log">log</a> · <a href="logs/ensure.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/ensure.rb">source</a> · <a href="logs/ensure.rb.log">log</a> · <a href="logs/ensure.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>ensure - context - yield</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>ensure - context - yield and break</td><td class="pass">pass</td><td class="detail"></td></tr>
@@ -244,7 +244,7 @@ Cannot found name: FrozenError</td></tr>
 [Internal Error] register 2 is not assigned</td></tr>
 </tbody></table></details>
 <details id="enumerable"><summary>enumerable.rb — failed</summary>
-<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/enumerable.rb">source</a> · <a href="logs/enumerable.rb.log">log</a> · <a href="logs/enumerable.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/enumerable.rb">source</a> · <a href="logs/enumerable.rb.log">log</a> · <a href="logs/enumerable.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Enumerable</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>Enumerable#all?</td><td class="error">error</td><td class="detail">Invalid argument: block should be specified</td></tr>
@@ -273,7 +273,7 @@ expected exception, but nothing was raised
 Method not found: undefined method `const_defined?` for Class</td></tr>
 </tbody></table></details>
 <details id="env"><summary>env.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/env.rb">source</a> · <a href="logs/env.rb.log">log</a> · <a href="logs/env.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/env.rb">source</a> · <a href="logs/env.rb.log">log</a> · <a href="logs/env.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>REnv, closed env carries no slot until a scope needs one</td><td class="error">error</td><td class="detail">Method not found: undefined method `__env_svar?` for Object</td></tr>
 <tr><td>2</td><td></td><td>REnv, a live write closes with the slot already made</td><td class="error">error</td><td class="detail">Method not found: undefined method `__env_svar_write` for Object</td></tr>
@@ -285,7 +285,7 @@ Method not found: undefined method `const_defined?` for Class</td></tr>
 <tr><td>8</td><td></td><td>REnv, MRB_ENV_SET_BIDX() evaluates its index exactly once</td><td class="error">error</td><td class="detail">Method not found: undefined method `__env_set_bidx_eval_count` for Object</td></tr>
 </tbody></table></details>
 <details id="exception"><summary>exception.rb — aborted</summary>
-<p>Elapsed: 0.21s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/exception.rb">source</a> · <a href="logs/exception.rb.log">log</a> · <a href="logs/exception.rb.jsonl">events</a></p>
+<p>Elapsed: 0.21s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/exception.rb">source</a> · <a href="logs/exception.rb.log">log</a> · <a href="logs/exception.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Exception</td><td class="pass">pass</td><td class="detail"></td></tr>
@@ -297,7 +297,7 @@ Method not found: undefined method `const_defined?` for Class</td></tr>
 <tr><td>7</td><td></td><td>NameError</td><td class="interrupted">interrupted</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="false"><summary>false.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/false.rb">source</a> · <a href="logs/false.rb.log">log</a> · <a href="logs/false.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/false.rb">source</a> · <a href="logs/false.rb.log">log</a> · <a href="logs/false.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>FalseClass</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>FalseClass false</td><td class="error">error</td><td class="detail">Method not found: undefined method `method_defined?` for Class</td></tr>
@@ -307,12 +307,12 @@ Method not found: undefined method `const_defined?` for Class</td></tr>
 <tr><td>6</td><td></td><td>FalseClass#|</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="float"><summary>float.rb — runtime_error</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/float.rb">source</a> · <a href="logs/float.rb.log">log</a> · <a href="logs/float.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/float.rb">source</a> · <a href="logs/float.rb.log">log</a> · <a href="logs/float.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 </tbody></table></details>
 <details id="gc"><summary>gc.rb — failed</summary>
-<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/gc.rb">source</a> · <a href="logs/gc.rb.log">log</a> · <a href="logs/gc.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/gc.rb">source</a> · <a href="logs/gc.rb.log">log</a> · <a href="logs/gc.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>GC.enable</td><td class="error">error</td><td class="detail">Cannot found name: GC</td></tr>
 <tr><td>2</td><td></td><td>GC.disable</td><td class="error">error</td><td class="detail">Cannot found name: GC</td></tr>
@@ -343,17 +343,17 @@ Method not found: undefined method `const_defined?` for Class</td></tr>
 <tr><td>27</td><td></td><td>OP_LOADL does not retain a boxed Float in the GC arena</td><td class="stress">stress</td><td class="detail">stress test disabled</td></tr>
 </tbody></table></details>
 <details id="hash"><summary>hash.rb — runtime_error</summary>
-<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/hash.rb">source</a> · <a href="logs/hash.rb.log">log</a> · <a href="logs/hash.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/hash.rb">source</a> · <a href="logs/hash.rb.log">log</a> · <a href="logs/hash.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 </tbody></table></details>
 <details id="indexerror"><summary>indexerror.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/indexerror.rb">source</a> · <a href="logs/indexerror.rb.log">log</a> · <a href="logs/indexerror.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/indexerror.rb">source</a> · <a href="logs/indexerror.rb.log">log</a> · <a href="logs/indexerror.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>IndexError</td><td class="error">error</td><td class="detail">Cannot found name: IndexError</td></tr>
 </tbody></table></details>
 <details id="integer"><summary>integer.rb — runtime_error</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/integer.rb">source</a> · <a href="logs/integer.rb.log">log</a> · <a href="logs/integer.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/integer.rb">source</a> · <a href="logs/integer.rb.log">log</a> · <a href="logs/integer.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Integer</td><td class="pass">pass</td><td class="detail"></td></tr>
@@ -365,7 +365,7 @@ expected -1, actual 0
 Method not found: undefined method `const_defined?` for Class</td></tr>
 </tbody></table></details>
 <details id="iterations"><summary>iterations.rb — passed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/iterations.rb">source</a> · <a href="logs/iterations.rb.log">log</a> · <a href="logs/iterations.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/iterations.rb">source</a> · <a href="logs/iterations.rb.log">log</a> · <a href="logs/iterations.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>while expression</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>until expression</td><td class="pass">pass</td><td class="detail"></td></tr>
@@ -373,7 +373,7 @@ Method not found: undefined method `const_defined?` for Class</td></tr>
 <tr><td>4</td><td></td><td>next expression</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="kernel"><summary>kernel.rb — aborted</summary>
-<p>Elapsed: 0.17s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/kernel.rb">source</a> · <a href="logs/kernel.rb.log">log</a> · <a href="logs/kernel.rb.jsonl">events</a></p>
+<p>Elapsed: 0.21s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/kernel.rb">source</a> · <a href="logs/kernel.rb.log">log</a> · <a href="logs/kernel.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Kernel</td><td class="error">error</td><td class="detail">Cannot found name: Kernel</td></tr>
@@ -406,13 +406,13 @@ assertion failed</td></tr>
 <tr><td>27</td><td></td><td>Kernel#raise</td><td class="interrupted">interrupted</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="lang"><summary>lang.rb — passed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/lang.rb">source</a> · <a href="logs/lang.rb.log">log</a> · <a href="logs/lang.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/lang.rb">source</a> · <a href="logs/lang.rb.log">log</a> · <a href="logs/lang.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>and</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>or</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="literals"><summary>literals.rb — panic</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/literals.rb">source</a> · <a href="logs/literals.rb.log">log</a> · <a href="logs/literals.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/literals.rb">source</a> · <a href="logs/literals.rb.log">log</a> · <a href="logs/literals.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Literals Numerical</td><td class="pass">pass</td><td class="detail"></td></tr>
@@ -420,12 +420,12 @@ assertion failed</td></tr>
 <tr><td>3</td><td></td><td>Literals Numerical wider than mrb_int</td><td class="interrupted">interrupted</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="localjumperror"><summary>localjumperror.rb — passed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/localjumperror.rb">source</a> · <a href="logs/localjumperror.rb.log">log</a> · <a href="logs/localjumperror.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/localjumperror.rb">source</a> · <a href="logs/localjumperror.rb.log">log</a> · <a href="logs/localjumperror.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>LocalJumpError</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="methods"><summary>methods.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/methods.rb">source</a> · <a href="logs/methods.rb.log">log</a> · <a href="logs/methods.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/methods.rb">source</a> · <a href="logs/methods.rb.log">log</a> · <a href="logs/methods.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>The alias statement</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>The alias statement (overwrite original)</td><td class="pass">pass</td><td class="detail"></td></tr>
@@ -446,7 +446,7 @@ expected exception, but nothing was raised</td></tr>
 <tr><td>12</td><td></td><td>super in a method with a receiver</td><td class="error">error</td><td class="detail">[Internal Error] no current callinfo</td></tr>
 </tbody></table></details>
 <details id="module"><summary>module.rb — failed</summary>
-<p>Elapsed: 0.03s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/module.rb">source</a> · <a href="logs/module.rb.log">log</a> · <a href="logs/module.rb.jsonl">events</a></p>
+<p>Elapsed: 0.03s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/module.rb">source</a> · <a href="logs/module.rb.log">log</a> · <a href="logs/module.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Module</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>Module#alias_method</td><td class="error">error</td><td class="detail">Method not found: undefined method `alias_method` for Class</td></tr>
@@ -537,14 +537,14 @@ Method not found: undefined method `__defined_const?` for Class</td></tr>
 <tr><td>65</td><td></td><td>constant and class variable lookup: a method written in a block given a class keeps the block&#x27;s scope</td><td class="error">error</td><td class="detail">Class#new must be called from class</td></tr>
 </tbody></table></details>
 <details id="nameerror"><summary>nameerror.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/nameerror.rb">source</a> · <a href="logs/nameerror.rb.log">log</a> · <a href="logs/nameerror.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/nameerror.rb">source</a> · <a href="logs/nameerror.rb.log">log</a> · <a href="logs/nameerror.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>NameError</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>NameError#name</td><td class="error">error</td><td class="detail">Method not found: bar</td></tr>
 <tr><td>3</td><td></td><td>NameError#initialize</td><td class="error">error</td><td class="detail">Exception#message must be called on an Exception</td></tr>
 </tbody></table></details>
 <details id="nil"><summary>nil.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/nil.rb">source</a> · <a href="logs/nil.rb.log">log</a> · <a href="logs/nil.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/nil.rb">source</a> · <a href="logs/nil.rb.log">log</a> · <a href="logs/nil.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>NilClass</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>NilClass</td><td class="error">error</td><td class="detail">Method not found: undefined method `method_defined?` for Class</td></tr>
@@ -557,13 +557,13 @@ Method not found: undefined method `__defined_const?` for Class</td></tr>
 <tr><td>9</td><td></td><td>safe navigation</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="nomethoderror"><summary>nomethoderror.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/nomethoderror.rb">source</a> · <a href="logs/nomethoderror.rb.log">log</a> · <a href="logs/nomethoderror.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/nomethoderror.rb">source</a> · <a href="logs/nomethoderror.rb.log">log</a> · <a href="logs/nomethoderror.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>NoMethodError</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>NoMethodError#args</td><td class="error">error</td><td class="detail">Method not found: undefined method `args` for NoMethodError</td></tr>
 </tbody></table></details>
 <details id="numeric"><summary>numeric.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/numeric.rb">source</a> · <a href="logs/numeric.rb.log">log</a> · <a href="logs/numeric.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/numeric.rb">source</a> · <a href="logs/numeric.rb.log">log</a> · <a href="logs/numeric.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Numeric</td><td class="error">error</td><td class="detail">Cannot found name: Numeric</td></tr>
 <tr><td>2</td><td></td><td>Numeric#+@</td><td class="pass">pass</td><td class="detail"></td></tr>
@@ -575,26 +575,26 @@ Method not found: undefined method `__defined_const?` for Class</td></tr>
 [Internal Error] register 26 is not assigned</td></tr>
 </tbody></table></details>
 <details id="object"><summary>object.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/object.rb">source</a> · <a href="logs/object.rb.log">log</a> · <a href="logs/object.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/object.rb">source</a> · <a href="logs/object.rb.log">log</a> · <a href="logs/object.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Object</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>Object superclass</td><td class="error">error</td><td class="detail">Cannot found name: BasicObject</td></tr>
 </tbody></table></details>
 <details id="platform"><summary>platform.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/platform.rb">source</a> · <a href="logs/platform.rb.log">log</a> · <a href="logs/platform.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/platform.rb">source</a> · <a href="logs/platform.rb.log">log</a> · <a href="logs/platform.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>MRUBY_PLATFORM</td><td class="error">error</td><td class="detail">Cannot found name: MRUBY_PLATFORM</td></tr>
 <tr><td>2</td><td></td><td>MRUBY_PLATFORM is a cpu-os pair</td><td class="error">error</td><td class="detail">Cannot found name: MRUBY_PLATFORM</td></tr>
 </tbody></table></details>
 <details id="proc"><summary>proc.rb — panic</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/proc.rb">source</a> · <a href="logs/proc.rb.log">log</a> · <a href="logs/proc.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/proc.rb">source</a> · <a href="logs/proc.rb.log">log</a> · <a href="logs/proc.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Proc</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>Proc.new</td><td class="interrupted">interrupted</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="range"><summary>range.rb — failed</summary>
-<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/range.rb">source</a> · <a href="logs/range.rb.log">log</a> · <a href="logs/range.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/range.rb">source</a> · <a href="logs/range.rb.log">log</a> · <a href="logs/range.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Range</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>Range#==</td><td class="error">error</td><td class="detail">Method not found: undefined method `const_defined?` for Class</td></tr>
@@ -611,27 +611,27 @@ assertion failed
 assertion failed
 assertion failed
 assertion failed</td></tr>
-<tr><td>11</td><td></td><td>Range#initialize</td><td class="error">error</td><td class="detail">expected #&lt;Range:0x00007f134001f6f0&gt;, actual #&lt;Range:0x00007f1340060d30&gt;
+<tr><td>11</td><td></td><td>Range#initialize</td><td class="error">error</td><td class="detail">expected #&lt;Range:0x00007ff5b401f6f0&gt;, actual #&lt;Range:0x00007ff5b4060d30&gt;
 Method not found: undefined method `exclude_end?` for Range</td></tr>
 <tr><td>12</td><td></td><td>Range with a NaN for an end</td><td class="error">error</td><td class="detail">Method not found: undefined method `const_defined?` for Class</td></tr>
 <tr><td>13</td><td></td><td>Range#last</td><td class="error">error</td><td class="detail">Method not found: undefined method `last` for Range</td></tr>
 <tr><td>14</td><td></td><td>Range#member?</td><td class="error">error</td><td class="detail">Method not found: undefined method `member?` for Range</td></tr>
-<tr><td>15</td><td></td><td>Range#to_s</td><td class="fail">fail</td><td class="detail">expected &quot;0..1&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;0...1&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;a..b&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;a...b&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;0..&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;0...&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;a..&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;a...&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;</td></tr>
-<tr><td>16</td><td></td><td>Range#inspect</td><td class="fail">fail</td><td class="detail">expected &quot;0..1&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;0...1&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;&quot;a&quot;..&quot;b&quot;&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;&quot;a&quot;...&quot;b&quot;&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;0..&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;0...&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;&quot;a&quot;..&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;
-expected &quot;&quot;a&quot;...&quot;, actual &quot;#&lt;Range:0x00007f134001ff90&gt;&quot;</td></tr>
+<tr><td>15</td><td></td><td>Range#to_s</td><td class="fail">fail</td><td class="detail">expected &quot;0..1&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;0...1&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;a..b&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;a...b&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;0..&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;0...&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;a..&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;a...&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;</td></tr>
+<tr><td>16</td><td></td><td>Range#inspect</td><td class="fail">fail</td><td class="detail">expected &quot;0..1&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;0...1&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;&quot;a&quot;..&quot;b&quot;&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;&quot;a&quot;...&quot;b&quot;&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;0..&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;0...&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;&quot;a&quot;..&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;
+expected &quot;&quot;a&quot;...&quot;, actual &quot;#&lt;Range:0x00007ff5b401ff90&gt;&quot;</td></tr>
 <tr><td>17</td><td></td><td>Range#eql?</td><td class="error">error</td><td class="detail">Method not found: undefined method `eql?` for Range</td></tr>
 <tr><td>18</td><td></td><td>Range#initialize_copy</td><td class="fail">fail</td><td class="detail">assertion failed</td></tr>
 <tr><td>19</td><td></td><td>Range#hash</td><td class="error">error</td><td class="detail">Method not found: undefined method `hash` for Range</td></tr>
@@ -640,37 +640,37 @@ expected &quot;&quot;a&quot;...&quot;, actual &quot;#&lt;Range:0x00007f134001ff9
 <tr><td>22</td><td></td><td>symbol GC keeps the symbols a Range holds</td><td class="stress">stress</td><td class="detail">stress test disabled</td></tr>
 </tbody></table></details>
 <details id="rangeerror"><summary>rangeerror.rb — passed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/rangeerror.rb">source</a> · <a href="logs/rangeerror.rb.log">log</a> · <a href="logs/rangeerror.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/rangeerror.rb">source</a> · <a href="logs/rangeerror.rb.log">log</a> · <a href="logs/rangeerror.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>RangeError</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="refinement"><summary>refinement.rb — runtime_error</summary>
-<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/refinement.rb">source</a> · <a href="logs/refinement.rb.log">log</a> · <a href="logs/refinement.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/refinement.rb">source</a> · <a href="logs/refinement.rb.log">log</a> · <a href="logs/refinement.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Refinement</td><td class="error">error</td><td class="detail">Method not found: undefined method `const_defined?` for Class</td></tr>
 </tbody></table></details>
 <details id="regexperror"><summary>regexperror.rb — passed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/regexperror.rb">source</a> · <a href="logs/regexperror.rb.log">log</a> · <a href="logs/regexperror.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/regexperror.rb">source</a> · <a href="logs/regexperror.rb.log">log</a> · <a href="logs/regexperror.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 </tbody></table></details>
 <details id="runtimeerror"><summary>runtimeerror.rb — passed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/runtimeerror.rb">source</a> · <a href="logs/runtimeerror.rb.log">log</a> · <a href="logs/runtimeerror.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/runtimeerror.rb">source</a> · <a href="logs/runtimeerror.rb.log">log</a> · <a href="logs/runtimeerror.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>RuntimeError</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="standarderror"><summary>standarderror.rb — passed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/standarderror.rb">source</a> · <a href="logs/standarderror.rb.log">log</a> · <a href="logs/standarderror.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/standarderror.rb">source</a> · <a href="logs/standarderror.rb.log">log</a> · <a href="logs/standarderror.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>StandardError</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="string"><summary>string.rb — compile_error</summary>
-<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/string.rb">source</a> · <a href="logs/string.rb.log">log</a> · <a href="logs/string.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/string.rb">source</a> · <a href="logs/string.rb.log">log</a> · <a href="logs/string.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 </tbody></table></details>
 <details id="superclass"><summary>superclass.rb — failed</summary>
-<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/superclass.rb">source</a> · <a href="logs/superclass.rb.log">log</a> · <a href="logs/superclass.rb.jsonl">events</a></p>
+<p>Elapsed: 0.02s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/superclass.rb">source</a> · <a href="logs/superclass.rb.log">log</a> · <a href="logs/superclass.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Direct superclass of [:Module, :Object, &quot;15.2.2.2&quot;]</td><td class="error">error</td><td class="detail">Method not found: undefined method `const_defined?` for Class</td></tr>
 <tr><td>2</td><td></td><td>Direct superclass of [:Class, :Module, &quot;15.2.3.2&quot;]</td><td class="error">error</td><td class="detail">Method not found: undefined method `const_defined?` for Class</td></tr>
@@ -702,23 +702,23 @@ expected &quot;&quot;a&quot;...&quot;, actual &quot;#&lt;Range:0x00007f134001ff9
 <tr><td>28</td><td></td><td>Direct superclass of [:SyntaxError, :ScriptError, &quot;15.2.38.2&quot;]</td><td class="error">error</td><td class="detail">Method not found: undefined method `const_defined?` for Class</td></tr>
 </tbody></table></details>
 <details id="symbol"><summary>symbol.rb — panic</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/symbol.rb">source</a> · <a href="logs/symbol.rb.log">log</a> · <a href="logs/symbol.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/symbol.rb">source</a> · <a href="logs/symbol.rb.log">log</a> · <a href="logs/symbol.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>Symbol</td><td class="interrupted">interrupted</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="syntax"><summary>syntax.rb — aborted</summary>
-<p>Elapsed: 0.11s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/syntax.rb">source</a> · <a href="logs/syntax.rb.log">log</a> · <a href="logs/syntax.rb.jsonl">events</a></p>
+<p>Elapsed: 0.11s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/syntax.rb">source</a> · <a href="logs/syntax.rb.log">log</a> · <a href="logs/syntax.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 </tbody></table></details>
 <details id="sysfail"><summary>sysfail.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/sysfail.rb">source</a> · <a href="logs/sysfail.rb.log">log</a> · <a href="logs/sysfail.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/sysfail.rb">source</a> · <a href="logs/sysfail.rb.log">log</a> · <a href="logs/sysfail.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>mrb_sys_fail without SystemCallError</td><td class="error">error</td><td class="detail">Cannot found name: TestSysFail</td></tr>
 </tbody></table></details>
 <details id="true"><summary>true.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/true.rb">source</a> · <a href="logs/true.rb.log">log</a> · <a href="logs/true.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/true.rb">source</a> · <a href="logs/true.rb.log">log</a> · <a href="logs/true.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>TrueClass</td><td class="pass">pass</td><td class="detail"></td></tr>
 <tr><td>2</td><td></td><td>TrueClass true</td><td class="error">error</td><td class="detail">Method not found: undefined method `method_defined?` for Class</td></tr>
@@ -728,22 +728,22 @@ expected &quot;&quot;a&quot;...&quot;, actual &quot;#&lt;Range:0x00007f134001ff9
 <tr><td>6</td><td></td><td>TrueClass#|</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="typeerror"><summary>typeerror.rb — passed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/typeerror.rb">source</a> · <a href="logs/typeerror.rb.log">log</a> · <a href="logs/typeerror.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/typeerror.rb">source</a> · <a href="logs/typeerror.rb.log">log</a> · <a href="logs/typeerror.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>TypeError</td><td class="pass">pass</td><td class="detail"></td></tr>
 </tbody></table></details>
 <details id="unicode"><summary>unicode.rb — compile_error</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/unicode.rb">source</a> · <a href="logs/unicode.rb.log">log</a> · <a href="logs/unicode.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/unicode.rb">source</a> · <a href="logs/unicode.rb.log">log</a> · <a href="logs/unicode.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 </tbody></table></details>
 <details id="version"><summary>version.rb — failed</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/version.rb">source</a> · <a href="logs/version.rb.log">log</a> · <a href="logs/version.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/version.rb">source</a> · <a href="logs/version.rb.log">log</a> · <a href="logs/version.rb.jsonl">events</a></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 <tr><td>1</td><td></td><td>MRUBY_REVISION</td><td class="error">error</td><td class="detail">Cannot found name: MRUBY_REVISION</td></tr>
 </tbody></table></details>
 <details id="vformat"><summary>vformat.rb — compile_error</summary>
-<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/b31d3346f5a3ca73e4768bb6173d434a5af5c4a8/mrubyedge/tests/mruby_spec/upstream/t/vformat.rb">source</a> · <a href="logs/vformat.rb.log">log</a> · <a href="logs/vformat.rb.jsonl">events</a></p>
+<p>Elapsed: 0.01s · <a href="https://github.com/mrubyedge/mrubyedge/blob/f95a388af43c6ce849c37ea41a8685116b49e1d2/mrubyedge/tests/mruby_spec/upstream/t/vformat.rb">source</a> · <a href="logs/vformat.rb.log">log</a> · <a href="logs/vformat.rb.jsonl">events</a></p>
 <p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>
 <table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>
 </tbody></table></details></body></html>

@@ -119,7 +119,7 @@ constant definition: a block given a class to run under keeps its own : ERROR: M
 constant and class variable lookup: a method written in a block given a class keeps the block's scope : ERROR: Class#new must be called from class
 OK: 5, FAIL: 4, ERROR: 55, WARN: 1, SKIP: 0, STRESS: 0
 
-thread 'spec_module' (3469) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_module' (3689) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 module.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_module ... FAILED
@@ -129,5 +129,5 @@ failures:
 failures:
     spec_module
 
-test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.02s
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.03s
 

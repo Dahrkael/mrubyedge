@@ -1,7 +1,7 @@
 
 running 1 test
 Symbol : 
-thread 'spec_symbol' (3506) panicked at mrubyedge/src/yamrb/optable.rs:531:13:
+thread 'spec_symbol' (3724) panicked at mrubyedge/src/yamrb/optable.rs:531:13:
 not implemented: INTERN: Not supported yet
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_symbol ... FAILED

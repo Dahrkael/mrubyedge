@@ -37,7 +37,7 @@ Enumerable#max, #min - a comparison with no answer :
 ERROR: Method not found: undefined method `const_defined?` for Class
 OK: 6, FAIL: 4, ERROR: 13, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_enumerable' (3418) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_enumerable' (3635) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 enumerable.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_enumerable ... FAILED

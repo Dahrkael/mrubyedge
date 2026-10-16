@@ -30,7 +30,7 @@ Direct superclass of [:ScriptError, :Exception, "15.2.37.2"] : ERROR: Method not
 Direct superclass of [:SyntaxError, :ScriptError, "15.2.38.2"] : ERROR: Method not found: undefined method `const_defined?` for Class
 OK: 0, FAIL: 0, ERROR: 28, WARN: 0, SKIP: 0, STRESS: 0
 
-thread 'spec_superclass' (3504) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
+thread 'spec_superclass' (3722) panicked at mrubyedge/tests/mruby_spec/mod.rs:78:5:
 superclass.rb: upstream assertions failed
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test spec_superclass ... FAILED
