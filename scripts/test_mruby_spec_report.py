@@ -46,6 +46,38 @@ class Reports(unittest.TestCase):
             path.write_text('["start",1,"name"]\n["pass",1,null]\n["start",')
             self.assertEqual(len(read_events(path)), 2)
 
+    def test_html_progress_excludes_unknown_unreached_assertions(self):
+        item = summarize([['start', 1, 'ok'], ['pass', 1, None],
+                          ['start', 2, 'crashed']], -6, False, '')
+        item.update(file='crash.rb', elapsed_seconds=0, source='source.rb',
+                    log='raw.log', events='events.jsonl')
+        report = {'metadata': {'commit': 'a' * 40, 'dirty': False, 'generated_at': 'now',
+                               'features': '', 'default_features': True, 'upstream_revision': '1234'},
+                  'files': [item], 'file_counts': {'aborted': 1}}
+        rendered = html_report(report)
+        self.assertIn('50.0%', rendered)
+        self.assertIn('1 of 2 reached assertions', rendered)
+        self.assertIn('Remaining assertion count is unknown', rendered)
+        self.assertIn('data-stopped="true"', rendered)
+        self.assertIn('data-failures="false"', rendered)
+        self.assertIn('https://github.com/mrubyedge/mrubyedge/commit/' + 'a' * 40, rendered)
+        self.assertIn('aria-label="Passing files"', rendered)
+        self.assertNotIn('<script src=', rendered)
+
+    def test_html_handles_empty_reports_and_files(self):
+        report = {'metadata': {'commit': 'abc', 'dirty': True, 'generated_at': 'now',
+                               'features': '', 'default_features': True, 'upstream_revision': '1234'},
+                  'files': [], 'file_counts': {}}
+        self.assertIn('0 of 0 reached assertions', html_report(report))
+        item = summarize([['phase', 'compile', 'empty.rb']], 101, False, '')
+        item.update(file='empty.rb', elapsed_seconds=0, source='source.rb',
+                    log='raw.log', events='events.jsonl')
+        report['files'].append(item)
+        rendered = html_report(report)
+        self.assertIn('— · 0/0 reached', rendered)
+        self.assertIn('compile error', rendered)
+        self.assertIn('data-stopped="true"', rendered)
+
     def test_source_links_keep_the_url_scheme(self):
         item = summarize([['phase', 'completed', 'example.rb']], 0, False, '')
         item.update(file='example.rb', elapsed_seconds=0, source='https://github.com/owner/repo/blob/abc/a.rb',

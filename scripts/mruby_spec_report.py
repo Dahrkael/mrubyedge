@@ -118,39 +118,79 @@ def markdown(report):
 
 def html_report(report):
     esc = lambda value: html.escape(str(value), quote=True)
-    meta = report["metadata"]
-    parts = ['<!doctype html><html lang="en"><meta charset="utf-8">',
-             '<meta name="viewport" content="width=device-width,initial-scale=1">',
-             '<title>mruby compatibility report</title><style>',
-             'body{font:15px system-ui;margin:2rem auto;padding:0 1rem;max-width:1200px;color:#17202a}',
-             'table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{padding:.5rem;border:1px solid #ccd;text-align:left;vertical-align:top}',
-             'th{background:#eef2f6}.pass,.passed{color:#166534}.fail,.failed,.error,.panic,.aborted,.timeout,.interrupted{color:#b42318}',
-             'details{margin:1rem 0}summary{cursor:pointer;font-weight:bold}.detail{white-space:pre-wrap;overflow-wrap:anywhere}',
-             '</style><body><h1>mruby compatibility report</h1>',
-             f'<p>Commit: <code>{esc(meta["commit"])}</code> · dirty: {esc(meta["dirty"])}</p>',
-             f'<p>Generated: {esc(meta["generated_at"])} · Features: {esc(meta["features"] or "(none requested)")} · '
-             f'default features: {esc(meta["default_features"])}</p>',
-             f'<p>Upstream: <code>{esc(meta["upstream_revision"])}</code></p>', f'<p>{esc(NOTE)}</p>',
-             f'<p>Files: {len(report["files"])}; passed: {report["file_counts"].get("passed", 0)}</p>',
-             '<table><thead><tr><th>File</th><th>Status</th>' + ''.join(f'<th>{s.title()}</th>' for s in STATUSES) + '</tr></thead><tbody>']
-    for f in report["files"]:
-        parts.append(f'<tr><td><a href="#{esc(Path(f["file"]).stem)}">{esc(f["file"])}</a></td>'
-                     f'<td class="{esc(f["status"])}">{esc(f["status"])}</td>' +
-                     ''.join(f'<td>{f["counts"][s]}</td>' for s in STATUSES) + '</tr>')
-    parts.append('</tbody></table>')
-    for f in report["files"]:
-        parts.append(f'<details id="{esc(Path(f["file"]).stem)}"><summary>{esc(f["file"])} — {esc(f["status"])}</summary>')
-        parts.append(f'<p>Elapsed: {f["elapsed_seconds"]:.2f}s · ' + ' · '.join(
-            f'<a href="{esc(quote(f[key], safe="/:"))}">{key}</a>' for key in ('source', 'log', 'events')) + '</p>')
-        if not f["completed"]:
-            parts.append('<p><strong>Execution stopped before completion. Remaining tests are unevaluated.</strong></p>')
-        parts.append('<table><thead><tr><th>ID</th><th>Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>')
-        for a in f["assertions"]:
-            parts.append(f'<tr><td>{a["id"]}</td><td>{a["parent_id"] or ""}</td><td>{esc(a["name"])}</td>'
-                         f'<td class="{esc(a["status"])}">{esc(a["status"])}</td><td class="detail">{esc(chr(10).join(a["details"]))}</td></tr>')
-        parts.append('</tbody></table></details>')
-    return '\n'.join(parts) + '</body></html>\n'
+    meta = report['metadata']
+    files = report['files']
+    counts = {s: sum(f['counts'][s] for f in files) for s in STATUSES}
+    total = sum(counts.values())
+    passed = sum(f['status'] == 'passed' for f in files)
+    stopped = sum(not f['completed'] for f in files)
+    labels = {'pass': 'Passed', 'fail': 'Failed', 'error': 'Errors', 'warn': 'Warnings',
+              'skip': 'Skipped', 'stress': 'Stress', 'interrupted': 'Interrupted'}
 
+    def bar(values):
+        denominator = sum(values.values())
+        description = ', '.join(f'{labels[s]}: {values[s]}' for s in STATUSES)
+        segments = ''.join(f'<span class="segment {s}" style="width:{values[s] / denominator * 100:.4f}%"></span>'
+                           for s in STATUSES if values[s]) if denominator else ''
+        return f'<div class="bar" role="img" aria-label="{esc(description)}">{segments}</div>'
+
+    assets = Path(__file__).with_name('mruby_spec_report')
+    css = (assets / 'report.css').read_text()
+    js = (assets / 'report.js').read_text()
+    rate = f'{counts["pass"] / total * 100:.1f}%' if total else '—'
+    parts = ['<!doctype html><html lang="en"><head><meta charset="utf-8">',
+             '<meta name="viewport" content="width=device-width,initial-scale=1">',
+             f'<title>mruby/edge · Compatibility report</title><style>{css}</style></head><body>',
+             '<main><header><div class="eyebrow">mruby/edge / Compatibility</div>',
+             '<h1>mruby compatibility report</h1>',
+             '<p class="intro">Explore the upstream mruby suite, from file coverage to individual assertions.</p>',
+             '<div class="metadata">',
+             f'<span>mruby/edge <a href="https://github.com/mrubyedge/mrubyedge/commit/{esc(quote(meta["commit"], safe=""))}"><code>{esc(meta["commit"])}</code></a></span>',
+             f'<span>Working tree: {"modified" if meta["dirty"] else "clean"}</span>',
+             f'<span>Generated {esc(meta["generated_at"])}</span></div>',
+             '<details class="configuration"><summary>Build configuration</summary>',
+             f'<p>Features: {esc(meta["features"] or "(none requested)")} · Default features: {esc(meta["default_features"])}</p>',
+             f'<p>Upstream revision: <code>{esc(meta["upstream_revision"])}</code></p></details></header>',
+             '<section class="overview" aria-label="Overall results">',
+             f'<div class="metric"><span>Files passing</span><strong>{passed}<small> / {len(files)}</small></strong>',
+             f'<progress max="{max(len(files), 1)}" value="{passed}" aria-label="Passing files"></progress><p>Files completed without failures</p></div>',
+             f'<div class="metric"><span>Reached assertions passing</span><strong>{rate}</strong><p>{counts["pass"]:,} of {total:,} reached assertions</p></div>',
+             f'<div class="metric"><span>Execution stopped</span><strong>{stopped}<small> files</small></strong><p>Remaining assertion count is unknown</p></div></section>',
+             '<section class="distribution" aria-label="Assertion results"><h2>Assertion outcomes</h2>', bar(counts),
+             '<div class="legend">' + ''.join(f'<span><i class="{s}"></i>{labels[s]} <b>{counts[s]:,}</b></span>' for s in STATUSES) + '</div>',
+             f'<p class="note">{esc(NOTE)} Percentages describe reached assertions, not total suite coverage.</p></section>',
+             '<section aria-labelledby="files-heading"><div class="section-heading"><h2 id="files-heading">Spec files</h2>',
+             f'<span id="visible-count" role="status">{len(files)} files</span></div>',
+             '<div class="filters" hidden><label>Find a file<input id="file-search" type="search" placeholder="e.g. array.rb"></label>',
+             '<label>File results<select id="file-filter"><option value="all">All files</option><option value="passed">Passed</option>',
+             '<option value="failures">Assertion failures / errors</option><option value="stopped">Execution stopped</option>',
+             '<option value="attention">Needs attention</option></select></label>',
+             '<label class="checkbox"><input id="assert-filter" type="checkbox">Show only non-passing assertions</label></div>',
+             '<p id="empty-state" hidden>No files match these filters.</p>']
+    for f in files:
+        n = sum(f['counts'].values())
+        ratio = f'{f["counts"]["pass"] / n * 100:.1f}%' if n else '—'
+        parts.append(f'<details class="file" id="{esc(Path(f["file"]).stem)}" data-name="{esc(f["file"].lower())}" '
+                     f'data-status="{esc(f["status"])}" data-stopped="{str(not f["completed"]).lower()}" '
+                     f'data-failures="{str(bool(f["counts"]["fail"] + f["counts"]["error"])).lower()}">'
+                     f'<summary><span class="filename">{esc(f["file"])}</span><span class="badge {esc(f["status"])}">{esc(f["status"].replace("_", " "))}</span>'
+                     f'<span class="file-progress">{bar(f["counts"])}<span>{ratio} · {f["counts"]["pass"]}/{n} reached</span></span></summary>')
+        parts.append(f'<div class="file-body"><p class="file-links">{f["elapsed_seconds"]:.2f}s · ' + ' · '.join(
+            f'<a href="{esc(quote(f[key], safe="/:"))}">{key}</a>' for key in ('source', 'log', 'events')) + '</p>')
+        parts.append('<div class="legend">' + ''.join(
+            f'<span><i class="{s}"></i>{labels[s]} <b>{f["counts"][s]}</b></span>'
+            for s in STATUSES) + '</div>')
+        if not f['completed']:
+            parts.append('<p class="notice">Execution stopped before completion. Remaining tests are unevaluated; their count is unknown.</p>')
+        parts.append('<div class="table-scroll"><table><thead><tr><th>ID / Parent</th><th>Assert</th><th>Result</th><th>Details</th></tr></thead><tbody>')
+        for a in f['assertions']:
+            parts.append(f'<tr data-result="{esc(a["status"])}"><td>{a["id"]}'
+                         f'{" / " + str(a["parent_id"]) if a["parent_id"] else ""}</td><td>{esc(a["name"])}</td>'
+                         f'<td><span class="badge {esc(a["status"])}">{esc(a["status"])}</span></td>'
+                         f'<td class="detail">{esc(chr(10).join(a["details"]))}</td></tr>')
+        parts.append('</tbody></table></div><p class="no-assertions" hidden>No assertions match this view.</p></div></details>')
+    parts.append(f'</section><footer>mruby/edge · Upstream compatibility report</footer></main><script type="module">{js}</script></body></html>')
+    return '\n'.join(parts) + '\n'
 
 def build(args):
     command = ['cargo', 'test', '-p', 'mrubyedge', '--test', 'mruby_spec', '--no-run', '--message-format=json']
