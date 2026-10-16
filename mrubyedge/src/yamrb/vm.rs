@@ -20,6 +20,16 @@ static NEXT_IREP_ID: AtomicUsize = AtomicUsize::new(1);
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const ENGINE: &str = "mruby/edge";
 
+/// FNV-1a 64 of a byte slice, matching `FnvBuildHasher` over the same bytes.
+// Unused until the dispatch and ivar caches land; kept warning-free here.
+#[allow(dead_code)]
+pub(crate) fn fnv_hash(name: &str) -> u64 {
+    use std::hash::Hasher;
+    let mut h = fnv::FnvHasher::default();
+    h.write(name.as_bytes());
+    h.finish()
+}
+
 const MAX_REGS_SIZE: usize = 256;
 
 #[derive(Debug, Clone)]
