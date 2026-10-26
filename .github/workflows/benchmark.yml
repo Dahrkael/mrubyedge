@@ -1,0 +1,152 @@
+name: Native VM benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'VM ref: SHA, tag/version, branch or HEAD (independent of workflow branch)'
+        type: string
+        required: true
+        default: HEAD
+      baseline_ref:
+        description: 'Baseline VM ref; leave empty to measure only ref'
+        type: string
+        default: v1.1.12
+      cases:
+        description: 'Comma-separated workloads; empty means all'
+        type: string
+        default: ''
+      mode:
+        description: Measurement mode
+        type: choice
+        options: [both, cold, warm]
+        default: both
+      samples:
+        description: 'Samples per workload/mode (1-100)'
+        type: number
+        default: 15
+      features:
+        description: 'Comma-separated VM features'
+        type: string
+        default: wasi
+      default_features:
+        description: 'Enable Cargo default features (includes mrubyedge-debug)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install compiler and plotting dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang libclang-dev
+          python -m pip install -r benchmarks/requirements-plot.txt
+      - name: Check benchmark tools
+        run: python -m unittest discover -s benchmarks -p 'test_*.py'
+      - name: Run selected VM revisions
+        env:
+          BENCHMARK_REF: ${{ inputs.ref }}
+          BASELINE_REF: ${{ inputs.baseline_ref }}
+          BENCHMARK_CASES: ${{ inputs.cases }}
+          BENCHMARK_MODE: ${{ inputs.mode }}
+          BENCHMARK_SAMPLES: ${{ inputs.samples }}
+          BENCHMARK_FEATURES: ${{ inputs.features }}
+          DEFAULT_FEATURES: ${{ inputs.default_features }}
+        run: python benchmarks/ci.py --output target/benchmark-report/results.json
+      - name: Generate charts and result table
+        run: |
+          python benchmarks/plot.py target/benchmark-report/results.json --metric time
+          python benchmarks/plot.py target/benchmark-report/results.json --metric speedup
+          cat target/benchmark-report/results.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload report and charts
+        id: report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: target/benchmark-report/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Link downloadable report
+        env:
+          REPORT_URL: ${{ steps.report.outputs.artifact-url }}
+        run: printf '\n[Download JSON, Markdown and PNG charts](%s)\n' "$REPORT_URL" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload build logs and raw samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-logs
+          path: |
+            target/benchmarks/run-*/**/build.log
+            target/benchmarks/run-*/**/*.stderr.log
+            target/benchmarks/run-*/**/*.tsv
+            target/benchmarks/run-*/**/Cargo.lock
+            target/benchmark-report/results.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  publish-charts:
+    needs: benchmark
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    # Only this job writes; benchmarked revisions never receive write credentials.
+    concurrency:
+      group: benchmark-chart-publication
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: benchmark-report
+          path: ${{ runner.temp }}/benchmark-report
+      - name: Publish images and display them in the summary
+        env:
+          REPORT_DIR: ${{ runner.temp }}/benchmark-report
+        shell: bash
+        run: |
+          # Use a dedicated branch so summary images have persistent public URLs.
+          if git ls-remote --exit-code --heads origin refs/heads/benchmark-results; then
+            git fetch origin refs/heads/benchmark-results
+            git switch -c benchmark-results FETCH_HEAD
+          else
+            git switch --orphan benchmark-results
+          fi
+          destination="runs/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$destination"
+          for file in results.json results.md results-time.png results-speedup.png; do
+            cp "$REPORT_DIR/$file" "$destination/$file"
+          done
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$destination"
+          git commit -m "Save benchmark charts for run $GITHUB_RUN_ID ($GITHUB_RUN_ATTEMPT)" \
+            -m 'Co-authored-by: Codex <codex@openai.com>'
+          git push origin HEAD:refs/heads/benchmark-results
+          revision=$(git rev-parse HEAD)
+          base="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$revision/$destination"
+          {
+            printf '## Native VM benchmark\n\n'
+            cat "$REPORT_DIR/results.md"
+            printf '\n### Median execution time\n\n![Execution time](%s/results-time.png)\n' "$base"
+            printf '\n### Speedup against baseline\n\n![Speedup](%s/results-speedup.png)\n' "$base"
+            printf '\n[Saved report and images](https://github.com/%s/tree/%s/%s)\n' \
+              "$GITHUB_REPOSITORY" "$revision" "$destination"
+          } >> "$GITHUB_STEP_SUMMARY"
