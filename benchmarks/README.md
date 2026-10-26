@@ -118,6 +118,19 @@ Results and build artifacts are ignored by Git under `target/`. Remove
 | `hash` | String-key inserts and lookups with interpolation |
 | `array` | Array growth, block calls and iteration |
 | `string` | String concatenation, slicing and length |
+| `cart` | Build carts with 100, 10 and 2 line items; compute category-dependent member discounts, coupons, tax and shipping |
+| `html_render` | Build 100 article records; escape titles/authors and render 75 published articles into an HTML list |
+| `request_routing` | Build and dispatch 300 requests through method/path lookup, authorization, controllers and response construction |
+
+The application workloads include input generation and result validation in each
+invocation, in both modes. `html_render` also computes a rolling checksum over the
+complete output inside the timed region. `request_routing` covers successful
+product, order and account requests, unauthorized requests, missing paths and
+unsupported methods; it performs no network I/O. Their results describe the
+whole workflow, including allocation and validation, rather than an isolated
+rendering, pricing or dispatch operation.
+These workloads use `while` loops to avoid historical block/upvar handling bugs
+in v1.1.12 when blocks call into other Ruby methods.
 
 Add a Ruby file under `workloads/` with a first line `# expected: INTEGER` and a
 zero-argument `benchmark` method returning that integer. Avoid output, randomness,
