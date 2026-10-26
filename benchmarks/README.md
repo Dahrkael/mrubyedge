@@ -109,6 +109,57 @@ native harness including the Ruby compiler; it is not the VM or Wasm size.
 Results and build artifacts are ignored by Git under `target/`. Remove
 `target/benchmarks/` when no longer needed.
 
+## Manual GitHub Actions runs
+
+After this workflow is merged into the default branch, open **Actions → Native
+VM benchmark → Run workflow**. The branch selector chooses the benchmark tools
+and Ruby workloads. The separate `ref` input chooses the VM source to build;
+selecting an old VM ref does not replace the benchmark tools with old files.
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `ref` | `HEAD` | Target commit SHA, tag/version or branch |
+| `baseline_ref` | `v1.1.12` | First version for comparison; empty measures only `ref` |
+| `cases` | empty | Comma-separated workload names; empty runs all |
+| `mode` | `both` | `cold`, `warm` or `both` |
+| `samples` | `15` | Samples per workload/mode, from 1 to 100 |
+| `features` | `wasi` | Comma-separated VM features |
+| `default_features` | `false` | Enable Cargo defaults, including debug checks |
+
+`HEAD` means the exact commit selected by the workflow's branch selector at
+dispatch time. An explicit SHA stays independent of that branch. Version numbers
+such as `1.1.12` also resolve to `v1.1.12`; branch names resolve locally or through
+`origin/`. All Git history and tags are fetched. `working-tree` is not accepted
+in CI. Both revisions use the same runner, workloads, Rust stable toolchain,
+feature settings and Ubuntu 24.04 runner, sequentially in one job.
+
+For example, using GitHub CLI after merging:
+
+```sh
+gh workflow run benchmark.yml --ref master \
+  -f ref=621256668d372d695733d482ec402eb3f27ce23c \
+  -f baseline_ref=v1.1.12 -f cases=cart,html_render,request_routing
+```
+
+The **benchmark** job summary contains the table and an Artifact download link.
+The **publish-charts** summary displays the table and embedded time/speedup PNGs.
+JSON, Markdown and PNG files are uploaded as `benchmark-report`; build logs, raw
+samples and lockfiles are uploaded as `benchmark-logs`, including on failures.
+Artifacts are retained for 30 days.
+
+To make chart images directly viewable in the summary, the publication job
+creates or updates a separate `benchmark-results` branch, storing reports under
+`runs/<run-id>-<attempt>/`. Summaries use image URLs pinned to the publication
+commit. The branch retains reports independently of Artifact expiration. This
+publication assumes a public GitHub repository, so image URLs are readable by
+GitHub's image proxy. No Pages setup or deployment secret is needed. Only the
+publication job has `contents: write`; the build job has read-only permissions
+and does not retain checkout credentials. Repository policies must permit the
+publication job to push to `benchmark-results`.
+
+Hosted runner load and hardware can vary between runs. Compare revisions within
+one run and repeat runs before treating small differences as regressions.
+
 ## Plotting JSON results
 
 Install the optional plotting dependency into a virtual environment once:
