@@ -3,7 +3,8 @@
 Run the same Ruby workloads and Rust harness against selected mruby/edge Git
 revisions. Requires Python 3.11+, Git, Cargo/Rust (edition 2024), and the C build
 tools required by `mruby-compiler2-sys`. Cargo needs registry access on the first
-build. No Python packages or benchmark tools need installing.
+build. Running benchmarks needs no Python packages or extra benchmark tools;
+the optional plotting tool below uses Matplotlib.
 
 ```sh
 # Compare tags, branches, full/abbreviated commit SHAs, or remote-tracking refs.
@@ -107,6 +108,43 @@ native harness including the Ruby compiler; it is not the VM or Wasm size.
 
 Results and build artifacts are ignored by Git under `target/`. Remove
 `target/benchmarks/` when no longer needed.
+
+## Plotting JSON results
+
+Install the optional plotting dependency into a virtual environment once:
+
+```sh
+python3 -m venv target/benchmarks/plot-venv
+target/benchmarks/plot-venv/bin/python -m pip install -r benchmarks/requirements-plot.txt
+```
+
+Pass a completed result JSON to generate a PNG beside it:
+
+```sh
+target/benchmarks/plot-venv/bin/python benchmarks/plot.py path/to/results.json
+
+# Compare median speedups against the first version, with 1x as the reference.
+target/benchmarks/plot-venv/bin/python benchmarks/plot.py path/to/results.json \
+  --metric speedup --output /tmp/speedup.svg
+
+# Select workloads and a measurement mode; PNG, SVG and PDF are supported.
+target/benchmarks/plot-venv/bin/python benchmarks/plot.py path/to/results.json \
+  --case cart --case html_render --mode warm --output /tmp/application.png
+```
+
+Default output names are `results-time.png` and `results-speedup.png`. Each
+workload/mode has its own panel and linear scale; all versions remain visible.
+Time charts show median milliseconds per whole invocation (lower is faster),
+with whiskers for the observed min/max of raw batch times per iteration. These
+are not confidence intervals. Speedup charts show the first version's median
+divided by each version's median (higher is faster); they do not show uncertainty
+or establish statistical significance. SHA labels are shortened for readability.
+
+The tool works offline after dependency installation and does not rerun benchmarks.
+It accepts only complete schema-version-1 reports and rejects missing selected
+measurements, unsupported units and invalid timing data. Single-version and
+single-mode reports are supported. The standard Python tests below do not require
+Matplotlib; only rendering needs it.
 
 ## Workloads
 
