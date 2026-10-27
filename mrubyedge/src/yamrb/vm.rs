@@ -283,6 +283,9 @@ impl VM {
     /// Rite loader. This wires up the register file, globals, and builtin
     /// tables and runs the prelude to seed standard classes.
     pub fn new_by_raw_irep(irep: IREP) -> VM {
+        // Fresh shared immediates: a previous VM on this thread may have
+        // written state (ivars) onto them.
+        RObject::reset_flyweights();
         let irep = Rc::new(irep);
         let globals = RHashMap::default();
         let consts = RHashMap::default();
@@ -592,7 +595,7 @@ impl VM {
             }),
             object_id: 0.into(),
             singleton_class: RefCell::new(None),
-            ivar: RefCell::new(RHashMap::default()),
+            ivar: RefCell::new(IvarMap::new()),
         }
         .to_refcount_assigned();
         if self.current_regs()[0].is_none() {

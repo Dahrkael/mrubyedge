@@ -2,12 +2,12 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::yamrb::helpers::mrb_funcall;
-use crate::yamrb::value::{RClass, RHashMap};
+use crate::yamrb::value::RClass;
 use crate::{
     Error,
     yamrb::{
         helpers::{mrb_define_class_cmethod, mrb_define_cmethod},
-        value::{RData, RObject, RType, RValue},
+        value::{IvarMap, RData, RObject, RType, RValue},
         vm::VM,
     },
 };
@@ -129,7 +129,7 @@ pub(crate) fn mrb_random_new(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<ROb
         value: RValue::Data(Rc::new(random_data)),
         object_id: Cell::new(u64::MAX),
         singleton_class: RefCell::new(None),
-        ivar: RefCell::new(RHashMap::default()),
+        ivar: RefCell::new(IvarMap::new()),
     });
 
     Ok(random_instance)
@@ -148,7 +148,7 @@ fn mrb_random_class_srand(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObjec
         let default_rng = get_default_rng(vm);
         mrb_funcall(vm, Some(default_rng), "seed", &[])?
     };
-    let new_rng = mrb_random_new(vm, &[Rc::new(RObject::integer(seed as i64))])?;
+    let new_rng = mrb_random_new(vm, &[RObject::integer_rc(seed as i64)])?;
     let random_singleton = get_rng_singleton(vm);
     random_singleton.set_ivar(DEFAULT_RNG_KEY, new_rng);
 
@@ -177,7 +177,7 @@ fn mrb_random_seed(vm: &mut VM, _args: &[Rc<RObject>]) -> Result<Rc<RObject>, Er
         }
     };
 
-    Ok(Rc::new(RObject::integer(seed as i64)))
+    Ok(RObject::integer_rc(seed as i64))
 }
 
 // Random#rand
@@ -209,7 +209,7 @@ fn mrb_random_rand(vm: &mut VM, args: &[Rc<RObject>]) -> Result<Rc<RObject>, Err
                             return Err(Error::ArgumentError("max must be positive".to_string()));
                         }
                         let value = (rng.next_u64() % (max as u64)) as i64;
-                        Rc::new(RObject::integer(value))
+                        RObject::integer_rc(value)
                     }
                     RValue::Float(max) => {
                         if max <= 0.0 {
