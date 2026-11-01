@@ -1,0 +1,52 @@
+name: Benchmark security checks
+
+on:
+  pull_request:
+    paths: ['benchmarks/**', '.github/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Audit reviewed dependency resolutions
+        run: python benchmarks/audit_dependencies.py
+      - name: Install hash-checked plotting wheels
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: -r benchmarks/requirements-plot.txt
+      - name: Check adversarial inputs and publication
+        run: python -m unittest discover -s benchmarks -p 'test_*.py'
+      - name: Exercise isolation and historical/current builds
+        env:
+          BENCHMARK_REF: HEAD
+          BASELINE_REF: v1.1.12
+          BENCHMARK_CASES: integer
+          BENCHMARK_MODE: warm
+        run: |
+          python benchmarks/sandbox.py --smoke --export "$RUNNER_TEMP/benchmark-report" \
+            --expected "$RUNNER_TEMP/expected.json" --logs "$RUNNER_TEMP/benchmark-logs"
+          python benchmarks/plot.py "$RUNNER_TEMP/benchmark-report/results.json" --metric time
+          python benchmarks/plot.py "$RUNNER_TEMP/benchmark-report/results.json" --metric speedup
+          python benchmarks/report.py "$RUNNER_TEMP/benchmark-report" \
+            --expected "$RUNNER_TEMP/expected.json" --destination "$RUNNER_TEMP/verified-report"
+      - name: Upload bounded diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: benchmark-security-diagnostics
+          path: |
+            ${{ runner.temp }}/benchmark-logs/
+            ${{ runner.temp }}/verified-report/
+          if-no-files-found: warn
+          retention-days: 7
